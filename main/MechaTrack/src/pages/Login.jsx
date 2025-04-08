@@ -1,7 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { mockUsers } from '../data/mock';
 import { Container, Row, Form, Alert, Carousel } from 'react-bootstrap';
 import backgroundImage from '../assets/images/background.jpg';
 import mechanicImage from '../assets/images/carrusel/truck-repair.jpg';
@@ -23,34 +22,47 @@ const Login = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const { login } = useAuth();
+  const { login, user } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    setError('');
-    const success = login(username, password);
-    if (success) {
-      const user = mockUsers.find((u) => u.name === username && u.password === password);
-      switch (user.userType) {
-        case 'Admin':
+  // Redirigir cuando el usuario cambie (después de un login exitoso)
+  useEffect(() => {
+    if (user) {
+      switch (user.role) {
+        case 'admin':
           navigate('/admin');
           break;
-        case 'Tecnico':
+        case 'technician':
           navigate('/technician');
           break;
-        case 'Secretaria':
+        case 'secretary':
           navigate('/secretary');
           break;
-        case 'Cliente':
+        case 'client':
           navigate('/client');
           break;
         default:
           setError('Tipo de usuario no reconocido');
       }
-    } else {
+    }
+  }, [user, navigate]);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setError('');
+
+    // Validar que los campos no estén vacíos
+    if (!username || !password) {
+      setError('Por favor, ingrese usuario y contraseña');
+      return;
+    }
+
+    // Intentar login
+    const success = login(username, password);
+    if (!success) {
       setError('Usuario o contraseña incorrectos');
     }
+    // La redirección se manejará en el useEffect
   };
 
   return (

@@ -1,25 +1,37 @@
-import styled from '@emotion/styled';
-import { Container, Row, Col, Form, Button, Alert, Carousel, Card, Nav, Modal, Table } from 'react-bootstrap';
+import styled from "@emotion/styled";
+import {
+  Container,
+  Row,
+  Col,
+  Form,
+  Button,
+  Alert,
+  Carousel,
+  Card,
+  Nav,
+  Modal,
+  Table,
+} from "react-bootstrap";
 
 // Exportamos colors para que pueda ser usado en otros archivos
 export const colors = {
-  primary: '#d74a49',
-  primaryHover: '#ff6b6b',
-  backgroundDark: '#1b4552',
-  backgroundLight: '#183e4b',
-  backgroundNavDefault: '#1c2526',
-  inputBg: '#2a5e6e',
-  inputBgFocus: '#3a7a8e',
-  overlayDark: 'rgba(0, 0, 0, 0.3)',
-  overlayCarousel: 'rgba(0, 0, 0, 0.4)',
-  success: '#28a745',
-  warning: '#ffc107',
-  danger: '#dc3545',
+  primary: "#d74a49",
+  primaryHover: "#ff6b6b",
+  backgroundDark: "#1b4552",
+  backgroundLight: "#183e4b",
+  backgroundNavDefault: "#1c2526",
+  inputBg: "#2a5e6e",
+  inputBgFocus: "#3a7a8e",
+  overlayDark: "rgba(0, 0, 0, 0.3)",
+  overlayCarousel: "rgba(0, 0, 0, 0.4)",
+  success: "#28a745",
+  warning: "#ffc107",
+  danger: "#dc3545",
 };
 
 // --- Estilos específicos para Login ---
 export const LoginWrapper = styled.div`
-  background: url(${props => props.background}) no-repeat center center fixed;
+  background: url(${(props) => props.background}) no-repeat center center fixed;
   background-size: cover;
   height: 100vh;
   position: relative;
@@ -64,7 +76,7 @@ export const StyledCarousel = styled(Carousel)`
 `;
 
 export const CarouselItemDiv = styled.div`
-  background: url(${props => props.image}) no-repeat center center;
+  background: url(${(props) => props.image}) no-repeat center center;
   background-size: cover;
   height: 60vh;
   border-radius: 15px;
@@ -140,7 +152,7 @@ export const StyledNav = styled.nav`
 
 export const NavLink = styled.a`
   color: white;
-  font-family: 'Arial, sans-serif';
+  font-family: "Arial, sans-serif";
   font-weight: bold;
   text-decoration: none;
   margin: 0 15px;
@@ -160,7 +172,7 @@ export const ContentWrapper = styled.div`
 `;
 
 export const SectionTitle = styled.h2`
-  font-family: 'Arial, sans-serif';
+  font-family: "Arial, sans-serif";
   font-weight: bold;
   color: ${colors.backgroundDark};
   margin-bottom: 20px;
@@ -180,7 +192,7 @@ export const StyledTable = styled.table`
     background-color: ${colors.backgroundLight};
     color: white;
   }
-  tr:nth-child(even) {
+  tr:nth-of-type(even) {
     background-color: #f9f9f9;
   }
   tr:hover {
@@ -221,7 +233,7 @@ export const Sidebar = styled.aside`
 `;
 
 export const SidebarTitle = styled.h3`
-  font-family: 'Arial, sans-serif';
+  font-family: "Arial, sans-serif";
   font-weight: bold;
   margin-bottom: 20px;
 `;
@@ -254,18 +266,17 @@ export const DashboardHeader = styled.div`
   margin-bottom: 20px;
   color: white;
   display: flex;
-  flex-direction: column;
   justify-content: space-between;
   align-items: center;
   padding: 1rem 2rem;
   h2 {
-    font-family: 'Arial, sans-serif';
+    font-family: "Arial, sans-serif";
     font-weight: bold;
     margin: 0;
     font-size: 1.5rem;
   }
   .user-info {
-    font-family: 'Arial, sans-serif';
+    font-family: "Arial, sans-serif";
     font-size: 0.9rem;
     text-align: right;
   }
@@ -284,7 +295,7 @@ export const DashboardHeader = styled.div`
         color: ${colors.primaryHover};
       }
       &.bell::before {
-        content: '🔔'; // Icono de campana (puedes reemplazar con un ícono de biblioteca como FontAwesome)
+        content: "🔔";
         font-size: 1rem;
       }
     }
@@ -293,7 +304,8 @@ export const DashboardHeader = styled.div`
     flex-direction: column;
     padding: 1rem;
     text-align: center;
-    .user-info, .links {
+    .user-info,
+    .links {
       margin-top: 0.5rem;
     }
   }
@@ -310,7 +322,7 @@ export const OrderCard = styled(Card)`
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
   }
   .card-title {
-    font-family: 'Arial, sans-serif';
+    font-family: "Arial, sans-serif";
     font-weight: bold;
     color: ${colors.backgroundDark};
     margin: 0 0 10px;
@@ -318,6 +330,28 @@ export const OrderCard = styled(Card)`
   .card-text {
     color: #6c757d;
   }
+`;
+
+export const OrderCardHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+`;
+
+export const OrderCardContent = styled(Card.Text)`
+  color: #6c757d;
+  margin-bottom: 15px;
+`;
+
+export const OrderCardActions = styled.div`
+  display: flex;
+  gap: 10px;
+`;
+
+export const StatusIcon = styled.span`
+  color: ${(props) => props.color};
+  margin-left: 10px;
+  font-size: 12px;
 `;
 
 export const CustomButton = styled(Button)`
@@ -348,7 +382,7 @@ export const StatCard = styled(Card)`
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
   }
   .card-title {
-    font-family: 'Arial, sans-serif';
+    font-family: "Arial, sans-serif";
     font-weight: bold;
     color: ${colors.backgroundDark};
     margin: 0 0 10px;
@@ -372,11 +406,18 @@ export const StatCard = styled(Card)`
   }
 `;
 
+export const StatsContainer = styled.div`
+  display: flex;
+  gap: 4%;
+  margin-bottom: 20px;
+`;
+
 export const Content = styled.div`
   flex: 1;
   margin-left: 250px;
   padding: 20px;
   min-height: 100vh;
+  overflow-y: auto; /* Añadimos overflow-y: auto para controlar el scroll */
   transition: margin-left 0.3s ease-in-out;
   @media (max-width: 768px) {
     margin-left: 0;
@@ -390,7 +431,7 @@ export const ContentBtn = styled.div`
   align-items: center;
   margin-bottom: 20px;
   h3 {
-    font-family: 'Arial, sans-serif';
+    font-family: "Arial, sans-serif";
     font-weight: bold;
     color: ${colors.backgroundDark};
   }
@@ -413,7 +454,7 @@ export const MobileToggleButton = styled(Button)`
 
 export const StyledModal = styled(Modal)`
   .modal-dialog {
-    max-width: 900px; /* Equivalente a size="lg", ajustable */
+    max-width: 900px;
   }
 `;
 
@@ -428,34 +469,123 @@ export const TableWrapper = styled.div`
 `;
 
 export const StyledTableModal = styled(Table)`
-  th, td {
+  th,
+  td {
     vertical-align: middle;
   }
-  th:nth-type(1), td:nth-type(1) { /* Núm. Económico */
+  th:nth-of-type(1),
+  td:nth-of-type(1) {
+    /* Núm. Económico */
     min-width: 100px;
   }
-  th:nth-type(2), td:nth-type(2) { /* Orden */
+  th:nth-of-type(2),
+  td:nth-of-type(2) {
+    /* Orden */
     min-width: 100px;
   }
-  th:nth-type(3), td:nth-type(3) { /* Fecha Ingreso */
+  th:nth-of-type(3),
+  td:nth-of-type(3) {
+    /* Fecha Ingreso */
     min-width: 120px;
   }
-  th:nth-type(4), td:nth-type(4) { /* Diagnóstico */
+  th:nth-of-type(4),
+  td:nth-of-type(4) {
+    /* Diagnóstico */
     min-width: 200px;
     max-width: 200px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  th:nth-type(5), td:nth-type(5) { /* Notificación */
+  th:nth-of-type(5),
+  td:nth-of-type(5) {
+    /* Notificación o Acción */
     min-width: 80px;
     text-align: center;
   }
-  th:nth-type(6), td:nth-type(6) { /* Acción */
+  th:nth-of-type(6),
+  td:nth-of-type(6) {
+    /* Acción (solo pending) */
     min-width: 80px;
     text-align: center;
   }
-  td:nth-type(4) { /* Tooltip para Diagnóstico */
+  td:nth-of-type(4) {
+    /* Tooltip para Diagnóstico */
     cursor: pointer;
   }
+`;
+
+export const OrderDetailsModal = styled(Modal)`
+  .modal-dialog {
+    max-width: 700px;
+  }
+`;
+
+export const OrderDetailsBody = styled(Modal.Body)`
+  padding: 1.5rem;
+`;
+
+// --- Nuevos estilos para TechnicianCreateOrder ---
+
+export const FormContainer = styled(Container)`
+  margin-top: 0; /* Eliminamos margin-top para evitar desplazamiento */
+  padding: 1.5rem;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+`;
+
+export const FormSectionTitle = styled.h4`
+  font-family: "Arial, sans-serif";
+  font-weight: bold;
+  color: ${colors.backgroundDark};
+  margin-top: 1.5rem;
+  margin-bottom: 1rem;
+`;
+
+export const FormActions = styled.div`
+  text-align: center;
+  margin-top: 1.5rem;
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+`;
+
+export const HistoryButtonWrapper = styled(Col)`
+  display: flex;
+  align-items: flex-end;
+  margin-bottom: 1rem;
+`;
+
+// --- Nuevos estilos para los filtros en TechnicianDashboard ---
+
+export const FiltersContainer = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 1rem;
+`;
+
+export const FilterGroup = styled(Form.Group)`
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 200px;
+  max-width: 300px;
+`;
+
+export const FilterLabel = styled(Form.Label)`
+  margin-bottom: 0;
+  white-space: nowrap;
+`;
+
+export const FilterSelect = styled(Form.Select)`
+  width: 100%;
+`;
+
+export const FilterInput = styled(Form.Control)`
+  width: 100%;
 `;
