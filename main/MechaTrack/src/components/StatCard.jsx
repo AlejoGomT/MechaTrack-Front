@@ -8,7 +8,9 @@ const StatCard = ({ title, content, buttonText, onClick }) => {
       <Card.Body>
         <Card.Title>{title}</Card.Title>
         <Card.Text>{content}</Card.Text>
-        <CustomButton onClick={onClick} className="btn-view">{buttonText}</CustomButton>
+        <CustomButton onClick={onClick} className="btn-view">
+          {buttonText}
+        </CustomButton>
       </Card.Body>
     </StyledStatCard>
   );

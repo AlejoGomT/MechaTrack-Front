@@ -1,63 +1,258 @@
-import { Container, Form, Row, Col, Button } from 'react-bootstrap';
-import Sidebar from '../components/Sidebar';
-import DashboardHeader from '../components/DashboardHeader';
-import CustomButton from '../components/CustomButton';
+import { useState, useCallback, memo, useEffect } from "react";
+import { useAuth } from "../context/AuthContext";
+import {
+  Container,
+  Form,
+  Row,
+  Col,
+  Button,
+  Modal,
+  Table,
+  Alert,
+} from "react-bootstrap";
+import Sidebar from "../components/Sidebar";
+import DashboardHeader from "../components/DashboardHeader";
+import CustomButton from "../components/CustomButton";
+import { mockVehicles, mockClientOrders, mockParts } from "../data/mock";
+import { createOrder, updateOrder } from "../services/orderService";
+import {
+  MainContainer,
+  Content,
+  StyledModal,
+  ModalBody,
+  TableWrapper,
+  StyledTableModal,
+  FormContainer,
+  FormSectionTitle,
+  FormActions,
+  HistoryButtonWrapper,
+} from "../styles/GlobalStyles";
+import styled from "@emotion/styled";
+import { toast } from "react-toastify";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faEye, faCircle } from "@fortawesome/free-solid-svg-icons";
+
+const ScrollableFormWrapper = styled.div`
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 10px;
+`;
+
+const HistoryStatusIcon = styled.span`
+  margin-right: 5px;
+  color: ${({ status }) => {
+    switch (status) {
+      case "Finalizado":
+        return "#28a745"; // Verde
+      case "En Proceso":
+        return "#fd7e14"; // Naranja
+      case "Pendiente":
+        return "#ffc107"; // Amarillo
+      default:
+        return "#6c757d"; // Gris
+    }
+  }};
+`;
+
+const HistoryEmptyMessage = styled.div`
+  text-align: center;
+  padding: 20px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  color: #6c757d;
+`;
 
 const technicianMenu = [
-  { label: 'Crear Orden de Servicio', path: '/technician/create-order' },
-  { label: 'Historial de Órdenes', path: '/technician' },
-  { label: 'Buscar Orden', path: '/technician/search' },
-  { label: 'Cerrar Sesión', path: '/' },
+  { label: "Inicio", path: "/technician" },
+  { label: "Crear Orden de Servicio", path: "/technician/create-order" },
+  { label: "Historial de Órdenes", path: "/technician/history" },
+  { label: "Notificaciones", path: "/technician/notifications" },
+  { label: "Cerrar Sesión", path: "/" },
 ];
 
-const TechnicianCreateOrder = () => {
-  return (
-    <>
-      <Sidebar menuItems={technicianMenu} title="Menú" />
-      <div className="content" style={{ marginLeft: '270px', padding: '20px' }}>
-        <DashboardHeader title="Crear Orden de Servicio" />
-        <Container className="mt-4 form-container p-4 bg-white rounded shadow">
-          <h4 className="form-header">Datos del Vehículo y Cliente</h4>
-          <Form>
+const OrderForm = memo(
+  ({
+    initialData,
+    onSubmit,
+    onCancel,
+    isReadOnly,
+    error,
+    onShowHistory,
+    onRequestPart,
+    onImageUpload,
+    disableFields = [],
+    hideButtons = false,
+  }) => {
+    const [formData, setFormData] = useState({
+      branch: initialData?.branch || "",
+      economicNumber: initialData?.vehicleEconomicNumber || "",
+      kilometraje: initialData?.kilometraje || "",
+      vin: initialData?.vin || "",
+      serviceType: initialData?.type || "Reparación",
+      serviceDescription: initialData?.description || "",
+      diagnosis: initialData?.initialDiagnosis || "",
+      tasks: initialData?.tasks || "",
+      partsList: initialData?.parts || [],
+      images: initialData?.images || [],
+    });
+    const [vehicleData, setVehicleData] = useState(null);
+    const [showHistoryModal, setShowHistoryModal] = useState(false);
+    const [showPartsModal, setShowPartsModal] = useState(false);
+    const [showHistoryDetailsModal, setShowHistoryDetailsModal] =
+      useState(false);
+    const [selectedHistoryOrder, setSelectedHistoryOrder] = useState(null);
+
+    const branches = [...new Set(mockVehicles.map((v) => v.Sucursal))];
+
+    useEffect(() => {
+      const updateVehicleData = () => {
+        const vehicle = mockVehicles.find(
+          (v) =>
+            v.Económico === formData.economicNumber &&
+            v.Sucursal === formData.branch
+        );
+        if (vehicle) {
+          setVehicleData(vehicle);
+          setFormData((prev) => ({
+            ...prev,
+            branch: vehicle.Sucursal || prev.branch,
+            economicNumber: vehicle.Económico || prev.economicNumber,
+            kilometraje: vehicle.Kilometraje || prev.kilometraje,
+            vin: vehicle.VIN || prev.vin,
+          }));
+        } else {
+          setVehicleData(null);
+        }
+      };
+      if (formData.economicNumber && formData.branch) updateVehicleData();
+    }, [formData.economicNumber, formData.branch]);
+
+    const handleInputChange = (e) => {
+      const { name, value } = e.target;
+      setFormData((prev) => ({
+        ...prev,
+        [name]: value,
+        ...(name === "branch" ? { economicNumber: "" } : {}),
+      }));
+    };
+
+    const handleRequestPart = (part) => {
+      setFormData((prev) => ({
+        ...prev,
+        partsList: [
+          ...prev.partsList,
+          {
+            ...part,
+            quantity: 1,
+            status: "Solicitado",
+            requestedBy: "U002",
+            authorizedBy: null,
+          },
+        ],
+      }));
+      setShowPartsModal(false);
+      onRequestPart(part);
+    };
+
+    const handleImageUpload = (e) => {
+      const files = Array.from(e.target.files).map((file) => file.name);
+      setFormData((prev) => ({ ...prev, images: [...prev.images, ...files] }));
+      onImageUpload(e);
+    };
+
+    const handleFormSubmit = (e) => {
+      e.preventDefault();
+      const requiredFields = [
+        { key: "branch", label: "Sucursal" },
+        { key: "economicNumber", label: "N° Económico" },
+        { key: "kilometraje", label: "Kilometraje" },
+        { key: "serviceType", label: "Tipo de Servicio" },
+        { key: "serviceDescription", label: "Descripción del Servicio" },
+        { key: "diagnosis", label: "Diagnóstico Inicial" },
+      ];
+      for (const field of requiredFields) {
+        if (!formData[field.key]) {
+          toast.error(`${field.label} es obligatorio`);
+          return;
+        }
+      }
+      if (formData.images.length === 0) {
+        toast.error("Se requiere al menos una foto de evidencia");
+        return;
+      }
+      onSubmit(formData);
+    };
+
+    const formatDate = (dateStr) => {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString("es-ES", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+    };
+
+    const handleViewHistoryDetails = (orderNumber) => {
+      const order = mockClientOrders.find((o) => o.id === orderNumber);
+      if (order) {
+        const vehicle = mockVehicles.find(
+          (v) => v.Económico === order.vehicleEconomicNumber
+        );
+        const enrichedOrder = {
+          ...order,
+          branch: vehicle?.Sucursal || order.branch || "",
+          vehicleEconomicNumber:
+            vehicle?.Económico || order.vehicleEconomicNumber,
+          kilometraje: vehicle?.Kilometraje || order.kilometraje || "",
+          vin: vehicle?.VIN || order.vin || "",
+        };
+        setSelectedHistoryOrder(enrichedOrder);
+        setShowHistoryModal(false);
+        setShowHistoryDetailsModal(true);
+      }
+    };
+
+    const hasHistory = vehicleData?.history?.length > 0;
+    const approvedParts = formData.partsList.filter(
+      (part) => part.status === "Aprobado"
+    );
+    const filteredVehicles = mockVehicles.filter(
+      (v) => v.Sucursal === formData.branch
+    );
+
+    return (
+      <FormContainer fluid>
+        {error && <Alert variant="danger">{error}</Alert>}
+        <FormSectionTitle>Datos del Vehículo</FormSectionTitle>
+        <ScrollableFormWrapper>
+          <Form onSubmit={handleFormSubmit}>
             <Row>
               <Col md={6}>
                 <Form.Group className="mb-3">
                   <Form.Label>Número de Orden</Form.Label>
-                  <Form.Control type="text" placeholder="Número de Orden" disabled />
+                  <Form.Control
+                    type="text"
+                    value={initialData?.id || "Auto-generado"}
+                    disabled
+                  />
                 </Form.Group>
               </Col>
               <Col md={6}>
                 <Form.Group className="mb-3">
-                  <Form.Label>Placa del Vehículo</Form.Label>
-                  <Form.Control type="text" placeholder="Placa del Vehículo" />
-                </Form.Group>
-              </Col>
-            </Row>
-            <Row>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Marca y Modelo</Form.Label>
-                  <Form.Control type="text" placeholder="Marca y Modelo del Vehículo" />
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Año del Vehículo</Form.Label>
-                  <Form.Control type="number" placeholder="Año de Fabricación" />
-                </Form.Group>
-              </Col>
-            </Row>
-            <Row>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Kilometraje</Form.Label>
-                  <Form.Control type="number" placeholder="Kilometraje Actual" />
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Número de Serie (VIN)</Form.Label>
-                  <Form.Control type="text" placeholder="Número de Serie del Vehículo" />
+                  <Form.Label>Sucursal</Form.Label>
+                  <Form.Select
+                    name="branch"
+                    value={formData.branch}
+                    onChange={handleInputChange}
+                    disabled={isReadOnly || !!initialData}
+                  >
+                    <option value="">Seleccione una Sucursal</option>
+                    {branches.map((branch) => (
+                      <option key={branch} value={branch}>
+                        {branch}
+                      </option>
+                    ))}
+                  </Form.Select>
                 </Form.Group>
               </Col>
             </Row>
@@ -65,15 +260,104 @@ const TechnicianCreateOrder = () => {
               <Col md={6}>
                 <Form.Group className="mb-3">
                   <Form.Label>N° Económico</Form.Label>
-                  <Form.Control type="text" placeholder="Número interno del vehículo" />
+                  <Form.Select
+                    name="economicNumber"
+                    value={formData.economicNumber}
+                    onChange={handleInputChange}
+                    disabled={isReadOnly || !!initialData || !formData.branch}
+                  >
+                    <option value="">Seleccione un N° Económico</option>
+                    {filteredVehicles.map((v) => (
+                      <option key={v.Económico} value={v.Económico}>
+                        {v.Económico}
+                      </option>
+                    ))}
+                  </Form.Select>
+                </Form.Group>
+              </Col>
+              <Col md={6}>
+                <Form.Group className="mb-3">
+                  <Form.Label>Placa del Vehículo</Form.Label>
+                  <Form.Control
+                    type="text"
+                    value={vehicleData?.Placa || ""}
+                    disabled
+                    placeholder="Autocompletado"
+                  />
                 </Form.Group>
               </Col>
             </Row>
+            <Row>
+              <Col md={6}>
+                <Form.Group className="mb-3">
+                  <Form.Label>Marca y Modelo</Form.Label>
+                  <Form.Control
+                    type="text"
+                    value={
+                      vehicleData
+                        ? `${vehicleData.Marca} ${vehicleData.Modelo}`
+                        : ""
+                    }
+                    disabled
+                    placeholder="Autocompletado"
+                  />
+                </Form.Group>
+              </Col>
+              <Col md={6}>
+                <Form.Group className="mb-3">
+                  <Form.Label>Año del Vehículo</Form.Label>
+                  <Form.Control
+                    type="number"
+                    value={vehicleData?.Año || ""}
+                    disabled
+                    placeholder="Autocompletado"
+                  />
+                </Form.Group>
+              </Col>
+            </Row>
+            <Row>
+              <Col md={6}>
+                <Form.Group className="mb-3">
+                  <Form.Label>Kilometraje</Form.Label>
+                  <Form.Control
+                    type="number"
+                    name="kilometraje"
+                    value={formData.kilometraje}
+                    onChange={handleInputChange}
+                    placeholder="Kilometraje Actual"
+                    disabled={isReadOnly}
+                  />
+                </Form.Group>
+              </Col>
+              <Col md={6}>
+                <Form.Group className="mb-3">
+                  <Form.Label>Número de Serie (VIN)</Form.Label>
+                  <Form.Control
+                    type="text"
+                    value={formData.vin}
+                    disabled
+                    placeholder="Autocompletado"
+                  />
+                </Form.Group>
+              </Col>
+            </Row>
+            {hasHistory && (
+              <HistoryButtonWrapper md={6}>
+                <CustomButton onClick={() => setShowHistoryModal(true)}>
+                  Ver Historial
+                </CustomButton>
+              </HistoryButtonWrapper>
+            )}
 
-            <h4 className="form-header mt-4">Descripción del Servicio</h4>
+            <FormSectionTitle>Descripción del Servicio</FormSectionTitle>
             <Form.Group className="mb-3">
               <Form.Label>Tipo de Servicio</Form.Label>
-              <Form.Select>
+              <Form.Select
+                name="serviceType"
+                value={formData.serviceType}
+                onChange={handleInputChange}
+                disabled={isReadOnly || disableFields.includes("serviceType")}
+              >
                 <option>Reparación</option>
                 <option>Mantenimiento</option>
               </Form.Select>
@@ -83,56 +367,438 @@ const TechnicianCreateOrder = () => {
               <Form.Control
                 as="textarea"
                 rows={4}
+                name="serviceDescription"
+                value={formData.serviceDescription}
+                onChange={handleInputChange}
                 placeholder="Detalles del servicio solicitado"
+                disabled={
+                  isReadOnly || disableFields.includes("serviceDescription")
+                }
               />
             </Form.Group>
 
-            <h4 className="form-header mt-4">Diagnóstico y Tareas</h4>
+            <FormSectionTitle>Diagnóstico y Tareas</FormSectionTitle>
             <Form.Group className="mb-3">
               <Form.Label>Diagnóstico Inicial</Form.Label>
               <Form.Control
                 as="textarea"
                 rows={4}
+                name="diagnosis"
+                value={formData.diagnosis}
+                onChange={handleInputChange}
                 placeholder="Observaciones del mecánico"
+                disabled={isReadOnly}
               />
             </Form.Group>
             <Form.Group className="mb-3">
               <Form.Label>Tareas a Realizar</Form.Label>
-              <Form.Control as="textarea" rows={4} placeholder="Listado de tareas" />
-            </Form.Group>
-            <Form.Group className="mb-3">
-              <Form.Label>Repuestos Necesarios</Form.Label>
               <Form.Control
                 as="textarea"
                 rows={4}
-                placeholder="Lista de repuestos necesarios"
+                name="tasks"
+                value={formData.tasks}
+                onChange={handleInputChange}
+                placeholder="Listado de tareas"
+                disabled={isReadOnly}
               />
             </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Repuestos Necesarios</Form.Label>
+              {formData.partsList.length > 0 ? (
+                <Table striped bordered hover>
+                  <thead>
+                    <tr>
+                      <th>Código</th>
+                      <th>Cantidad</th>
+                      <th>Foto</th>
+                      <th>Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {formData.partsList.map((part, index) => (
+                      <tr key={index}>
+                        <td>{part.id}</td>
+                        <td>{part.quantity}</td>
+                        <td>{part.image}</td>
+                        <td>{part.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              ) : (
+                <p>No hay repuestos solicitados.</p>
+              )}
+              {isReadOnly && approvedParts.length > 0 && (
+                <>
+                  <Form.Label>Repuestos Aprobados</Form.Label>
+                  <Table striped bordered hover>
+                    <thead>
+                      <tr>
+                        <th>Código</th>
+                        <th>Cantidad</th>
+                        <th>Foto</th>
+                        <th>Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {approvedParts.map((part, index) => (
+                        <tr key={index}>
+                          <td>{part.id}</td>
+                          <td>{part.quantity}</td>
+                          <td>{part.image}</td>
+                          <td>{part.status}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </Table>
+                </>
+              )}
+              {!isReadOnly && (
+                <CustomButton onClick={() => setShowPartsModal(true)}>
+                  Solicitar Repuesto
+                </CustomButton>
+              )}
+            </Form.Group>
 
-            <h4 className="form-header mt-4">Fotos de Evidencia</h4>
+            <FormSectionTitle>Fotos de Evidencia</FormSectionTitle>
             <Form.Group className="mb-3">
               <Form.Label>Subir Fotos</Form.Label>
-              <Form.Control type="file" multiple />
+              <Form.Control
+                type="file"
+                multiple
+                onChange={handleImageUpload}
+                disabled={isReadOnly}
+              />
               <Form.Text className="text-muted">
                 Puedes subir varias fotos relacionadas con la orden de servicio.
               </Form.Text>
+              {formData.images.length > 0 && (
+                <ul>
+                  {formData.images.map((image, index) => (
+                    <li key={index}>{image}</li>
+                  ))}
+                </ul>
+              )}
             </Form.Group>
 
-            <Form.Group className="mb-3">
-              <Form.Check
-                type="checkbox"
-                label="Autorizo la reparación/servicio"
-                id="authorization"
-              />
-            </Form.Group>
-
-            <div className="text-center">
-              <CustomButton type="submit">Crear Orden</CustomButton>{' '}
-              <CustomButton type="reset">Cancelar</CustomButton>
-            </div>
+            <FormActions>
+              {!isReadOnly && !hideButtons && (
+                <CustomButton type="submit">
+                  {initialData ? "Actualizar" : "Crear Orden"}
+                </CustomButton>
+              )}
+              {onCancel && !hideButtons && (
+                <CustomButton type="button" onClick={onCancel}>
+                  Cerrar
+                </CustomButton>
+              )}
+            </FormActions>
           </Form>
-        </Container>
-      </div>
+        </ScrollableFormWrapper>
+
+        {/* Modal para historial */}
+        <StyledModal
+          show={showHistoryModal}
+          onHide={() => setShowHistoryModal(false)}
+          centered
+        >
+          <Modal.Header closeButton>
+            <Modal.Title>
+              Historial de Órdenes - {formData.economicNumber} (
+              {formData.branch})
+            </Modal.Title>
+          </Modal.Header>
+          <ModalBody>
+            {vehicleData?.history?.length > 0 ? (
+              <TableWrapper>
+                <StyledTableModal striped bordered hover>
+                  <thead>
+                    <tr>
+                      <th>N° Orden</th>
+                      <th>Descripción</th>
+                      <th>Fecha</th>
+                      <th>Estado</th>
+                      <th>Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {vehicleData.history.map((entry, index) => (
+                      <tr key={index}>
+                        <td>{entry.orderNumber}</td>
+                        <td>{entry.description}</td>
+                        <td>{formatDate(entry.date)}</td>
+                        <td>
+                          <HistoryStatusIcon status={entry.status}>
+                            <FontAwesomeIcon icon={faCircle} />
+                          </HistoryStatusIcon>
+                          {entry.status}
+                        </td>
+                        <td>
+                          <Button
+                            variant="info"
+                            size="sm"
+                            onClick={() =>
+                              handleViewHistoryDetails(entry.orderNumber)
+                            }
+                          >
+                            <FontAwesomeIcon icon={faEye} /> Ver Detalles
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </StyledTableModal>
+              </TableWrapper>
+            ) : (
+              <HistoryEmptyMessage>
+                <p>No hay historial disponible para este vehículo.</p>
+              </HistoryEmptyMessage>
+            )}
+          </ModalBody>
+          <Modal.Footer>
+            <Button
+              variant="secondary"
+              onClick={() => setShowHistoryModal(false)}
+            >
+              Cerrar
+            </Button>
+          </Modal.Footer>
+        </StyledModal>
+
+        {/* Submodal para detalles del historial */}
+        <StyledModal
+          show={showHistoryDetailsModal}
+          onHide={() => {
+            setShowHistoryDetailsModal(false);
+            setShowHistoryModal(true);
+          }}
+          centered
+        >
+          <Modal.Header closeButton>
+            <Modal.Title>
+              Detalles de la Orden #{selectedHistoryOrder?.id}
+            </Modal.Title>
+          </Modal.Header>
+          <ModalBody>
+            {selectedHistoryOrder && (
+              <TechnicianCreateOrder
+                order={selectedHistoryOrder}
+                isReadOnly={true}
+                isModal={true}
+              />
+            )}
+          </ModalBody>
+          <Modal.Footer>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowHistoryDetailsModal(false);
+                setShowHistoryModal(true);
+              }}
+            >
+              Volver
+            </Button>
+          </Modal.Footer>
+        </StyledModal>
+
+        {/* Modal para solicitud de repuestos */}
+        <StyledModal
+          show={showPartsModal}
+          onHide={() => setShowPartsModal(false)}
+          centered
+        >
+          <Modal.Header closeButton>
+            <Modal.Title>Seleccionar Repuestos</Modal.Title>
+          </Modal.Header>
+          <ModalBody>
+            <TableWrapper>
+              <StyledTableModal striped bordered hover>
+                <thead>
+                  <tr>
+                    <th>Código</th>
+                    <th>Nombre</th>
+                    <th>Modelo Compatible</th>
+                    <th>Foto</th>
+                    <th>Estado</th>
+                    <th>Acción</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mockParts
+                    .filter(
+                      (part) =>
+                        !vehicleData ||
+                        part.compatibleModels.includes(vehicleData.Modelo)
+                    )
+                    .map((part) => (
+                      <tr key={part.id}>
+                        <td>{part.id}</td>
+                        <td>{part.name}</td>
+                        <td>{part.compatibleModels.join(", ")}</td>
+                        <td>{part.image}</td>
+                        <td>
+                          {part.quantity > 0 ? "Disponible" : "No Disponible"}
+                        </td>
+                        <td>
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => handleRequestPart(part)}
+                            disabled={part.quantity === 0}
+                          >
+                            Solicitar
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </StyledTableModal>
+            </TableWrapper>
+          </ModalBody>
+          <Modal.Footer>
+            <Button
+              variant="secondary"
+              onClick={() => setShowPartsModal(false)}
+            >
+              Cerrar
+            </Button>
+          </Modal.Footer>
+        </StyledModal>
+      </FormContainer>
+    );
+  }
+);
+
+const TechnicianCreateOrder = ({
+  order,
+  onClose,
+  isReadOnly = false,
+  isModal = false,
+  disableFields = [],
+  hideButtons = false,
+}) => {
+  const { user } = useAuth();
+  const [error, setError] = useState("");
+
+  const handleSaveOrder = useCallback(
+    (formData) => {
+      try {
+        if (!formData.branch || !formData.economicNumber) {
+          setError("La sucursal y el número económico son obligatorios.");
+          return;
+        }
+        if (
+          !formData.serviceDescription ||
+          !formData.diagnosis ||
+          !formData.tasks
+        ) {
+          setError("Por favor, complete la descripción, diagnóstico y tareas.");
+          return;
+        }
+
+        const hasActiveOrder = mockClientOrders.some(
+          (o) =>
+            o.vehicleEconomicNumber === formData.economicNumber &&
+            o.status === "En Proceso" &&
+            o.id !== order?.id
+        );
+        if (hasActiveOrder && !order) {
+          toast.error(
+            `El vehículo (N° Económico ${formData.economicNumber}) ya tiene una orden de servicio activa`
+          );
+          return;
+        }
+
+        const orderData = {
+          branch: formData.branch,
+          type: formData.serviceType,
+          description: formData.serviceDescription,
+          initialDiagnosis: formData.diagnosis,
+          tasks: formData.tasks,
+          images: formData.images,
+          vehicleEconomicNumber: formData.economicNumber,
+          parts: formData.partsList,
+        };
+
+        if (order) {
+          const updatedOrder = {
+            ...order,
+            ...orderData,
+            history: [
+              ...order.history,
+              {
+                description: formData.diagnosis,
+                date: new Date().toISOString().split("T")[0],
+                status: order.status,
+              },
+            ],
+          };
+          updateOrder(updatedOrder);
+          toast.success(
+            `Orden #${updatedOrder.id} actualizada satisfactoriamente`
+          );
+        } else {
+          const newOrder = createOrder(orderData, user.id);
+          const vehicle = mockVehicles.find(
+            (v) => v.Económico === formData.economicNumber
+          );
+          if (vehicle) vehicle.Kilometraje = formData.kilometraje;
+          toast.success(`Orden #${newOrder.id} creada satisfactoriamente`);
+        }
+
+        if (onClose) onClose();
+      } catch (err) {
+        console.error("Error al guardar la orden:", err);
+        setError("Ocurrió un error al guardar la orden.");
+      }
+    },
+    [order, onClose, user.id]
+  );
+
+  const FormContent = () => (
+    <OrderForm
+      initialData={order}
+      onSubmit={handleSaveOrder}
+      onCancel={onClose}
+      isReadOnly={isReadOnly}
+      error={error}
+      onShowHistory={() => {}}
+      onRequestPart={() => {}}
+      onImageUpload={() => {}}
+      disableFields={disableFields}
+      hideButtons={hideButtons} // Pasamos la prop al formulario
+    />
+  );
+
+  return (
+    <>
+      {isModal ? (
+        <FormContent />
+      ) : (
+        <MainContainer fluid>
+          <Sidebar menuItems={technicianMenu} title="Menú" />
+          <Content>
+            <DashboardHeader
+              title={
+                order ? "Editar Orden de Servicio" : "Crear Orden de Servicio"
+              }
+              userId={user.id}
+              userName={user.name}
+              activeOrdersCount={
+                mockClientOrders.filter((o) => o.technicianId === user.id)
+                  .length
+              }
+              notificationsCount={
+                mockClientOrders.filter(
+                  (o) =>
+                    o.technicianId === user.id && o.notifications?.length > 0
+                ).length
+              }
+            />
+            <FormContent />
+          </Content>
+        </MainContainer>
+      )}
     </>
   );
 };

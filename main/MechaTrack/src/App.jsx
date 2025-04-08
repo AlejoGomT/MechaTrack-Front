@@ -1,130 +1,157 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { useAuth } from './context/AuthContext';
-import Login from './pages/Login';
-import AdminDashboard from './pages/AdminDashboard';
-import AdminOrders from './pages/AdminOrders';
-import AdminInventory from './pages/AdminInventory';
-import AdminParts from './pages/AdminParts';
-import AdminPrices from './pages/AdminPrices';
-import AdminReports from './pages/AdminReports';
-import SecretaryDashboard from './pages/SecretaryDashboard';
-import SecretaryBilling from './pages/SecretaryBilling';
-import SecretaryHistory from './pages/SecretaryHistory';
-import TechnicianDashboard from './pages/TechnicianDashboard';
-import TechnicianCreateOrder from './pages/TechnicianCreateOrder';
-import ClientDashboard from './pages/ClientDashboard';
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+} from "react-router-dom";
+import { AuthProvider, useAuth } from "./context/AuthContext"; // Importar AuthProvider
+import Login from "./pages/Login";
+import AdminDashboard from "./pages/AdminDashboard";
+import AdminOrders from "./pages/AdminOrders";
+import AdminInventory from "./pages/AdminInventory";
+import AdminParts from "./pages/AdminParts";
+import AdminPrices from "./pages/AdminPrices";
+import AdminReports from "./pages/AdminReports";
+import SecretaryDashboard from "./pages/SecretaryDashboard";
+import SecretaryBilling from "./pages/SecretaryBilling";
+import SecretaryHistory from "./pages/SecretaryHistory";
+import TechnicianDashboard from "./pages/TechnicianDashboard";
+import TechnicianCreateOrder from "./pages/TechnicianCreateOrder";
+import TechnicianHistory from "./pages/TechnicianHistory";
+import ClientDashboard from "./pages/ClientDashboard";
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
 // Componente para proteger rutas
-const PrivateRoute = ({ children, allowedTypes }) => {
+const PrivateRoute = ({ children, allowedRoles }) => {
   const { user } = useAuth();
-  if (!user) return <Navigate to="/" />;
-  if (!allowedTypes.includes(user.userType)) return <Navigate to="/" />;
+  if (!user) return <Navigate to="/" replace />;
+  if (!allowedRoles.includes(user.role)) return <Navigate to="/" replace />;
   return children;
 };
 
 function App() {
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<Login />} />
-        <Route
-          path="/admin"
-          element={
-            <PrivateRoute allowedTypes={['Admin']}>
-              <AdminDashboard />
-            </PrivateRoute>
-          }
+    <AuthProvider>
+      {" "}
+      {/* Envolver todo con AuthProvider */}
+      <Router>
+        <Routes>
+          <Route path="/" element={<Login />} />
+          <Route
+            path="/admin"
+            element={
+              <PrivateRoute allowedRoles={["admin"]}>
+                <AdminDashboard />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/admin/orders"
+            element={
+              <PrivateRoute allowedRoles={["admin"]}>
+                <AdminOrders />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/admin/inventory"
+            element={
+              <PrivateRoute allowedRoles={["admin"]}>
+                <AdminInventory />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/admin/parts"
+            element={
+              <PrivateRoute allowedRoles={["admin"]}>
+                <AdminParts />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/admin/prices"
+            element={
+              <PrivateRoute allowedRoles={["admin"]}>
+                <AdminPrices />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/admin/reports"
+            element={
+              <PrivateRoute allowedRoles={["admin"]}>
+                <AdminReports />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/secretary"
+            element={
+              <PrivateRoute allowedRoles={["secretary"]}>
+                <SecretaryDashboard />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/secretary/billing"
+            element={
+              <PrivateRoute allowedRoles={["secretary"]}>
+                <SecretaryBilling />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/secretary/history"
+            element={
+              <PrivateRoute allowedRoles={["secretary"]}>
+                <SecretaryHistory />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/technician"
+            element={
+              <PrivateRoute allowedRoles={["technician"]}>
+                <TechnicianDashboard />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/technician/create-order"
+            element={
+              <PrivateRoute allowedRoles={["technician"]}>
+                <TechnicianCreateOrder />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/technician/history"
+            element={
+              <PrivateRoute allowedRoles={["technician"]}>
+                <TechnicianHistory />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/client"
+            element={
+              <PrivateRoute allowedRoles={["client"]}>
+                <ClientDashboard />
+              </PrivateRoute>
+            }
+          />
+        </Routes>
+        <ToastContainer
+          position="top-right"
+          autoClose={3000}
+          hideProgressBar={false}
+          closeOnClick
+          pauseOnHover
         />
-        <Route
-          path="/admin/orders"
-          element={
-            <PrivateRoute allowedTypes={['Admin']}>
-              <AdminOrders />
-            </PrivateRoute>
-          }
-        />
-        <Route
-          path="/admin/inventory"
-          element={
-            <PrivateRoute allowedTypes={['Admin']}>
-              <AdminInventory />
-            </PrivateRoute>
-          }
-        />
-        <Route
-          path="/admin/parts"
-          element={
-            <PrivateRoute allowedTypes={['Admin']}>
-              <AdminParts />
-            </PrivateRoute>
-          }
-        />
-        <Route
-          path="/admin/prices"
-          element={
-            <PrivateRoute allowedTypes={['Admin']}>
-              <AdminPrices />
-            </PrivateRoute>
-          }
-        />
-        <Route
-          path="/admin/reports"
-          element={
-            <PrivateRoute allowedTypes={['Admin']}>
-              <AdminReports />
-            </PrivateRoute>
-          }
-        />
-        <Route
-          path="/secretary"
-          element={
-            <PrivateRoute allowedTypes={['Secretaria']}>
-              <SecretaryDashboard />
-            </PrivateRoute>
-          }
-        />
-        <Route
-          path="/secretary/billing"
-          element={
-            <PrivateRoute allowedTypes={['Secretaria']}>
-              <SecretaryBilling />
-            </PrivateRoute>
-          }
-        />
-        <Route
-          path="/secretary/history"
-          element={
-            <PrivateRoute allowedTypes={['Secretaria']}>
-              <SecretaryHistory />
-            </PrivateRoute>
-          }
-        />
-        <Route
-          path="/technician"
-          element={
-            <PrivateRoute allowedTypes={['Tecnico']}>
-              <TechnicianDashboard />
-            </PrivateRoute>
-          }
-        />
-        <Route
-          path="/technician/create-order"
-          element={
-            <PrivateRoute allowedTypes={['Tecnico']}>
-              <TechnicianCreateOrder />
-            </PrivateRoute>
-          }
-        />
-        <Route
-          path="/client"
-          element={
-            <PrivateRoute allowedTypes={['Cliente']}>
-              <ClientDashboard />
-            </PrivateRoute>
-          }
-        />
-      </Routes>
-    </Router>
+      </Router>
+    </AuthProvider>
   );
 }
 
