@@ -9,8 +9,8 @@ import Login from "./pages/Login";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminOrders from "./pages/AdminOrders";
 import AdminInventory from "./pages/AdminInventory";
-import AdminParts from "./pages/AdminParts";
-import AdminPrices from "./pages/AdminPrices";
+import AdminUsers from "./pages/AdminUsers";
+import AdminNotifications from "./pages/AdminNotifications";
 import AdminReports from "./pages/AdminReports";
 import SecretaryDashboard from "./pages/SecretaryDashboard";
 import SecretaryBilling from "./pages/SecretaryBilling";
@@ -63,18 +63,18 @@ function App() {
             }
           />
           <Route
-            path="/admin/parts"
+            path="/admin/users"
             element={
               <PrivateRoute allowedRoles={["admin"]}>
-                <AdminParts />
+                <AdminUsers />
               </PrivateRoute>
             }
           />
           <Route
-            path="/admin/prices"
+            path="/admin/notifications"
             element={
               <PrivateRoute allowedRoles={["admin"]}>
-                <AdminPrices />
+                <AdminNotifications />
               </PrivateRoute>
             }
           />

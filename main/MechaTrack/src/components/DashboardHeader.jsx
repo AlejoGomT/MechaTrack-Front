@@ -1,5 +1,7 @@
+// components/DashboardHeader.jsx
 import { Navbar, Nav, Container, Badge } from "react-bootstrap";
 import styled from "@emotion/styled";
+import { useAuth } from "../context/AuthContext";
 import logo from "../assets/images/logo.jpeg";
 
 const HeaderContainer = styled(Navbar)`
@@ -9,11 +11,11 @@ const HeaderContainer = styled(Navbar)`
 
 const Logo = styled.img`
   height: 50px;
-  width: 50px; /* Aseguramos que el ancho y alto sean iguales para un círculo perfecto */
-  border-radius: 50%; /* Hace que el logo sea circular */
+  width: 50px;
+  border-radius: 50%;
   margin-right: 15px;
-  object-fit: contain; /* Asegura que el logo se ajuste bien dentro del círculo */
-  background-color: white; /* Fondo blanco para mejor contraste con el header oscuro */
+  object-fit: contain;
+  background-color: white;
 `;
 
 const Title = styled.h1`
@@ -35,6 +37,17 @@ const DashboardHeader = ({
   activeOrdersCount,
   notificationsCount,
 }) => {
+  const { user } = useAuth();
+
+  // Usar valores de las props si existen, de lo contrario usar el contexto o valores por defecto
+  const displayUserId = userId !== undefined ? userId : user?.id || "N/A";
+  const displayUserName =
+    userName !== undefined ? userName : user?.name || "Usuario";
+  const displayActiveOrders =
+    activeOrdersCount !== undefined ? activeOrdersCount : 0;
+  const displayNotifications =
+    notificationsCount !== undefined ? notificationsCount : 0;
+
   return (
     <HeaderContainer expand="lg">
       <Container fluid>
@@ -43,11 +56,11 @@ const DashboardHeader = ({
           <Title>{title}</Title>
         </Nav>
         <UserInfo>
-          <span>ID: {userId} | </span>
-          <span>Usuario: {userName} | </span>
+          <span>ID: {displayUserId} | </span>
+          <span>Usuario: {displayUserName} | </span>
           <span>
-            Órdenes Activas: {activeOrdersCount} |{" "}
-            <Badge bg="danger">{notificationsCount} Notificaciones</Badge>
+            Órdenes Activas: {displayActiveOrders} |{" "}
+            <Badge bg="danger">{displayNotifications} Notificaciones</Badge>
           </span>
         </UserInfo>
       </Container>
