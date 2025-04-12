@@ -13,8 +13,7 @@ import {
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import CustomButton from "../components/CustomButton";
-import { mockVehicles, mockClientOrders, mockParts } from "../data/mock";
-import { createOrder, updateOrder } from "../services/orderService";
+import { createOrder, getVehicles, getParts } from "../services/orderService";
 import {
   MainContainer,
   Content,
@@ -31,6 +30,7 @@ import styled from "@emotion/styled";
 import { toast } from "react-toastify";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faEye, faCircle } from "@fortawesome/free-solid-svg-icons";
+import { useNavigate } from "react-router-dom";
 
 const ScrollableFormWrapper = styled.div`
   max-height: 80vh;
@@ -63,10 +63,10 @@ const HistoryEmptyMessage = styled.div`
 `;
 
 const technicianMenu = [
-  { label: "Inicio", path: "/technician" },
-  { label: "Crear Orden de Servicio", path: "/technician/create-order" },
-  { label: "Historial de Órdenes", path: "/technician/history" },
-  { label: "Notificaciones", path: "/technician/notifications" },
+  { label: "Inicio", path: "../technician" },
+  { label: "Crear Orden de Servicio", path: "../technician/create-order" },
+  { label: "Historial de Órdenes", path: "../technician/history" },
+  { label: "Notificaciones", path: "../technician/notifications" },
   { label: "Cerrar Sesión", path: "/" },
 ];
 
@@ -85,47 +85,86 @@ const OrderForm = memo(
   }) => {
     const [formData, setFormData] = useState({
       branch: initialData?.branch || "",
-      economicNumber: initialData?.vehicleEconomicNumber || "",
+      economicNumber: initialData?.vehicle_economic_number || "",
       kilometraje: initialData?.kilometraje || "",
       vin: initialData?.vin || "",
       serviceType: initialData?.type || "Reparación",
       serviceDescription: initialData?.description || "",
-      diagnosis: initialData?.initialDiagnosis || "",
+      diagnosis: initialData?.initial_diagnosis || "",
       tasks: initialData?.tasks || "",
       partsList: initialData?.parts || [],
       images: initialData?.images || [],
     });
     const [vehicleData, setVehicleData] = useState(null);
+    const [vehicles, setVehicles] = useState([]);
+    const [parts, setParts] = useState([]);
     const [showHistoryModal, setShowHistoryModal] = useState(false);
     const [showPartsModal, setShowPartsModal] = useState(false);
     const [showHistoryDetailsModal, setShowHistoryDetailsModal] =
       useState(false);
     const [selectedHistoryOrder, setSelectedHistoryOrder] = useState(null);
+    const [history, setHistory] = useState([]);
 
-    const branches = [...new Set(mockVehicles.map((v) => v.Sucursal))];
+    const branches = [...new Set(vehicles.map((v) => v.branch))];
 
     useEffect(() => {
-      const updateVehicleData = () => {
-        const vehicle = mockVehicles.find(
+      // Cargar vehículos
+      const fetchVehicles = async () => {
+        try {
+          const data = await getVehicles();
+          setVehicles(data);
+        } catch (err) {
+          toast.error("Error al cargar vehículos");
+        }
+      };
+      fetchVehicles();
+    }, []);
+
+    useEffect(() => {
+      // Actualizar datos del vehículo
+      const updateVehicleData = async () => {
+        const vehicle = vehicles.find(
           (v) =>
-            v.Económico === formData.economicNumber &&
-            v.Sucursal === formData.branch
+            v.economic_number === formData.economicNumber &&
+            v.branch === formData.branch
         );
         if (vehicle) {
           setVehicleData(vehicle);
           setFormData((prev) => ({
             ...prev,
-            branch: vehicle.Sucursal || prev.branch,
-            economicNumber: vehicle.Económico || prev.economicNumber,
-            kilometraje: vehicle.Kilometraje || prev.kilometraje,
-            vin: vehicle.VIN || prev.vin,
+            branch: vehicle.branch || prev.branch,
+            economicNumber: vehicle.economic_number || prev.economicNumber,
+            kilometraje: vehicle.mileage || prev.kilometraje,
+            vin: vehicle.vin || prev.vin,
           }));
+
+          // Cargar historial
+          try {
+            const historyData = await getOrders({
+              economicNumber: vehicle.economic_number,
+            });
+            setHistory(historyData);
+          } catch (err) {
+            toast.error("Error al cargar historial");
+          }
+
+          // Cargar repuestos compatibles
+          try {
+            const partsData = await getParts(vehicle.model);
+            setParts(partsData);
+          } catch (err) {
+            toast.error("Error al cargar repuestos");
+          }
         } else {
           setVehicleData(null);
+          setHistory([]);
+          setParts([]);
         }
       };
-      if (formData.economicNumber && formData.branch) updateVehicleData();
-    }, [formData.economicNumber, formData.branch]);
+      if (formData.economicNumber && formData.branch) {
+        updateVehicleData();
+      }
+    }, [formData.economicNumber, formData.branch, vehicles]);
 
     const handleInputChange = (e) => {
       const { name, value } = e.target;
@@ -145,8 +184,8 @@ const OrderForm = memo(
             ...part,
             quantity: 1,
             status: "Solicitado",
-            requestedBy: "U002",
-            authorizedBy: null,
+            requested_by: "U002", // Actualizar con user.id
+            authorized_by: null,
           },
         ],
       }));
@@ -155,8 +194,11 @@ const OrderForm = memo(
     };
 
     const handleImageUpload = (e) => {
-      const files = Array.from(e.target.files).map((file) => file.name);
-      setFormData((prev) => ({ ...prev, images: [...prev.images, ...files] }));
+      const files = Array.from(e.target.files);
+      setFormData((prev) => ({
+        ...prev,
+        images: [...prev.images, ...files],
+      }));
       onImageUpload(e);
     };
 
@@ -192,32 +234,18 @@ const OrderForm = memo(
       });
     };
 
-    const handleViewHistoryDetails = (orderNumber) => {
-      const order = mockClientOrders.find((o) => o.id === orderNumber);
-      if (order) {
-        const vehicle = mockVehicles.find(
-          (v) => v.Económico === order.vehicleEconomicNumber
-        );
-        const enrichedOrder = {
-          ...order,
-          branch: vehicle?.Sucursal || order.branch || "",
-          vehicleEconomicNumber:
-            vehicle?.Económico || order.vehicleEconomicNumber,
-          kilometraje: vehicle?.Kilometraje || order.kilometraje || "",
-          vin: vehicle?.VIN || order.vin || "",
-        };
-        setSelectedHistoryOrder(enrichedOrder);
-        setShowHistoryModal(false);
-        setShowHistoryDetailsModal(true);
-      }
+    const handleViewHistoryDetails = (order) => {
+      setSelectedHistoryOrder(order);
+      setShowHistoryModal(false);
+      setShowHistoryDetailsModal(true);
     };
 
-    const hasHistory = vehicleData?.history?.length > 0;
+    const hasHistory = history.length > 0;
     const approvedParts = formData.partsList.filter(
       (part) => part.status === "Aprobado"
     );
-    const filteredVehicles = mockVehicles.filter(
-      (v) => v.Sucursal === formData.branch
+    const filteredVehicles = vehicles.filter(
+      (v) => v.branch === formData.branch
     );
 
     return (
@@ -268,8 +296,8 @@ const OrderForm = memo(
                   >
                     <option value="">Seleccione un N° Económico</option>
                     {filteredVehicles.map((v) => (
-                      <option key={v.Económico} value={v.Económico}>
-                        {v.Económico}
+                      <option key={v.economic_number} value={v.economic_number}>
+                        {v.economic_number}
                       </option>
                     ))}
                   </Form.Select>
@@ -280,7 +308,7 @@ const OrderForm = memo(
                   <Form.Label>Placa del Vehículo</Form.Label>
                   <Form.Control
                     type="text"
-                    value={vehicleData?.Placa || ""}
+                    value={vehicleData?.license_plate || ""}
                     disabled
                     placeholder="Autocompletado"
                   />
@@ -295,7 +323,7 @@ const OrderForm = memo(
                     type="text"
                     value={
                       vehicleData
-                        ? `${vehicleData.Marca} ${vehicleData.Modelo}`
+                        ? `${vehicleData.brand} ${vehicleData.model}`
                         : ""
                     }
                     disabled
@@ -308,7 +336,7 @@ const OrderForm = memo(
                   <Form.Label>Año del Vehículo</Form.Label>
                   <Form.Control
                     type="number"
-                    value={vehicleData?.Año || ""}
+                    value={vehicleData?.year || ""}
                     disabled
                     placeholder="Autocompletado"
                   />
@@ -468,6 +496,7 @@ const OrderForm = memo(
                 multiple
                 onChange={handleImageUpload}
                 disabled={isReadOnly}
+                accept="image/*"
               />
               <Form.Text className="text-muted">
                 Puedes subir varias fotos relacionadas con la orden de servicio.
@@ -475,7 +504,19 @@ const OrderForm = memo(
               {formData.images.length > 0 && (
                 <ul>
                   {formData.images.map((image, index) => (
-                    <li key={index}>{image}</li>
+                    <li key={index}>
+                      {image.name || image}
+                      {typeof image !== "string" && (
+                        <img
+                          src={URL.createObjectURL(image)}
+                          alt="Vista previa"
+                          style={{
+                            maxWidth: "100px",
+                            marginLeft: "10px",
+                          }}
+                        />
+                      )}
+                    </li>
                   ))}
                 </ul>
               )}
@@ -483,9 +524,7 @@ const OrderForm = memo(
 
             <FormActions>
               {!isReadOnly && !hideButtons && (
-                <CustomButton type="submit">
-                  {initialData ? "Actualizar" : "Crear Orden"}
-                </CustomButton>
+                <CustomButton type="submit">Crear Orden</CustomButton>
               )}
               {onCancel && !hideButtons && (
                 <CustomButton type="button" onClick={onCancel}>
@@ -509,7 +548,7 @@ const OrderForm = memo(
             </Modal.Title>
           </Modal.Header>
           <ModalBody>
-            {vehicleData?.history?.length > 0 ? (
+            {hasHistory ? (
               <TableWrapper>
                 <StyledTableModal striped bordered hover>
                   <thead>
@@ -522,11 +561,11 @@ const OrderForm = memo(
                     </tr>
                   </thead>
                   <tbody>
-                    {vehicleData.history.map((entry, index) => (
-                      <tr key={index}>
-                        <td>{entry.orderNumber}</td>
+                    {history.map((entry) => (
+                      <tr key={entry.id}>
+                        <td>{entry.id}</td>
                         <td>{entry.description}</td>
-                        <td>{formatDate(entry.date)}</td>
+                        <td>{formatDate(entry.created_at)}</td>
                         <td>
                           <HistoryStatusIcon status={entry.status}>
                             <FontAwesomeIcon icon={faCircle} />
@@ -537,9 +576,7 @@ const OrderForm = memo(
                           <Button
                             variant="info"
                             size="sm"
-                            onClick={() =>
-                              handleViewHistoryDetails(entry.orderNumber)
-                            }
+                            onClick={() => handleViewHistoryDetails(entry)}
                           >
                             <FontAwesomeIcon icon={faEye} /> Ver Detalles
                           </Button>
@@ -581,10 +618,11 @@ const OrderForm = memo(
           </Modal.Header>
           <ModalBody>
             {selectedHistoryOrder && (
-              <TechnicianCreateOrder
-                order={selectedHistoryOrder}
+              <OrderForm
+                initialData={selectedHistoryOrder}
                 isReadOnly={true}
                 isModal={true}
+                onSubmit={() => {}}
               />
             )}
           </ModalBody>
@@ -624,33 +662,27 @@ const OrderForm = memo(
                   </tr>
                 </thead>
                 <tbody>
-                  {mockParts
-                    .filter(
-                      (part) =>
-                        !vehicleData ||
-                        part.compatibleModels.includes(vehicleData.Modelo)
-                    )
-                    .map((part) => (
-                      <tr key={part.id}>
-                        <td>{part.id}</td>
-                        <td>{part.name}</td>
-                        <td>{part.compatibleModels.join(", ")}</td>
-                        <td>{part.image}</td>
-                        <td>
-                          {part.quantity > 0 ? "Disponible" : "No Disponible"}
-                        </td>
-                        <td>
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            onClick={() => handleRequestPart(part)}
-                            disabled={part.quantity === 0}
-                          >
-                            Solicitar
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
+                  {parts.map((part) => (
+                    <tr key={part.id}>
+                      <td>{part.id}</td>
+                      <td>{part.name}</td>
+                      <td>{part.compatible_models.join(", ")}</td>
+                      <td>{part.image}</td>
+                      <td>
+                        {part.quantity > 0 ? "Disponible" : "No Disponible"}
+                      </td>
+                      <td>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => handleRequestPart(part)}
+                          disabled={part.quantity === 0}
+                        >
+                          Solicitar
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </StyledTableModal>
             </TableWrapper>
@@ -679,9 +711,10 @@ const TechnicianCreateOrder = ({
 }) => {
   const { user } = useAuth();
   const [error, setError] = useState("");
+  const navigate = useNavigate();
 
   const handleSaveOrder = useCallback(
-    (formData) => {
+    async (formData) => {
       try {
         if (!formData.branch || !formData.economicNumber) {
           setError("La sucursal y el número económico son obligatorios.");
@@ -696,63 +729,32 @@ const TechnicianCreateOrder = ({
           return;
         }
 
-        const hasActiveOrder = mockClientOrders.some(
-          (o) =>
-            o.vehicleEconomicNumber === formData.economicNumber &&
-            o.status === "En Proceso" &&
-            o.id !== order?.id
-        );
-        if (hasActiveOrder && !order) {
-          toast.error(
-            `El vehículo (N° Económico ${formData.economicNumber}) ya tiene una orden de servicio activa`
-          );
-          return;
-        }
-
         const orderData = {
-          branch: formData.branch,
           type: formData.serviceType,
           description: formData.serviceDescription,
-          initialDiagnosis: formData.diagnosis,
+          initial_diagnosis: formData.diagnosis,
           tasks: formData.tasks,
           images: formData.images,
-          vehicleEconomicNumber: formData.economicNumber,
-          parts: formData.partsList,
+          technician_id: user.id,
+          vehicle_economic_number: formData.economicNumber,
+          branch: formData.branch,
+          kilometraje: formData.kilometraje,
         };
 
-        if (order) {
-          const updatedOrder = {
-            ...order,
-            ...orderData,
-            history: [
-              ...order.history,
-              {
-                description: formData.diagnosis,
-                date: new Date().toISOString().split("T")[0],
-                status: order.status,
-              },
-            ],
-          };
-          updateOrder(updatedOrder);
-          toast.success(
-            `Orden #${updatedOrder.id} actualizada satisfactoriamente`
-          );
-        } else {
-          const newOrder = createOrder(orderData, user.id);
-          const vehicle = mockVehicles.find(
-            (v) => v.Económico === formData.economicNumber
-          );
-          if (vehicle) vehicle.Kilometraje = formData.kilometraje;
-          toast.success(`Orden #${newOrder.id} creada satisfactoriamente`);
-        }
+        const newOrder = await createOrder(orderData);
+        toast.success(`Orden #${newOrder.id} creada satisfactoriamente`);
 
-        if (onClose) onClose();
+        if (onClose) {
+          onClose();
+        } else {
+          navigate("/technician");
+        }
       } catch (err) {
         console.error("Error al guardar la orden:", err);
-        setError("Ocurrió un error al guardar la orden.");
+        setError(err.response?.data?.message || "Error al crear la orden");
       }
     },
-    [order, onClose, user.id]
+    [user.id, onClose, navigate]
   );
 
   const FormContent = () => (
@@ -766,7 +768,7 @@ const TechnicianCreateOrder = ({
       onRequestPart={() => {}}
       onImageUpload={() => {}}
       disableFields={disableFields}
-      hideButtons={hideButtons} // Pasamos la prop al formulario
+      hideButtons={hideButtons}
     />
   );
 
@@ -783,17 +785,7 @@ const TechnicianCreateOrder = ({
                 order ? "Editar Orden de Servicio" : "Crear Orden de Servicio"
               }
               userId={user.id}
-              userName={user.name}
-              activeOrdersCount={
-                mockClientOrders.filter((o) => o.technicianId === user.id)
-                  .length
-              }
-              notificationsCount={
-                mockClientOrders.filter(
-                  (o) =>
-                    o.technicianId === user.id && o.notifications?.length > 0
-                ).length
-              }
+              userName={`${user.first_name} ${user.last_name}`}
             />
             <FormContent />
           </Content>

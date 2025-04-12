@@ -33,9 +33,7 @@ const PrivateRoute = ({ children, allowedRoles }) => {
 function App() {
   return (
     <AuthProvider>
-      {" "}
-      {/* Envolver todo con AuthProvider */}
-      <Router>
+      <Router future={{ v7_relativeSplatPath: true }}>
         <Routes>
           <Route path="/" element={<Login />} />
           <Route

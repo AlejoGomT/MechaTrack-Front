@@ -1,21 +1,20 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Container,
   Table,
   Form,
   Modal,
-  Alert,
   Button,
   Row,
   Col,
   FormControl,
 } from "react-bootstrap";
 import { useAuth } from "../context/AuthContext";
+import axios from "axios";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import CustomButton from "../components/CustomButton";
 import TechnicianCreateOrder from "./TechnicianCreateOrder";
-import { mockClientOrders, mockVehicles } from "../data/mock";
 import { StyledModal, ModalBody } from "../styles/GlobalStyles";
 import styled from "@emotion/styled";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -37,15 +36,17 @@ const StatusIcon = styled.span`
   color: ${({ status }) => {
     switch (status) {
       case "Finalizado":
-        return "#28a745"; // Verde
+        return "#28a745";
       case "En Proceso":
-        return "#fd7e14"; // Naranja
+        return "#fd7e14";
       case "Pendiente":
-        return "#ffc107"; // Amarillo
+        return "#ffc107";
       case "Pendiente de Facturación":
-        return "#17a2b8"; // Cyan
+        return "#17a2b8";
+      case "Facturado":
+        return "#6c757d";
       default:
-        return "#6c757d"; // Gris
+        return "#6c757d";
     }
   }};
 `;
@@ -87,7 +88,7 @@ const ActionSection = styled.div`
 `;
 
 const AdminOrders = () => {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const [branchFilter, setBranchFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [economicNumberFilter, setEconomicNumberFilter] = useState("");
@@ -96,42 +97,52 @@ const AdminOrders = () => {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [rejectionNote, setRejectionNote] = useState("");
   const [editedParts, setEditedParts] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [branches, setBranches] = useState([]);
 
-  const branches = [...new Set(mockVehicles.map((v) => v.Sucursal))];
-  const activeOrdersCount = mockClientOrders.filter(
+  useEffect(() => {
+    const fetchOrders = async () => {
+      try {
+        const response = await axios.get("/api/orders", {
+          headers: { Authorization: `Bearer ${token}` },
+          params: {
+            status: statusFilter,
+            economicNumber: economicNumberFilter,
+            orderNumber: orderNumberFilter,
+          },
+        });
+        setOrders(response.data);
+        const uniqueBranches = [
+          ...new Set(response.data.map((o) => o.branch).filter(Boolean)),
+        ];
+        setBranches(uniqueBranches);
+      } catch (error) {
+        toast.error("Error al cargar órdenes");
+        console.error(error);
+      }
+    };
+    if (token) fetchOrders();
+  }, [statusFilter, economicNumberFilter, orderNumberFilter, token]);
+
+  const activeOrdersCount = orders.filter(
     (o) => o.status === "En Proceso"
   ).length;
-  const notificationsCount = mockClientOrders.filter(
+  const notificationsCount = orders.filter(
     (o) => o.notifications?.length > 0
   ).length;
 
-  const filteredOrders = mockClientOrders.filter((order) => {
-    const vehicle = mockVehicles.find(
-      (v) => v.Económico === order.vehicleEconomicNumber
-    );
-    return (
-      (!branchFilter || vehicle?.Sucursal === branchFilter) &&
-      (!statusFilter || order.status === statusFilter) &&
-      (!economicNumberFilter ||
-        order.vehicleEconomicNumber.includes(economicNumberFilter)) &&
-      (!orderNumberFilter || order.id.includes(orderNumberFilter))
-    );
-  });
-
-  const handleViewDetails = (order) => {
-    const vehicle = mockVehicles.find(
-      (v) => v.Económico === order.vehicleEconomicNumber
-    );
-    const enrichedOrder = {
-      ...order,
-      branch: vehicle?.Sucursal || "",
-      vehicleEconomicNumber: vehicle?.Económico || order.vehicleEconomicNumber,
-      kilometraje: vehicle?.Kilometraje || order.kilometraje || "",
-      vin: vehicle?.VIN || order.vin || "",
-    };
-    setSelectedOrder(enrichedOrder);
-    setEditedParts(enrichedOrder.parts || []);
-    setShowModal(true);
+  const handleViewDetails = async (order) => {
+    try {
+      const response = await axios.get(`/api/orders/${order.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setSelectedOrder(response.data);
+      setEditedParts(response.data.parts || []);
+      setShowModal(true);
+    } catch (error) {
+      toast.error("Error al cargar detalles de la orden");
+      console.error(error);
+    }
   };
 
   const formatDate = (dateStr) => {
@@ -143,65 +154,51 @@ const AdminOrders = () => {
     });
   };
 
-  const handlePartAction = (partIndex, action) => {
-    const updatedOrder = { ...selectedOrder };
-    const part = updatedOrder.parts[partIndex];
-    if (action === "accept") {
-      part.status = "Aprobado";
-      part.authorizedBy = user.id;
-      toast.success(`Repuesto ${part.name} aprobado`);
-    } else if (action === "reject" && rejectionNote) {
-      part.status = "Rechazado";
-      part.authorizedBy = user.id;
-      updatedOrder.notifications = updatedOrder.notifications || [];
-      updatedOrder.notifications.push({
-        message: `Repuesto ${part.name} rechazado: ${rejectionNote}`,
-        to: selectedOrder.technicianId,
-        status: "Pendiente",
-        date: new Date().toISOString().split("T")[0],
+  const handlePartAction = async (partIndex, action) => {
+    const part = selectedOrder.parts[partIndex];
+    try {
+      const response = await axios.put(
+        `/api/orders/${selectedOrder.id}/parts/${part.part_id}`,
+        { action, note: rejectionNote },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const updatedOrder = await axios.get(`/api/orders/${selectedOrder.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
       });
-      toast.error(`Repuesto ${part.name} rechazado`);
+      setSelectedOrder(updatedOrder.data);
+      toast.success(
+        `Repuesto ${part.name} ${
+          action === "accept" ? "aprobado" : "rechazado"
+        }`
+      );
       setRejectionNote("");
+    } catch (error) {
+      toast.error("Error al procesar repuesto");
+      console.error(error);
     }
-    const orderIndex = mockClientOrders.findIndex(
-      (o) => o.id === updatedOrder.id
-    );
-    mockClientOrders[orderIndex] = updatedOrder;
-    setSelectedOrder(updatedOrder);
   };
 
-  const handleFinalizeAction = (action) => {
-    const updatedOrder = { ...selectedOrder };
-    if (action === "accept") {
-      updatedOrder.status = "Pendiente de Facturación";
-      updatedOrder.history.push({
-        description: "Finalización aprobada por administrador",
-        date: new Date().toISOString().split("T")[0],
-        status: "Pendiente de Facturación",
+  const handleFinalizeAction = async (action) => {
+    try {
+      const response = await axios.put(
+        `/api/orders/${selectedOrder.id}/finalize`,
+        { action, note: rejectionNote },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const updatedOrder = await axios.get(`/api/orders/${selectedOrder.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
       });
-      toast.success(`Orden #${updatedOrder.id} aprobada para facturación`);
-    } else if (action === "reject" && rejectionNote) {
-      updatedOrder.status = "En Proceso";
-      updatedOrder.notifications = updatedOrder.notifications || [];
-      updatedOrder.notifications.push({
-        message: `Finalización rechazada: ${rejectionNote}`,
-        to: updatedOrder.technicianId,
-        status: "Pendiente",
-        date: new Date().toISOString().split("T")[0],
-      });
-      updatedOrder.history.push({
-        description: `Finalización rechazada: ${rejectionNote}`,
-        date: new Date().toISOString().split("T")[0],
-        status: "En Proceso",
-      });
-      toast.error(`Orden #${updatedOrder.id} rechazada`);
+      setSelectedOrder(updatedOrder.data);
+      toast.success(
+        `Orden #${selectedOrder.id} ${
+          action === "accept" ? "aprobada" : "rechazada"
+        }`
+      );
       setRejectionNote("");
+    } catch (error) {
+      toast.error("Error al procesar finalización");
+      console.error(error);
     }
-    const orderIndex = mockClientOrders.findIndex(
-      (o) => o.id === updatedOrder.id
-    );
-    mockClientOrders[orderIndex] = updatedOrder;
-    setSelectedOrder(updatedOrder);
   };
 
   const handlePartEdit = (index, field, value) => {
@@ -210,19 +207,24 @@ const AdminOrders = () => {
     setEditedParts(updatedParts);
   };
 
-  const saveEditedParts = () => {
-    const updatedOrder = { ...selectedOrder, parts: editedParts };
-    const orderIndex = mockClientOrders.findIndex(
-      (o) => o.id === updatedOrder.id
-    );
-    mockClientOrders[orderIndex] = updatedOrder;
-    setSelectedOrder(updatedOrder);
-    toast.success("Repuestos actualizados");
+  const saveEditedParts = async () => {
+    try {
+      const response = await axios.put(
+        `/api/orders/${selectedOrder.id}`,
+        { ...selectedOrder, parts: editedParts },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setSelectedOrder(response.data);
+      toast.success("Repuestos actualizados");
+    } catch (error) {
+      toast.error("Error al guardar repuestos");
+      console.error(error);
+    }
   };
 
   const userData = {
     userId: user?.id,
-    userName: user?.name,
+    userName: `${user?.first_name} ${user?.last_name}`,
     activeOrdersCount,
     notificationsCount,
   };
@@ -263,6 +265,7 @@ const AdminOrders = () => {
                 <option value="Pendiente de Facturación">
                   Pendiente de Facturación
                 </option>
+                <option value="Facturado">Facturado</option>
               </Form.Select>
             </Form.Group>
             <Form.Group>
@@ -297,35 +300,29 @@ const AdminOrders = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredOrders.map((order) => {
-                const vehicle = mockVehicles.find(
-                  (v) => v.Económico === order.vehicleEconomicNumber
-                );
-                return (
-                  <tr key={order.id}>
-                    <td>{order.vehicleEconomicNumber}</td>
-                    <td>{order.id}</td>
-                    <td>{vehicle?.Sucursal || "-"}</td>
-                    <td>
-                      <StatusIcon status={order.status}>
-                        <FontAwesomeIcon icon={faCircle} />
-                      </StatusIcon>
-                      {order.status}
-                    </td>
-                    <td>
-                      <CustomButton onClick={() => handleViewDetails(order)}>
-                        Ver Detalles
-                      </CustomButton>
-                    </td>
-                  </tr>
-                );
-              })}
+              {orders.map((order) => (
+                <tr key={order.id}>
+                  <td>{order.vehicle_economic_number}</td>
+                  <td>{order.id}</td>
+                  <td>{order.branch || "-"}</td>
+                  <td>
+                    <StatusIcon status={order.status}>
+                      <FontAwesomeIcon icon={faCircle} />
+                    </StatusIcon>
+                    {order.status}
+                  </td>
+                  <td>
+                    <CustomButton onClick={() => handleViewDetails(order)}>
+                      Ver Detalles
+                    </CustomButton>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </Table>
         </Container>
       </div>
 
-      {/* Modal de detalles */}
       <StyledModal
         show={showModal}
         onHide={() => setShowModal(false)}
@@ -336,7 +333,6 @@ const AdminOrders = () => {
           <Modal.Title>Detalles de la Orden #{selectedOrder?.id}</Modal.Title>
         </Modal.Header>
         <ModalBody style={{ display: "flex", padding: 0 }}>
-          {/* Barra lateral del historial */}
           <HistorySidebar>
             <h5>Historial</h5>
             {selectedOrder?.history?.length > 0 ? (
@@ -354,25 +350,24 @@ const AdminOrders = () => {
             ) : (
               <p>Sin historial disponible</p>
             )}
-            {selectedOrder?.status === "Pendiente de Facturación" && (
-              <>
-                <HistoryItem>
-                  <HistoryTitle>Número de Factura</HistoryTitle>
-                  <HistoryDate>
-                    FAC-{selectedOrder.id}-2025 (Simulado)
-                  </HistoryDate>
-                </HistoryItem>
-                <HistoryItem>
-                  <HistoryTitle>Pedido de Albarán</HistoryTitle>
-                  <HistoryDate>
-                    ALB-{selectedOrder.id}-2025 (Simulado)
-                  </HistoryDate>
-                </HistoryItem>
-              </>
-            )}
+            {selectedOrder?.status === "Facturado" &&
+              selectedOrder?.invoice && (
+                <>
+                  <HistoryItem>
+                    <HistoryTitle>Número de Factura</HistoryTitle>
+                    <HistoryDate>
+                      {selectedOrder.invoice.invoice_number}
+                    </HistoryDate>
+                  </HistoryItem>
+                  <HistoryItem>
+                    <HistoryTitle>Pedido de Albarán</HistoryTitle>
+                    <HistoryDate>
+                      {selectedOrder.invoice.delivery_note_number}
+                    </HistoryDate>
+                  </HistoryItem>
+                </>
+              )}
           </HistorySidebar>
-
-          {/* Contenido principal */}
           <div style={{ flex: 1, padding: "15px" }}>
             {selectedOrder && (
               <TechnicianCreateOrder
@@ -381,10 +376,8 @@ const AdminOrders = () => {
                 isModal={true}
               />
             )}
-
-            {/* Acciones según estado */}
             {selectedOrder?.status === "En Proceso" &&
-              selectedOrder?.notifications?.length > 0 && (
+              selectedOrder?.parts?.some((p) => p.status === "Solicitado") && (
                 <ActionSection>
                   <h6>Solicitudes de Repuestos Pendientes</h6>
                   {selectedOrder.parts
@@ -429,7 +422,6 @@ const AdminOrders = () => {
                   </Form.Group>
                 </ActionSection>
               )}
-
             {selectedOrder?.status === "Pendiente" && (
               <ActionSection>
                 <h6>Revisión de Finalización</h6>

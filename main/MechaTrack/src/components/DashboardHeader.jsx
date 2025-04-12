@@ -1,7 +1,8 @@
-// components/DashboardHeader.jsx
+import { useState, useEffect } from "react";
 import { Navbar, Nav, Container, Badge } from "react-bootstrap";
 import styled from "@emotion/styled";
 import { useAuth } from "../context/AuthContext";
+import { getOrders, getNotifications } from "../services/orderService";
 import logo from "../assets/images/logo.jpeg";
 
 const HeaderContainer = styled(Navbar)`
@@ -30,23 +31,32 @@ const UserInfo = styled.div`
   font-size: 1rem;
 `;
 
-const DashboardHeader = ({
-  title,
-  userId,
-  userName,
-  activeOrdersCount,
-  notificationsCount,
-}) => {
+const DashboardHeader = ({ title }) => {
   const { user } = useAuth();
+  const [activeOrdersCount, setActiveOrdersCount] = useState(0);
+  const [notificationsCount, setNotificationsCount] = useState(0);
 
-  // Usar valores de las props si existen, de lo contrario usar el contexto o valores por defecto
-  const displayUserId = userId !== undefined ? userId : user?.id || "N/A";
-  const displayUserName =
-    userName !== undefined ? userName : user?.name || "Usuario";
-  const displayActiveOrders =
-    activeOrdersCount !== undefined ? activeOrdersCount : 0;
-  const displayNotifications =
-    notificationsCount !== undefined ? notificationsCount : 0;
+  useEffect(() => {
+    const fetchCounts = async () => {
+      if (user) {
+        try {
+          // Contar órdenes activas
+          const orders = await getOrders({
+            technician_id: user.id,
+            status: "En Proceso",
+          });
+          setActiveOrdersCount(orders.length);
+
+          // Contar notificaciones
+          const notifications = await getNotifications({ user_id: user.id });
+          setNotificationsCount(notifications.length);
+        } catch (err) {
+          console.error("Error al cargar contadores:", err);
+        }
+      }
+    };
+    fetchCounts();
+  }, [user]);
 
   return (
     <HeaderContainer expand="lg">
@@ -56,11 +66,14 @@ const DashboardHeader = ({
           <Title>{title}</Title>
         </Nav>
         <UserInfo>
-          <span>ID: {displayUserId} | </span>
-          <span>Usuario: {displayUserName} | </span>
+          <span>ID: {user?.id || "N/A"} | </span>
           <span>
-            Órdenes Activas: {displayActiveOrders} |{" "}
-            <Badge bg="danger">{displayNotifications} Notificaciones</Badge>
+            Usuario: {user ? `${user.first_name} ${user.last_name}` : "Usuario"}{" "}
+            |{" "}
+          </span>
+          <span>
+            Órdenes Activas: {activeOrdersCount} |{" "}
+            <Badge bg="danger">{notificationsCount} Notificaciones</Badge>
           </span>
         </UserInfo>
       </Container>
