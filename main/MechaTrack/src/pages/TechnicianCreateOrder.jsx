@@ -113,11 +113,11 @@ const OrderForm = memo(
     const branches = [...new Set(vehicles.map((v) => v.branch))];
 
     useEffect(() => {
-      console.log("initialData:", initialData);
+      //console.log("initialData:", initialData);
       const fetchVehicles = async () => {
         try {
           const data = await getVehicles();
-          console.log("Vehículos cargados:", data);
+          //console.log("Vehículos cargados:", data);
           setVehicles(data);
           if (initialData?.vehicle_economic_number && initialData?.branch) {
             const vehicle = data.find(
@@ -146,14 +146,12 @@ const OrderForm = memo(
                     ? initialData.parts
                     : prev.partsList,
                 images: initialData?.images || prev.images,
-                // Asegurar que los datos del vehículo se mantengan
                 plate: vehicle.plate || prev.plate || "",
                 brand: vehicle.brand || prev.brand || "",
                 model: vehicle.model || prev.model || "",
                 year: vehicle.year || prev.year || "",
               }));
             } else {
-              // Si no se encuentra el vehículo, mantener los datos de initialData
               setFormData((prev) => ({
                 ...prev,
                 branch: initialData.branch || prev.branch,
@@ -202,24 +200,33 @@ const OrderForm = memo(
             model: vehicle.model || prev.model || "",
             year: vehicle.year || prev.year || "",
           }));
-          if (vehicle.economic_number) {
+          if (vehicle.economic_number && vehicle.branch) {
             try {
               const historyData = await getOrders({
                 vehicle_economic_number: vehicle.economic_number,
+                branch: vehicle.branch, // Añadir branch al filtro
               });
-              setHistory(
-                historyData.filter((order) => order.id !== initialData?.id)
+              const filteredHistory = historyData.filter(
+                (order) =>
+                  order.id !== initialData?.id &&
+                  order.vehicle_economic_number === vehicle.economic_number &&
+                  order.branch === vehicle.branch
               );
+              //console.log("Historial filtrado:", filteredHistory);
+              setHistory(filteredHistory);
             } catch (err) {
               console.error("Error al cargar historial:", err);
               setHistory([]);
             }
-          }
-          try {
-            const partsData = await getParts(vehicle.model);
-            setParts(partsData);
-          } catch (err) {
-            toast.error("Error al cargar repuestos");
+            try {
+              const partsData = await getParts(vehicle.model);
+              setParts(partsData);
+            } catch (err) {
+              toast.error("Error al cargar repuestos");
+            }
+          } else {
+            setHistory([]);
+            setParts([]);
           }
         } else {
           setVehicleData(null);
@@ -272,7 +279,7 @@ const OrderForm = memo(
       if (isSubmitting) return;
       setIsSubmitting(true);
       setError("");
-      console.log("Formulario enviado:", formData);
+      //console.log("Formulario enviado:", formData);
 
       const requiredFields = [
         { key: "branch", label: "Sucursal" },

@@ -47,6 +47,8 @@ const TechnicianDashboard = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showViewFinalizedModal, setShowViewFinalizedModal] = useState(false);
   const [economicNumberFilter, setEconomicNumberFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("Todos");
+  const [orderNumberFilter, setOrderNumberFilter] = useState("");
   const [orders, setOrders] = useState([]);
   const [vehicles, setVehicles] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -59,10 +61,10 @@ const TechnicianDashboard = () => {
           getOrders({ technician_id: user.id }),
           getVehicles(),
         ]);
-        console.log("Datos cargados:", {
+        /*console.log("Datos cargados:", {
           orders: ordersData,
           vehicles: vehiclesData,
-        });
+        });*/
         setOrders(ordersData);
         setVehicles(vehiclesData);
       } catch (err) {
@@ -87,11 +89,17 @@ const TechnicianDashboard = () => {
   ).length;
 
   const filteredOrders = activeAndPendingOrders
-    .filter((order) =>
-      economicNumberFilter
+    .filter((order) => {
+      const matchesStatus =
+        statusFilter === "Todos" || order.status === statusFilter;
+      const matchesOrderNumber = orderNumberFilter
+        ? String(order.id).includes(orderNumberFilter)
+        : true;
+      const matchesEconomicNumber = economicNumberFilter
         ? order.vehicle_economic_number.includes(economicNumberFilter)
-        : true
-    )
+        : true;
+      return matchesStatus && matchesOrderNumber && matchesEconomicNumber;
+    })
     .map((order) => ({
       id: order.id,
       title: `Orden #${order.id}`,
@@ -227,6 +235,10 @@ const TechnicianDashboard = () => {
           <OrderFilters
             economicNumberFilter={economicNumberFilter}
             setEconomicNumberFilter={setEconomicNumberFilter}
+            statusFilter={statusFilter}
+            setStatusFilter={setStatusFilter}
+            orderNumberFilter={orderNumberFilter}
+            setOrderNumberFilter={setOrderNumberFilter}
           />
           <OrderList orders={filteredOrders} />
         </Container>
