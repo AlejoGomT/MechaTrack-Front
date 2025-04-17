@@ -13,7 +13,13 @@ import {
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import CustomButton from "../components/CustomButton";
-import { createOrder, getVehicles, getParts } from "../services/orderService";
+import {
+  createOrder,
+  getVehicles,
+  getParts,
+  updateOrder,
+  getOrders,
+} from "../services/orderService";
 import {
   MainContainer,
   Content,
@@ -43,13 +49,13 @@ const HistoryStatusIcon = styled.span`
   color: ${({ status }) => {
     switch (status) {
       case "Finalizado":
-        return "#28a745"; // Verde
+        return "#28a745";
       case "En Proceso":
-        return "#fd7e14"; // Naranja
+        return "#fd7e14";
       case "Pendiente":
-        return "#ffc107"; // Amarillo
+        return "#ffc107";
       default:
-        return "#6c757d"; // Gris
+        return "#6c757d";
     }
   }};
 `;
@@ -76,12 +82,9 @@ const OrderForm = memo(
     onSubmit,
     onCancel,
     isReadOnly,
-    error,
-    onShowHistory,
-    onRequestPart,
-    onImageUpload,
     disableFields = [],
     hideButtons = false,
+    formRef,
   }) => {
     const [formData, setFormData] = useState({
       branch: initialData?.branch || "",
@@ -92,7 +95,7 @@ const OrderForm = memo(
       serviceDescription: initialData?.description || "",
       diagnosis: initialData?.initial_diagnosis || "",
       tasks: initialData?.tasks || "",
-      partsList: initialData?.parts || [],
+      partsList: initialData?.parts?.length > 0 ? initialData.parts : [],
       images: initialData?.images || [],
     });
     const [vehicleData, setVehicleData] = useState(null);
@@ -104,24 +107,82 @@ const OrderForm = memo(
       useState(false);
     const [selectedHistoryOrder, setSelectedHistoryOrder] = useState(null);
     const [history, setHistory] = useState([]);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [error, setError] = useState("");
 
     const branches = [...new Set(vehicles.map((v) => v.branch))];
 
     useEffect(() => {
-      // Cargar vehículos
+      console.log("initialData:", initialData);
       const fetchVehicles = async () => {
         try {
           const data = await getVehicles();
+          console.log("Vehículos cargados:", data);
           setVehicles(data);
+          if (initialData?.vehicle_economic_number && initialData?.branch) {
+            const vehicle = data.find(
+              (v) =>
+                v.economic_number === initialData.vehicle_economic_number &&
+                v.branch === initialData.branch
+            );
+            if (vehicle) {
+              setVehicleData(vehicle);
+              setFormData((prev) => ({
+                ...prev,
+                branch: vehicle.branch || prev.branch,
+                economicNumber: vehicle.economic_number || prev.economicNumber,
+                kilometraje:
+                  vehicle.mileage ||
+                  initialData.kilometraje ||
+                  prev.kilometraje,
+                vin: vehicle.vin || prev.vin,
+                serviceType: initialData?.type || prev.serviceType,
+                serviceDescription:
+                  initialData?.description || prev.serviceDescription,
+                diagnosis: initialData?.initial_diagnosis || prev.diagnosis,
+                tasks: initialData?.tasks || prev.tasks,
+                partsList:
+                  initialData?.parts?.length > 0
+                    ? initialData.parts
+                    : prev.partsList,
+                images: initialData?.images || prev.images,
+                // Asegurar que los datos del vehículo se mantengan
+                plate: vehicle.plate || prev.plate || "",
+                brand: vehicle.brand || prev.brand || "",
+                model: vehicle.model || prev.model || "",
+                year: vehicle.year || prev.year || "",
+              }));
+            } else {
+              // Si no se encuentra el vehículo, mantener los datos de initialData
+              setFormData((prev) => ({
+                ...prev,
+                branch: initialData.branch || prev.branch,
+                economicNumber:
+                  initialData.vehicle_economic_number || prev.economicNumber,
+                kilometraje: initialData.kilometraje || prev.kilometraje,
+                vin: initialData.vin || prev.vin,
+                serviceType: initialData?.type || prev.serviceType,
+                serviceDescription:
+                  initialData?.description || prev.serviceDescription,
+                diagnosis: initialData?.initial_diagnosis || prev.diagnosis,
+                tasks: initialData?.tasks || prev.tasks,
+                partsList:
+                  initialData?.parts?.length > 0
+                    ? initialData.parts
+                    : prev.partsList,
+                images: initialData?.images || prev.images,
+              }));
+            }
+          }
         } catch (err) {
-          toast.error("Error al cargar vehículos");
+          console.error("Error al cargar vehículos:", err);
+          toast.error(err.message || "Error al cargar vehículos");
         }
       };
       fetchVehicles();
-    }, []);
+    }, [initialData]);
 
     useEffect(() => {
-      // Actualizar datos del vehículo
       const updateVehicleData = async () => {
         const vehicle = vehicles.find(
           (v) =>
@@ -136,19 +197,24 @@ const OrderForm = memo(
             economicNumber: vehicle.economic_number || prev.economicNumber,
             kilometraje: vehicle.mileage || prev.kilometraje,
             vin: vehicle.vin || prev.vin,
+            plate: vehicle.plate || prev.plate || "",
+            brand: vehicle.brand || prev.brand || "",
+            model: vehicle.model || prev.model || "",
+            year: vehicle.year || prev.year || "",
           }));
-
-          // Cargar historial
-          try {
-            const historyData = await getOrders({
-              economicNumber: vehicle.economic_number,
-            });
-            setHistory(historyData);
-          } catch (err) {
-            toast.error("Error al cargar historial");
+          if (vehicle.economic_number) {
+            try {
+              const historyData = await getOrders({
+                vehicle_economic_number: vehicle.economic_number,
+              });
+              setHistory(
+                historyData.filter((order) => order.id !== initialData?.id)
+              );
+            } catch (err) {
+              console.error("Error al cargar historial:", err);
+              setHistory([]);
+            }
           }
-
-          // Cargar repuestos compatibles
           try {
             const partsData = await getParts(vehicle.model);
             setParts(partsData);
@@ -161,10 +227,10 @@ const OrderForm = memo(
           setParts([]);
         }
       };
-      if (formData.economicNumber && formData.branch) {
+      if (formData.economicNumber && formData.branch && vehicles.length > 0) {
         updateVehicleData();
       }
-    }, [formData.economicNumber, formData.branch, vehicles]);
+    }, [formData.economicNumber, formData.branch, vehicles, initialData?.id]);
 
     const handleInputChange = (e) => {
       const { name, value } = e.target;
@@ -181,16 +247,16 @@ const OrderForm = memo(
         partsList: [
           ...prev.partsList,
           {
-            ...part,
+            part_id: part.id,
+            name: part.name,
             quantity: 1,
             status: "Solicitado",
-            requested_by: "U002", // Actualizar con user.id
+            requested_by: "U002",
             authorized_by: null,
           },
         ],
       }));
       setShowPartsModal(false);
-      onRequestPart(part);
     };
 
     const handleImageUpload = (e) => {
@@ -199,11 +265,15 @@ const OrderForm = memo(
         ...prev,
         images: [...prev.images, ...files],
       }));
-      onImageUpload(e);
     };
 
-    const handleFormSubmit = (e) => {
+    const handleFormSubmit = async (e) => {
       e.preventDefault();
+      if (isSubmitting) return;
+      setIsSubmitting(true);
+      setError("");
+      console.log("Formulario enviado:", formData);
+
       const requiredFields = [
         { key: "branch", label: "Sucursal" },
         { key: "economicNumber", label: "N° Económico" },
@@ -211,18 +281,22 @@ const OrderForm = memo(
         { key: "serviceType", label: "Tipo de Servicio" },
         { key: "serviceDescription", label: "Descripción del Servicio" },
         { key: "diagnosis", label: "Diagnóstico Inicial" },
+        { key: "tasks", label: "Tareas" },
       ];
       for (const field of requiredFields) {
         if (!formData[field.key]) {
+          setError(`${field.label} es obligatorio`);
           toast.error(`${field.label} es obligatorio`);
+          setIsSubmitting(false);
           return;
         }
       }
-      if (formData.images.length === 0) {
-        toast.error("Se requiere al menos una foto de evidencia");
-        return;
+
+      try {
+        await onSubmit(formData);
+      } finally {
+        setIsSubmitting(false);
       }
-      onSubmit(formData);
     };
 
     const formatDate = (dateStr) => {
@@ -241,9 +315,6 @@ const OrderForm = memo(
     };
 
     const hasHistory = history.length > 0;
-    const approvedParts = formData.partsList.filter(
-      (part) => part.status === "Aprobado"
-    );
     const filteredVehicles = vehicles.filter(
       (v) => v.branch === formData.branch
     );
@@ -253,7 +324,7 @@ const OrderForm = memo(
         {error && <Alert variant="danger">{error}</Alert>}
         <FormSectionTitle>Datos del Vehículo</FormSectionTitle>
         <ScrollableFormWrapper>
-          <Form onSubmit={handleFormSubmit}>
+          <Form onSubmit={handleFormSubmit} ref={formRef}>
             <Row>
               <Col md={6}>
                 <Form.Group className="mb-3">
@@ -308,7 +379,7 @@ const OrderForm = memo(
                   <Form.Label>Placa del Vehículo</Form.Label>
                   <Form.Control
                     type="text"
-                    value={vehicleData?.license_plate || ""}
+                    value={vehicleData?.plate || formData.plate || ""}
                     disabled
                     placeholder="Autocompletado"
                   />
@@ -324,6 +395,8 @@ const OrderForm = memo(
                     value={
                       vehicleData
                         ? `${vehicleData.brand} ${vehicleData.model}`
+                        : formData.brand && formData.model
+                        ? `${formData.brand} ${formData.model}`
                         : ""
                     }
                     disabled
@@ -336,7 +409,7 @@ const OrderForm = memo(
                   <Form.Label>Año del Vehículo</Form.Label>
                   <Form.Control
                     type="number"
-                    value={vehicleData?.year || ""}
+                    value={vehicleData?.year || formData.year || ""}
                     disabled
                     placeholder="Autocompletado"
                   />
@@ -436,18 +509,18 @@ const OrderForm = memo(
                 <Table striped bordered hover>
                   <thead>
                     <tr>
+                      <th>Nombre</th>
                       <th>Código</th>
                       <th>Cantidad</th>
-                      <th>Foto</th>
                       <th>Estado</th>
                     </tr>
                   </thead>
                   <tbody>
                     {formData.partsList.map((part, index) => (
                       <tr key={index}>
-                        <td>{part.id}</td>
+                        <td>{part.name || "Desconocido"}</td>
+                        <td>{part.part_id}</td>
                         <td>{part.quantity}</td>
-                        <td>{part.image}</td>
                         <td>{part.status}</td>
                       </tr>
                     ))}
@@ -455,31 +528,6 @@ const OrderForm = memo(
                 </Table>
               ) : (
                 <p>No hay repuestos solicitados.</p>
-              )}
-              {isReadOnly && approvedParts.length > 0 && (
-                <>
-                  <Form.Label>Repuestos Aprobados</Form.Label>
-                  <Table striped bordered hover>
-                    <thead>
-                      <tr>
-                        <th>Código</th>
-                        <th>Cantidad</th>
-                        <th>Foto</th>
-                        <th>Estado</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {approvedParts.map((part, index) => (
-                        <tr key={index}>
-                          <td>{part.id}</td>
-                          <td>{part.quantity}</td>
-                          <td>{part.image}</td>
-                          <td>{part.status}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </Table>
-                </>
               )}
               {!isReadOnly && (
                 <CustomButton onClick={() => setShowPartsModal(true)}>
@@ -510,10 +558,7 @@ const OrderForm = memo(
                         <img
                           src={URL.createObjectURL(image)}
                           alt="Vista previa"
-                          style={{
-                            maxWidth: "100px",
-                            marginLeft: "10px",
-                          }}
+                          style={{ maxWidth: "100px", marginLeft: "10px" }}
                         />
                       )}
                     </li>
@@ -522,20 +567,21 @@ const OrderForm = memo(
               )}
             </Form.Group>
 
-            <FormActions>
-              {!isReadOnly && !hideButtons && (
-                <CustomButton type="submit">Crear Orden</CustomButton>
-              )}
-              {onCancel && !hideButtons && (
-                <CustomButton type="button" onClick={onCancel}>
-                  Cerrar
+            {!isReadOnly && !hideButtons && (
+              <FormActions>
+                <CustomButton type="submit" disabled={isSubmitting}>
+                  {initialData?.id ? "Actualizar" : "Crear Orden"}
                 </CustomButton>
-              )}
-            </FormActions>
+                {onCancel && (
+                  <CustomButton type="button" onClick={onCancel}>
+                    Cerrar
+                  </CustomButton>
+                )}
+              </FormActions>
+            )}
           </Form>
         </ScrollableFormWrapper>
 
-        {/* Modal para historial */}
         <StyledModal
           show={showHistoryModal}
           onHide={() => setShowHistoryModal(false)}
@@ -602,7 +648,6 @@ const OrderForm = memo(
           </Modal.Footer>
         </StyledModal>
 
-        {/* Submodal para detalles del historial */}
         <StyledModal
           show={showHistoryDetailsModal}
           onHide={() => {
@@ -621,7 +666,6 @@ const OrderForm = memo(
               <OrderForm
                 initialData={selectedHistoryOrder}
                 isReadOnly={true}
-                isModal={true}
                 onSubmit={() => {}}
               />
             )}
@@ -639,7 +683,6 @@ const OrderForm = memo(
           </Modal.Footer>
         </StyledModal>
 
-        {/* Modal para solicitud de repuestos */}
         <StyledModal
           show={showPartsModal}
           onHide={() => setShowPartsModal(false)}
@@ -707,75 +750,95 @@ const TechnicianCreateOrder = ({
   isReadOnly = false,
   isModal = false,
   disableFields = [],
-  hideButtons = false,
+  formRef,
 }) => {
   const { user } = useAuth();
-  const [error, setError] = useState("");
   const navigate = useNavigate();
+
+  const updateDisableFields = order?.id
+    ? ["branch", "economicNumber", "vin", "serviceType", "serviceDescription"]
+    : disableFields;
+  const hideButtons = isModal; // Ocultar botones en modales, mostrar en crear orden
 
   const handleSaveOrder = useCallback(
     async (formData) => {
       try {
-        if (!formData.branch || !formData.economicNumber) {
-          setError("La sucursal y el número económico son obligatorios.");
-          return;
+        console.log("Guardando orden con datos:", formData);
+        let newOrder;
+        if (order?.id) {
+          newOrder = await updateOrder(order.id, {
+            initial_diagnosis: formData.diagnosis,
+            tasks: formData.tasks,
+            images: formData.images || [],
+            kilometraje: formData.kilometraje
+              ? parseInt(formData.kilometraje, 10)
+              : undefined,
+            branch: formData.branch,
+            vehicle_economic_number: formData.economicNumber,
+          });
+          // Combinar los datos existentes con los actualizados para preservar vehicle_economic_number y otros
+          newOrder = {
+            ...order,
+            ...newOrder,
+            vehicle_economic_number:
+              formData.economicNumber || order.vehicle_economic_number,
+            branch: formData.branch || order.branch,
+            kilometraje:
+              newOrder.kilometraje || formData.kilometraje || order.kilometraje,
+            vin: formData.vin || order.vin || newOrder.vin,
+            plate: order.plate || formData.plate,
+            brand: order.brand || formData.brand,
+            model: order.model || formData.model,
+            year: order.year || formData.year,
+          };
+          toast.success(`Orden #${newOrder.id} actualizada satisfactoriamente`);
+        } else {
+          newOrder = await createOrder({
+            type: formData.serviceType,
+            description: formData.serviceDescription,
+            initial_diagnosis: formData.diagnosis,
+            tasks: formData.tasks,
+            images: formData.images || [],
+            technician_id: user.id,
+            vehicle_economic_number: formData.economicNumber,
+            kilometraje: parseInt(formData.kilometraje, 10),
+            branch: formData.branch,
+            plate: formData.plate,
+            brand: formData.brand,
+            model: formData.model,
+            year: formData.year,
+          });
+          toast.success(`Orden #${newOrder.id} creada satisfactoriamente`);
         }
-        if (
-          !formData.serviceDescription ||
-          !formData.diagnosis ||
-          !formData.tasks
-        ) {
-          setError("Por favor, complete la descripción, diagnóstico y tareas.");
-          return;
-        }
-
-        const orderData = {
-          type: formData.serviceType,
-          description: formData.serviceDescription,
-          initial_diagnosis: formData.diagnosis,
-          tasks: formData.tasks,
-          images: formData.images,
-          technician_id: user.id,
-          vehicle_economic_number: formData.economicNumber,
-          branch: formData.branch,
-          kilometraje: formData.kilometraje,
-        };
-
-        const newOrder = await createOrder(orderData);
-        toast.success(`Orden #${newOrder.id} creada satisfactoriamente`);
-
         if (onClose) {
-          onClose();
+          onClose(newOrder);
         } else {
           navigate("/technician");
         }
+        return newOrder;
       } catch (err) {
         console.error("Error al guardar la orden:", err);
-        setError(err.response?.data?.message || "Error al crear la orden");
+        const message =
+          err.response?.data?.message || "Error al guardar la orden";
+        toast.error(message);
+        throw err;
       }
     },
-    [user.id, onClose, navigate]
-  );
-
-  const FormContent = () => (
-    <OrderForm
-      initialData={order}
-      onSubmit={handleSaveOrder}
-      onCancel={onClose}
-      isReadOnly={isReadOnly}
-      error={error}
-      onShowHistory={() => {}}
-      onRequestPart={() => {}}
-      onImageUpload={() => {}}
-      disableFields={disableFields}
-      hideButtons={hideButtons}
-    />
+    [user.id, onClose, navigate, order]
   );
 
   return (
     <>
       {isModal ? (
-        <FormContent />
+        <OrderForm
+          initialData={order}
+          onSubmit={handleSaveOrder}
+          onCancel={onClose}
+          isReadOnly={isReadOnly}
+          disableFields={updateDisableFields}
+          hideButtons={hideButtons}
+          formRef={formRef}
+        />
       ) : (
         <MainContainer fluid>
           <Sidebar menuItems={technicianMenu} title="Menú" />
@@ -787,7 +850,15 @@ const TechnicianCreateOrder = ({
               userId={user.id}
               userName={`${user.first_name} ${user.last_name}`}
             />
-            <FormContent />
+            <OrderForm
+              initialData={order}
+              onSubmit={handleSaveOrder}
+              onCancel={onClose}
+              isReadOnly={isReadOnly}
+              disableFields={updateDisableFields}
+              hideButtons={hideButtons}
+              formRef={formRef}
+            />
           </Content>
         </MainContainer>
       )}

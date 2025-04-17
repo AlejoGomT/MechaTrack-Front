@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { toast } from "react-toastify";
 import { Navbar, Nav, Container, Badge } from "react-bootstrap";
 import styled from "@emotion/styled";
 import { useAuth } from "../context/AuthContext";
@@ -38,24 +39,19 @@ const DashboardHeader = ({ title }) => {
 
   useEffect(() => {
     const fetchCounts = async () => {
-      if (user) {
-        try {
-          // Contar órdenes activas
-          const orders = await getOrders({
-            technician_id: user.id,
-            status: "En Proceso",
-          });
-          setActiveOrdersCount(orders.length);
-
-          // Contar notificaciones
-          const notifications = await getNotifications({ user_id: user.id });
-          setNotificationsCount(notifications.length);
-        } catch (err) {
-          console.error("Error al cargar contadores:", err);
-        }
+      try {
+        const ordersData = await getOrders({ technician_id: user.id });
+        const notificationsData = await getNotifications(user.id);
+        setActiveOrdersCount(ordersData.length);
+        setNotificationsCount(notificationsData.length);
+      } catch (err) {
+        console.error("Error al cargar contadores:", err);
+        toast.error(err.message || "Error al cargar contadores");
       }
     };
-    fetchCounts();
+    if (user?.id) {
+      fetchCounts();
+    }
   }, [user]);
 
   return (

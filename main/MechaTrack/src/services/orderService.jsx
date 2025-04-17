@@ -28,51 +28,72 @@ export const getOrderById = async (id) => {
 };
 
 export const createOrder = async (orderData) => {
-  const formData = new FormData();
-  formData.append("type", orderData.type);
-  formData.append("description", orderData.description);
-  formData.append("initial_diagnosis", orderData.initial_diagnosis);
-  formData.append("tasks", orderData.tasks);
-  formData.append("technician_id", orderData.technician_id);
-  formData.append("vehicle_economic_number", orderData.vehicle_economic_number);
-  formData.append("branch", orderData.branch);
-  formData.append("kilometraje", orderData.kilometraje);
-  orderData.images.forEach((image) => {
-    formData.append("images", image);
-  });
-
-  const response = await axios.post(`${API_URL}/orders`, formData, {
-    headers: {
-      ...getAuthHeaders(),
-      "Content-Type": "multipart/form-data",
-    },
-  });
-  return response.data;
+  try {
+    const formData = new FormData();
+    Object.entries(orderData).forEach(([key, value]) => {
+      if (key === "images" && Array.isArray(value)) {
+        value.forEach((file, index) => {
+          if (file instanceof File) {
+            formData.append(`images`, file);
+          }
+        });
+      } else {
+        formData.append(key, value);
+      }
+    });
+    const response = await axios.post(`${API_URL}/orders`, formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+        ...getAuthHeaders(),
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error en createOrder:", error.response?.data || error);
+    throw error.response?.data || error;
+  }
 };
 
-export const updateOrder = async (id, orderData) => {
-  const response = await axios.put(
-    `${API_URL}/orders/${id}`,
-    {
-      status: orderData.status,
-      description: orderData.description,
-      initial_diagnosis: orderData.initial_diagnosis,
-      tasks: orderData.tasks,
-      images: orderData.images,
-    },
-    {
-      headers: getAuthHeaders(),
-    }
-  );
-  return response.data;
+export const updateOrder = async (orderId, orderData) => {
+  try {
+    const formData = new FormData();
+    Object.entries(orderData).forEach(([key, value]) => {
+      if (key === "images" && Array.isArray(value)) {
+        value.forEach((item, index) => {
+          if (item instanceof File) {
+            formData.append(`images`, item);
+          } else if (typeof item === "string") {
+            formData.append(`existingImages[${index}]`, item);
+          }
+        });
+      } else {
+        formData.append(key, value);
+      }
+    });
+    const response = await axios.put(`${API_URL}/orders/${orderId}`, formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+        ...getAuthHeaders(),
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error en updateOrder:", error.response?.data || error);
+    throw error.response?.data || error;
+  }
 };
 
 export const getVehicles = async (filters = {}) => {
-  const response = await axios.get(`${API_URL}/vehicles`, {
-    headers: getAuthHeaders(),
-    params: filters,
-  });
-  return response.data;
+  try {
+    const response = await axios.get(`${API_URL}/vehicles`, {
+      headers: getAuthHeaders(),
+      params: filters,
+    });
+    return response.data;
+  } catch (err) {
+    console.error("Error en getVehicles:", err.response?.data);
+    throw err.response?.data || { message: "Error al obtener vehículos" };
+  }
 };
 
 export const getParts = async (model) => {
@@ -83,10 +104,14 @@ export const getParts = async (model) => {
   return response.data;
 };
 
-export const getNotifications = async (filters = {}) => {
-  const response = await axios.get(`${API_URL}/notifications`, {
-    headers: getAuthHeaders(),
-    params: filters,
-  });
-  return response.data;
+export const getNotifications = async (userId) => {
+  try {
+    const response = await axios.get(`${API_URL}/notifications`, {
+      headers: getAuthHeaders(),
+      params: { to_user_id: userId },
+    });
+    return response.data;
+  } catch (err) {
+    throw err.response?.data || { message: "Error al obtener notificaciones" };
+  }
 };
