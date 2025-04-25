@@ -1,44 +1,117 @@
-// src/services/orderService.js
-import { mockClientOrders, mockVehicles } from "../data/mock";
+import axios from "axios";
 
-export const createOrder = (orderData, technicianId) => {
-  const newOrder = {
-    id: `00${mockClientOrders.length + 1}`,
-    ...orderData,
-    technicianId,
-    status: "En Proceso",
-    createdAt: new Date().toISOString().split("T")[0],
-    history: [
-      {
-        description: orderData.initialDiagnosis,
-        date: new Date().toISOString().split("T")[0],
-        status: "En Proceso",
+const API_URL = "http://localhost:5000/api";
+
+const getAuthHeaders = () => {
+  const token = localStorage.getItem("token");
+  return { Authorization: `Bearer ${token}` };
+};
+
+export const login = async (id, password) => {
+  const response = await axios.post(`${API_URL}/auth/login`, { id, password });
+  return response.data;
+};
+
+export const getOrders = async (filters = {}) => {
+  const response = await axios.get(`${API_URL}/orders`, {
+    headers: getAuthHeaders(),
+    params: filters,
+  });
+  return response.data;
+};
+
+export const getOrderById = async (id) => {
+  const response = await axios.get(`${API_URL}/orders/${id}`, {
+    headers: getAuthHeaders(),
+  });
+  return response.data;
+};
+
+export const createOrder = async (orderData) => {
+  try {
+    const formData = new FormData();
+    Object.entries(orderData).forEach(([key, value]) => {
+      if (key === "images" && Array.isArray(value)) {
+        value.forEach((file, index) => {
+          if (file instanceof File) {
+            formData.append(`images`, file);
+          }
+        });
+      } else {
+        formData.append(key, value);
+      }
+    });
+    const response = await axios.post(`${API_URL}/orders`, formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+        ...getAuthHeaders(),
       },
-    ],
-  };
-  mockClientOrders.push(newOrder);
-  updateVehicleHistory(newOrder.vehicleEconomicNumber);
-  return newOrder;
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error en createOrder:", error.response?.data || error);
+    throw error.response?.data || error;
+  }
 };
 
-export const updateOrder = (orderData) => {
-  const index = mockClientOrders.findIndex((o) => o.id === orderData.id);
-  if (index === -1) throw new Error("Orden no encontrada");
-  mockClientOrders[index] = orderData;
-  updateVehicleHistory(orderData.vehicleEconomicNumber);
-  return orderData;
+export const updateOrder = async (orderId, orderData) => {
+  try {
+    const formData = new FormData();
+    Object.entries(orderData).forEach(([key, value]) => {
+      if (key === "images" && Array.isArray(value)) {
+        value.forEach((item, index) => {
+          if (item instanceof File) {
+            formData.append(`images`, item);
+          } else if (typeof item === "string") {
+            formData.append(`existingImages[${index}]`, item);
+          }
+        });
+      } else {
+        formData.append(key, value);
+      }
+    });
+    const response = await axios.put(`${API_URL}/orders/${orderId}`, formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+        ...getAuthHeaders(),
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error en updateOrder:", error.response?.data || error);
+    throw error.response?.data || error;
+  }
 };
 
-const updateVehicleHistory = (economicNumber) => {
-  const vehicle = mockVehicles.find((v) => v.Económico === economicNumber);
-  if (vehicle) {
-    vehicle.history = mockClientOrders
-      .filter((o) => o.vehicleEconomicNumber === vehicle.Económico)
-      .map((o) => ({
-        orderNumber: o.id,
-        description: o.initialDiagnosis,
-        date: o.createdAt,
-        status: o.status,
-      }));
+export const getVehicles = async (filters = {}) => {
+  try {
+    const response = await axios.get(`${API_URL}/vehicles`, {
+      headers: getAuthHeaders(),
+      params: filters,
+    });
+    return response.data;
+  } catch (err) {
+    console.error("Error en getVehicles:", err.response?.data);
+    throw err.response?.data || { message: "Error al obtener vehículos" };
+  }
+};
+
+export const getParts = async (model) => {
+  const response = await axios.get(`${API_URL}/parts`, {
+    headers: getAuthHeaders(),
+    params: { model },
+  });
+  return response.data;
+};
+
+export const getNotifications = async (userId) => {
+  try {
+    const response = await axios.get(`${API_URL}/notifications`, {
+      headers: getAuthHeaders(),
+      params: { to_user_id: userId },
+    });
+    return response.data;
+  } catch (err) {
+    throw err.response?.data || { message: "Error al obtener notificaciones" };
   }
 };

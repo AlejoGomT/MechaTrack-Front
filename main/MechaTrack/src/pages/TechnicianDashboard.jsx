@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Button, Modal } from "react-bootstrap";
@@ -24,15 +24,14 @@ import {
   OrderDetailsBody,
 } from "../styles/GlobalStyles";
 import { Container } from "react-bootstrap";
-import { mockClientOrders, mockVehicles } from "../data/mock";
-import { updateOrder } from "../services/orderService";
+import { getOrders, getVehicles, updateOrder } from "../services/orderService";
 import { toast } from "react-toastify";
 
 const baseTechnicianMenu = [
-  { label: "Inicio", path: "/technician" },
-  { label: "Crear Orden de Servicio", path: "/technician/create-order" },
-  { label: "Historial de Órdenes", path: "/technician/history" },
-  { label: "Notificaciones", path: "/technician/notifications" },
+  { label: "Inicio", path: "../technician" },
+  { label: "Crear Orden de Servicio", path: "../technician/create-order" },
+  { label: "Historial de Órdenes", path: "../technician/history" },
+  { label: "Notificaciones", path: "../technician/notifications" },
   { label: "Cerrar Sesión", path: "/" },
 ];
 
@@ -48,9 +47,34 @@ const TechnicianDashboard = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showViewFinalizedModal, setShowViewFinalizedModal] = useState(false);
   const [economicNumberFilter, setEconomicNumberFilter] = useState("");
+  const [orders, setOrders] = useState([]);
+  const [vehicles, setVehicles] = useState([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const formRef = useRef(null);
 
-  const technicianOrders = mockClientOrders.filter(
-    (order) => order.technicianId === user.id
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [ordersData, vehiclesData] = await Promise.all([
+          getOrders({ technician_id: user.id }),
+          getVehicles(),
+        ]);
+        console.log("Datos cargados:", {
+          orders: ordersData,
+          vehicles: vehiclesData,
+        });
+        setOrders(ordersData);
+        setVehicles(vehiclesData);
+      } catch (err) {
+        console.error("Error al cargar datos:", err);
+        toast.error(err.message || "Error al cargar datos");
+      }
+    };
+    fetchData();
+  }, [user.id]);
+
+  const technicianOrders = orders.filter(
+    (order) => order.technician_id === user.id
   );
   const activeAndPendingOrders = technicianOrders.filter((order) =>
     ["En Proceso", "Pendiente"].includes(order.status)
@@ -61,40 +85,28 @@ const TechnicianDashboard = () => {
   const completedOrdersCount = technicianOrders.filter(
     (order) => order.status === "Finalizado"
   ).length;
-  const notificationsCount = technicianOrders.filter(
-    (order) => order.notifications?.length > 0
-  ).length;
 
   const filteredOrders = activeAndPendingOrders
     .filter((order) =>
       economicNumberFilter
-        ? order.vehicleEconomicNumber.includes(economicNumberFilter)
+        ? order.vehicle_economic_number.includes(economicNumberFilter)
         : true
     )
     .map((order) => ({
       id: order.id,
       title: `Orden #${order.id}`,
-      content: `Vehículo ${order.vehicleEconomicNumber} - ${order.status} (Ingreso: ${order.createdAt})`,
+      content: `Vehículo ${order.vehicle_economic_number} - ${
+        order.status
+      } (Ingreso: ${new Date(order.created_at).toLocaleDateString("es-ES")})`,
       status: order.status,
       onViewClick: (id) => {
         const order = technicianOrders.find((o) => o.id === id);
-        const vehicle = mockVehicles.find(
-          (v) => v.Económico === order.vehicleEconomicNumber
-        );
-        const enrichedOrder = {
-          ...order,
-          branch: vehicle?.Sucursal || order.branch || "",
-          vehicleEconomicNumber:
-            vehicle?.Económico || order.vehicleEconomicNumber,
-          kilometraje: vehicle?.Kilometraje || order.kilometraje || "",
-          vin: vehicle?.VIN || order.vin || "",
-        };
-        setSelectedOrder(enrichedOrder);
+        setSelectedOrder(order);
         setShowOrderCardDetailsModal(true);
       },
       onEditClick: (id) => {
         const order = technicianOrders.find((o) => o.id === id);
-        finishOrder(order);
+        submitForApproval(order);
       },
     }));
 
@@ -119,119 +131,68 @@ const TechnicianDashboard = () => {
     },
   ];
 
-  const userData = {
-    userId: user.id,
-    userName: user.name,
-    activeOrdersCount: activeAndPendingOrders.length,
-    notificationsCount,
+  const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
+
+  const closeModal = (type, nextModal = null, nextModalType = null) => {
+    if (type === "main") {
+      setShowModal(false);
+      setModalType("");
+    } else if (type === "edit") {
+      setShowEditModal(false);
+      setSelectedOrder(null);
+    } else if (type === "details") {
+      setShowOrderCardDetailsModal(false);
+      setSelectedOrder(null);
+    } else if (type === "finalized") {
+      setShowViewFinalizedModal(false);
+      setSelectedOrder(null);
+    }
+    if (nextModal === "main") {
+      setModalType(nextModalType || "pending");
+      setShowModal(true);
+    }
   };
 
-  const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
-  const handleCloseModal = () => {
-    setShowModal(false);
-    setModalType("");
-  };
   const handleEditOrder = (order) => {
-    const vehicle = mockVehicles.find(
-      (v) => v.Económico === order.vehicleEconomicNumber
-    );
-    const enrichedOrder = {
-      ...order,
-      branch: vehicle?.Sucursal || order.branch || "",
-      vehicleEconomicNumber: vehicle?.Económico || order.vehicleEconomicNumber,
-      kilometraje: vehicle?.Kilometraje || order.kilometraje || "",
-      vin: vehicle?.VIN || order.vin || "",
-    };
-    setSelectedOrder(enrichedOrder);
+    setSelectedOrder(order);
     setShowEditModal(true);
     setShowModal(false);
   };
-  const handleCloseEditModal = () => {
-    setShowEditModal(false);
-    setSelectedOrder(null);
-    setModalType("pending");
-    setShowModal(true);
-  };
-  const handleCloseOrderCardDetailsModal = () => {
-    setShowOrderCardDetailsModal(false);
-    setSelectedOrder(null);
-  };
+
   const handleEditFromOrderCardModal = () => {
     setShowOrderCardDetailsModal(false);
     setShowEditModal(true);
   };
+
   const handleViewFinalizedOrder = (order) => {
-    const vehicle = mockVehicles.find(
-      (v) => v.Económico === order.vehicleEconomicNumber
-    );
-    const enrichedOrder = {
-      ...order,
-      branch: vehicle?.Sucursal || order.branch || "",
-      vehicleEconomicNumber: vehicle?.Económico || order.vehicleEconomicNumber,
-      kilometraje: vehicle?.Kilometraje || order.kilometraje || "",
-      vin: vehicle?.VIN || order.vin || "",
-    };
-    setSelectedOrder(enrichedOrder);
+    setSelectedOrder(order);
     setShowViewFinalizedModal(true);
     setShowModal(false);
   };
-  const handleCloseViewFinalizedModal = () => {
-    setShowViewFinalizedModal(false);
-    setSelectedOrder(null);
-    setModalType("completed");
-    setShowModal(true); // Restauramos el comportamiento original
-  };
 
-  const handleUpdateOrder = (formData) => {
-    const updatedOrder = {
-      ...selectedOrder,
-      ...formData,
-      history: [
-        ...selectedOrder.history,
-        {
-          description: formData.diagnosis,
-          date: new Date().toISOString().split("T")[0],
-          status: selectedOrder.status,
-        },
-      ],
-    };
-    updateOrder(updatedOrder);
-    toast.success(`Orden #${updatedOrder.id} actualizada satisfactoriamente`);
-    setShowEditModal(false);
-    setSelectedOrder(updatedOrder);
-    if (showOrderCardDetailsModal) {
-      setShowOrderCardDetailsModal(true); // Volver al modal de detalles
-    } else {
-      setModalType("pending");
-      setShowModal(true); // Volver al modal de pendientes
+  const handleUpdateOrder = async () => {
+    if (isSubmitting || !formRef.current) return;
+    setIsSubmitting(true);
+    try {
+      formRef.current.requestSubmit();
+    } catch (err) {
+      console.error("Error al actualizar:", err);
+      // Error ya manejado en TechnicianCreateOrder
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const finishOrder = (order) => {
-    const updatedOrder = {
-      ...order,
-      status: "Pendiente",
-      notifications: order.notifications
-        ? [
-            ...order.notifications,
-            {
-              message: `Orden ${order.id} finalizada, esperando aprobación`,
-              to: "U001",
-              status: "Pendiente",
-              date: new Date().toISOString().split("T")[0],
-            },
-          ]
-        : [
-            {
-              message: `Orden ${order.id} finalizada, esperando aprobación`,
-              to: "U001",
-              status: "Pendiente",
-              date: new Date().toISOString().split("T")[0],
-            },
-          ],
-    };
-    updateOrder(updatedOrder);
-    toast.info(`Orden #${order.id} enviada para aprobación`);
+  const submitForApproval = async (order) => {
+    try {
+      const updatedOrder = await updateOrder(order.id, { status: "Pendiente" });
+      toast.success(`Orden #${order.id} enviada para aprobación`);
+      setOrders((prev) =>
+        prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o))
+      );
+    } catch (err) {
+      toast.error(err.message || "Error al enviar la orden para aprobación");
+    }
   };
 
   const modalOrders = technicianOrders.filter((order) =>
@@ -251,7 +212,7 @@ const TechnicianDashboard = () => {
         <MobileToggleButton onClick={toggleSidebar}>
           {isSidebarOpen ? "Cerrar" : "Menú"}
         </MobileToggleButton>
-        <DashboardHeader title="Panel de Técnico" {...userData} />
+        <DashboardHeader title="Panel de Técnico" />
         <Container fluid>
           <ContentBtn>
             <h3>Estadísticas</h3>
@@ -270,8 +231,11 @@ const TechnicianDashboard = () => {
           <OrderList orders={filteredOrders} />
         </Container>
 
-        {/* Modal principal (StatCard) */}
-        <StyledModal show={showModal} onHide={handleCloseModal} centered>
+        <StyledModal
+          show={showModal}
+          onHide={() => closeModal("main")}
+          centered
+        >
           <Modal.Header closeButton>
             <Modal.Title>
               {modalType === "pending"
@@ -298,24 +262,27 @@ const TechnicianDashboard = () => {
                   <tbody>
                     {modalOrders.map((order) => (
                       <tr key={order.id}>
-                        <td>{order.vehicleEconomicNumber}</td>
+                        <td>{order.vehicle_economic_number}</td>
                         <td>{order.id}</td>
-                        <td>{order.createdAt}</td>
+                        <td>
+                          {new Date(order.created_at).toLocaleDateString(
+                            "es-ES"
+                          )}
+                        </td>
                         <td
-                          title={
-                            order.history[order.history.length - 1]
-                              ?.description || "Sin diagnóstico"
-                          }
+                          title={order.initial_diagnosis || "Sin diagnóstico"}
                         >
-                          {order.history[order.history.length - 1]
-                            ?.description || "Sin diagnóstico"}
+                          {(
+                            order.initial_diagnosis || "Sin diagnóstico"
+                          ).substring(0, 50) +
+                            (order.initial_diagnosis?.length > 50 ? "..." : "")}
                         </td>
                         <td>
                           {modalType === "pending" ? (
                             order.notifications?.length > 0 ? (
                               "🔔"
                             ) : (
-                              "-"
+                              "Ninguna"
                             )
                           ) : (
                             <Button
@@ -351,16 +318,15 @@ const TechnicianDashboard = () => {
             )}
           </ModalBody>
           <Modal.Footer>
-            <Button variant="secondary" onClick={handleCloseModal}>
+            <Button variant="secondary" onClick={() => closeModal("main")}>
               Cerrar
             </Button>
           </Modal.Footer>
         </StyledModal>
 
-        {/* Modal para detalles de órdenes desde OrderCard */}
         <OrderDetailsModal
           show={showOrderCardDetailsModal}
-          onHide={handleCloseOrderCardDetailsModal}
+          onHide={() => closeModal("details")}
           centered
         >
           <Modal.Header closeButton>
@@ -372,14 +338,12 @@ const TechnicianDashboard = () => {
                 order={selectedOrder}
                 isReadOnly={true}
                 isModal={true}
+                hideButtons={true}
               />
             )}
           </OrderDetailsBody>
           <Modal.Footer>
-            <Button
-              variant="secondary"
-              onClick={handleCloseOrderCardDetailsModal}
-            >
+            <Button variant="secondary" onClick={() => closeModal("details")}>
               Cerrar
             </Button>
             {selectedOrder?.status === "En Proceso" && (
@@ -390,10 +354,9 @@ const TechnicianDashboard = () => {
           </Modal.Footer>
         </OrderDetailsModal>
 
-        {/* Modal para editar órdenes */}
         <StyledModal
           show={showEditModal}
-          onHide={handleCloseEditModal}
+          onHide={() => closeModal("edit", "main")}
           centered
         >
           <Modal.Header closeButton>
@@ -403,30 +366,74 @@ const TechnicianDashboard = () => {
             {selectedOrder && (
               <TechnicianCreateOrder
                 order={selectedOrder}
-                onClose={handleUpdateOrder}
+                onClose={(updatedOrder) => {
+                  if (updatedOrder) {
+                    console.log("Orden actualizada:", updatedOrder);
+                    setOrders((prev) =>
+                      prev.map((o) =>
+                        o.id === updatedOrder.id
+                          ? {
+                              ...o,
+                              ...updatedOrder,
+                              vehicle_economic_number:
+                                updatedOrder.vehicle_economic_number ||
+                                o.vehicle_economic_number,
+                              branch: updatedOrder.branch || o.branch,
+                              kilometraje:
+                                updatedOrder.kilometraje || o.kilometraje,
+                              vin: updatedOrder.vin || o.vin,
+                              plate: updatedOrder.plate || o.plate,
+                              brand: updatedOrder.brand || o.brand,
+                              model: updatedOrder.model || o.model,
+                              year: updatedOrder.year || o.year,
+                            }
+                          : o
+                      )
+                    );
+                    setSelectedOrder({
+                      ...selectedOrder,
+                      ...updatedOrder,
+                      vehicle_economic_number:
+                        updatedOrder.vehicle_economic_number ||
+                        selectedOrder.vehicle_economic_number,
+                      branch: updatedOrder.branch || selectedOrder.branch,
+                      kilometraje:
+                        updatedOrder.kilometraje || selectedOrder.kilometraje,
+                      vin: updatedOrder.vin || selectedOrder.vin,
+                      plate: updatedOrder.plate || selectedOrder.plate,
+                      brand: updatedOrder.brand || selectedOrder.brand,
+                      model: updatedOrder.model || selectedOrder.model,
+                      year: updatedOrder.year || selectedOrder.year,
+                    });
+                  }
+                  closeModal("edit", "main", "pending");
+                }}
                 isModal={true}
                 disableFields={["serviceType", "serviceDescription"]}
-                hideButtons={true}
+                formRef={formRef}
               />
             )}
           </ModalBody>
           <Modal.Footer>
-            <Button variant="secondary" onClick={handleCloseEditModal}>
+            <Button
+              variant="secondary"
+              onClick={() => closeModal("edit", "main")}
+            >
               Cerrar
             </Button>
             <Button
               variant="primary"
-              onClick={() => document.querySelector("form").requestSubmit()}
+              onClick={handleUpdateOrder}
+              disabled={isSubmitting}
             >
               Actualizar
             </Button>
           </Modal.Footer>
         </StyledModal>
 
-        {/* Modal para ver órdenes finalizadas */}
         <StyledModal
           show={showViewFinalizedModal}
-          onHide={handleCloseViewFinalizedModal}
+          onHide={() => closeModal("finalized", "main", "completed")}
           centered
         >
           <Modal.Header closeButton>
@@ -436,15 +443,17 @@ const TechnicianDashboard = () => {
             {selectedOrder && (
               <TechnicianCreateOrder
                 order={selectedOrder}
-                onClose={handleCloseViewFinalizedModal}
                 isReadOnly={true}
                 isModal={true}
-                hideButtons={true} // Ocultamos el botón "Cerrar" interno
+                hideButtons={true}
               />
             )}
           </ModalBody>
           <Modal.Footer>
-            <Button variant="secondary" onClick={handleCloseViewFinalizedModal}>
+            <Button
+              variant="secondary"
+              onClick={() => closeModal("finalized", "main", "completed")}
+            >
               Cerrar
             </Button>
           </Modal.Footer>

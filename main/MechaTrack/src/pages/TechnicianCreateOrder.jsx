@@ -13,8 +13,13 @@ import {
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import CustomButton from "../components/CustomButton";
-import { mockVehicles, mockClientOrders, mockParts } from "../data/mock";
-import { createOrder, updateOrder } from "../services/orderService";
+import {
+  createOrder,
+  getVehicles,
+  getParts,
+  updateOrder,
+  getOrders,
+} from "../services/orderService";
 import {
   MainContainer,
   Content,
@@ -31,6 +36,7 @@ import styled from "@emotion/styled";
 import { toast } from "react-toastify";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faEye, faCircle } from "@fortawesome/free-solid-svg-icons";
+import { useNavigate } from "react-router-dom";
 
 const ScrollableFormWrapper = styled.div`
   max-height: 80vh;
@@ -43,13 +49,13 @@ const HistoryStatusIcon = styled.span`
   color: ${({ status }) => {
     switch (status) {
       case "Finalizado":
-        return "#28a745"; // Verde
+        return "#28a745";
       case "En Proceso":
-        return "#fd7e14"; // Naranja
+        return "#fd7e14";
       case "Pendiente":
-        return "#ffc107"; // Amarillo
+        return "#ffc107";
       default:
-        return "#6c757d"; // Gris
+        return "#6c757d";
     }
   }};
 `;
@@ -63,10 +69,10 @@ const HistoryEmptyMessage = styled.div`
 `;
 
 const technicianMenu = [
-  { label: "Inicio", path: "/technician" },
-  { label: "Crear Orden de Servicio", path: "/technician/create-order" },
-  { label: "Historial de Órdenes", path: "/technician/history" },
-  { label: "Notificaciones", path: "/technician/notifications" },
+  { label: "Inicio", path: "../technician" },
+  { label: "Crear Orden de Servicio", path: "../technician/create-order" },
+  { label: "Historial de Órdenes", path: "../technician/history" },
+  { label: "Notificaciones", path: "../technician/notifications" },
   { label: "Cerrar Sesión", path: "/" },
 ];
 
@@ -76,56 +82,155 @@ const OrderForm = memo(
     onSubmit,
     onCancel,
     isReadOnly,
-    error,
-    onShowHistory,
-    onRequestPart,
-    onImageUpload,
     disableFields = [],
     hideButtons = false,
+    formRef,
   }) => {
     const [formData, setFormData] = useState({
       branch: initialData?.branch || "",
-      economicNumber: initialData?.vehicleEconomicNumber || "",
+      economicNumber: initialData?.vehicle_economic_number || "",
       kilometraje: initialData?.kilometraje || "",
       vin: initialData?.vin || "",
       serviceType: initialData?.type || "Reparación",
       serviceDescription: initialData?.description || "",
-      diagnosis: initialData?.initialDiagnosis || "",
+      diagnosis: initialData?.initial_diagnosis || "",
       tasks: initialData?.tasks || "",
-      partsList: initialData?.parts || [],
+      partsList: initialData?.parts?.length > 0 ? initialData.parts : [],
       images: initialData?.images || [],
     });
     const [vehicleData, setVehicleData] = useState(null);
+    const [vehicles, setVehicles] = useState([]);
+    const [parts, setParts] = useState([]);
     const [showHistoryModal, setShowHistoryModal] = useState(false);
     const [showPartsModal, setShowPartsModal] = useState(false);
     const [showHistoryDetailsModal, setShowHistoryDetailsModal] =
       useState(false);
     const [selectedHistoryOrder, setSelectedHistoryOrder] = useState(null);
+    const [history, setHistory] = useState([]);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [error, setError] = useState("");
 
-    const branches = [...new Set(mockVehicles.map((v) => v.Sucursal))];
+    const branches = [...new Set(vehicles.map((v) => v.branch))];
 
     useEffect(() => {
-      const updateVehicleData = () => {
-        const vehicle = mockVehicles.find(
+      console.log("initialData:", initialData);
+      const fetchVehicles = async () => {
+        try {
+          const data = await getVehicles();
+          console.log("Vehículos cargados:", data);
+          setVehicles(data);
+          if (initialData?.vehicle_economic_number && initialData?.branch) {
+            const vehicle = data.find(
+              (v) =>
+                v.economic_number === initialData.vehicle_economic_number &&
+                v.branch === initialData.branch
+            );
+            if (vehicle) {
+              setVehicleData(vehicle);
+              setFormData((prev) => ({
+                ...prev,
+                branch: vehicle.branch || prev.branch,
+                economicNumber: vehicle.economic_number || prev.economicNumber,
+                kilometraje:
+                  vehicle.mileage ||
+                  initialData.kilometraje ||
+                  prev.kilometraje,
+                vin: vehicle.vin || prev.vin,
+                serviceType: initialData?.type || prev.serviceType,
+                serviceDescription:
+                  initialData?.description || prev.serviceDescription,
+                diagnosis: initialData?.initial_diagnosis || prev.diagnosis,
+                tasks: initialData?.tasks || prev.tasks,
+                partsList:
+                  initialData?.parts?.length > 0
+                    ? initialData.parts
+                    : prev.partsList,
+                images: initialData?.images || prev.images,
+                // Asegurar que los datos del vehículo se mantengan
+                plate: vehicle.plate || prev.plate || "",
+                brand: vehicle.brand || prev.brand || "",
+                model: vehicle.model || prev.model || "",
+                year: vehicle.year || prev.year || "",
+              }));
+            } else {
+              // Si no se encuentra el vehículo, mantener los datos de initialData
+              setFormData((prev) => ({
+                ...prev,
+                branch: initialData.branch || prev.branch,
+                economicNumber:
+                  initialData.vehicle_economic_number || prev.economicNumber,
+                kilometraje: initialData.kilometraje || prev.kilometraje,
+                vin: initialData.vin || prev.vin,
+                serviceType: initialData?.type || prev.serviceType,
+                serviceDescription:
+                  initialData?.description || prev.serviceDescription,
+                diagnosis: initialData?.initial_diagnosis || prev.diagnosis,
+                tasks: initialData?.tasks || prev.tasks,
+                partsList:
+                  initialData?.parts?.length > 0
+                    ? initialData.parts
+                    : prev.partsList,
+                images: initialData?.images || prev.images,
+              }));
+            }
+          }
+        } catch (err) {
+          console.error("Error al cargar vehículos:", err);
+          toast.error(err.message || "Error al cargar vehículos");
+        }
+      };
+      fetchVehicles();
+    }, [initialData]);
+
+    useEffect(() => {
+      const updateVehicleData = async () => {
+        const vehicle = vehicles.find(
           (v) =>
-            v.Económico === formData.economicNumber &&
-            v.Sucursal === formData.branch
+            v.economic_number === formData.economicNumber &&
+            v.branch === formData.branch
         );
         if (vehicle) {
           setVehicleData(vehicle);
           setFormData((prev) => ({
             ...prev,
-            branch: vehicle.Sucursal || prev.branch,
-            economicNumber: vehicle.Económico || prev.economicNumber,
-            kilometraje: vehicle.Kilometraje || prev.kilometraje,
-            vin: vehicle.VIN || prev.vin,
+            branch: vehicle.branch || prev.branch,
+            economicNumber: vehicle.economic_number || prev.economicNumber,
+            kilometraje: vehicle.mileage || prev.kilometraje,
+            vin: vehicle.vin || prev.vin,
+            plate: vehicle.plate || prev.plate || "",
+            brand: vehicle.brand || prev.brand || "",
+            model: vehicle.model || prev.model || "",
+            year: vehicle.year || prev.year || "",
           }));
+          if (vehicle.economic_number) {
+            try {
+              const historyData = await getOrders({
+                vehicle_economic_number: vehicle.economic_number,
+              });
+              setHistory(
+                historyData.filter((order) => order.id !== initialData?.id)
+              );
+            } catch (err) {
+              console.error("Error al cargar historial:", err);
+              setHistory([]);
+            }
+          }
+          try {
+            const partsData = await getParts(vehicle.model);
+            setParts(partsData);
+          } catch (err) {
+            toast.error("Error al cargar repuestos");
+          }
         } else {
           setVehicleData(null);
+          setHistory([]);
+          setParts([]);
         }
       };
-      if (formData.economicNumber && formData.branch) updateVehicleData();
-    }, [formData.economicNumber, formData.branch]);
+      if (formData.economicNumber && formData.branch && vehicles.length > 0) {
+        updateVehicleData();
+      }
+    }, [formData.economicNumber, formData.branch, vehicles, initialData?.id]);
 
     const handleInputChange = (e) => {
       const { name, value } = e.target;
@@ -142,26 +247,33 @@ const OrderForm = memo(
         partsList: [
           ...prev.partsList,
           {
-            ...part,
+            part_id: part.id,
+            name: part.name,
             quantity: 1,
             status: "Solicitado",
-            requestedBy: "U002",
-            authorizedBy: null,
+            requested_by: "U002",
+            authorized_by: null,
           },
         ],
       }));
       setShowPartsModal(false);
-      onRequestPart(part);
     };
 
     const handleImageUpload = (e) => {
-      const files = Array.from(e.target.files).map((file) => file.name);
-      setFormData((prev) => ({ ...prev, images: [...prev.images, ...files] }));
-      onImageUpload(e);
+      const files = Array.from(e.target.files);
+      setFormData((prev) => ({
+        ...prev,
+        images: [...prev.images, ...files],
+      }));
     };
 
-    const handleFormSubmit = (e) => {
+    const handleFormSubmit = async (e) => {
       e.preventDefault();
+      if (isSubmitting) return;
+      setIsSubmitting(true);
+      setError("");
+      console.log("Formulario enviado:", formData);
+
       const requiredFields = [
         { key: "branch", label: "Sucursal" },
         { key: "economicNumber", label: "N° Económico" },
@@ -169,18 +281,22 @@ const OrderForm = memo(
         { key: "serviceType", label: "Tipo de Servicio" },
         { key: "serviceDescription", label: "Descripción del Servicio" },
         { key: "diagnosis", label: "Diagnóstico Inicial" },
+        { key: "tasks", label: "Tareas" },
       ];
       for (const field of requiredFields) {
         if (!formData[field.key]) {
+          setError(`${field.label} es obligatorio`);
           toast.error(`${field.label} es obligatorio`);
+          setIsSubmitting(false);
           return;
         }
       }
-      if (formData.images.length === 0) {
-        toast.error("Se requiere al menos una foto de evidencia");
-        return;
+
+      try {
+        await onSubmit(formData);
+      } finally {
+        setIsSubmitting(false);
       }
-      onSubmit(formData);
     };
 
     const formatDate = (dateStr) => {
@@ -192,32 +308,15 @@ const OrderForm = memo(
       });
     };
 
-    const handleViewHistoryDetails = (orderNumber) => {
-      const order = mockClientOrders.find((o) => o.id === orderNumber);
-      if (order) {
-        const vehicle = mockVehicles.find(
-          (v) => v.Económico === order.vehicleEconomicNumber
-        );
-        const enrichedOrder = {
-          ...order,
-          branch: vehicle?.Sucursal || order.branch || "",
-          vehicleEconomicNumber:
-            vehicle?.Económico || order.vehicleEconomicNumber,
-          kilometraje: vehicle?.Kilometraje || order.kilometraje || "",
-          vin: vehicle?.VIN || order.vin || "",
-        };
-        setSelectedHistoryOrder(enrichedOrder);
-        setShowHistoryModal(false);
-        setShowHistoryDetailsModal(true);
-      }
+    const handleViewHistoryDetails = (order) => {
+      setSelectedHistoryOrder(order);
+      setShowHistoryModal(false);
+      setShowHistoryDetailsModal(true);
     };
 
-    const hasHistory = vehicleData?.history?.length > 0;
-    const approvedParts = formData.partsList.filter(
-      (part) => part.status === "Aprobado"
-    );
-    const filteredVehicles = mockVehicles.filter(
-      (v) => v.Sucursal === formData.branch
+    const hasHistory = history.length > 0;
+    const filteredVehicles = vehicles.filter(
+      (v) => v.branch === formData.branch
     );
 
     return (
@@ -225,7 +324,7 @@ const OrderForm = memo(
         {error && <Alert variant="danger">{error}</Alert>}
         <FormSectionTitle>Datos del Vehículo</FormSectionTitle>
         <ScrollableFormWrapper>
-          <Form onSubmit={handleFormSubmit}>
+          <Form onSubmit={handleFormSubmit} ref={formRef}>
             <Row>
               <Col md={6}>
                 <Form.Group className="mb-3">
@@ -268,8 +367,8 @@ const OrderForm = memo(
                   >
                     <option value="">Seleccione un N° Económico</option>
                     {filteredVehicles.map((v) => (
-                      <option key={v.Económico} value={v.Económico}>
-                        {v.Económico}
+                      <option key={v.economic_number} value={v.economic_number}>
+                        {v.economic_number}
                       </option>
                     ))}
                   </Form.Select>
@@ -280,7 +379,7 @@ const OrderForm = memo(
                   <Form.Label>Placa del Vehículo</Form.Label>
                   <Form.Control
                     type="text"
-                    value={vehicleData?.Placa || ""}
+                    value={vehicleData?.plate || formData.plate || ""}
                     disabled
                     placeholder="Autocompletado"
                   />
@@ -295,7 +394,9 @@ const OrderForm = memo(
                     type="text"
                     value={
                       vehicleData
-                        ? `${vehicleData.Marca} ${vehicleData.Modelo}`
+                        ? `${vehicleData.brand} ${vehicleData.model}`
+                        : formData.brand && formData.model
+                        ? `${formData.brand} ${formData.model}`
                         : ""
                     }
                     disabled
@@ -308,7 +409,7 @@ const OrderForm = memo(
                   <Form.Label>Año del Vehículo</Form.Label>
                   <Form.Control
                     type="number"
-                    value={vehicleData?.Año || ""}
+                    value={vehicleData?.year || formData.year || ""}
                     disabled
                     placeholder="Autocompletado"
                   />
@@ -408,18 +509,18 @@ const OrderForm = memo(
                 <Table striped bordered hover>
                   <thead>
                     <tr>
+                      <th>Nombre</th>
                       <th>Código</th>
                       <th>Cantidad</th>
-                      <th>Foto</th>
                       <th>Estado</th>
                     </tr>
                   </thead>
                   <tbody>
                     {formData.partsList.map((part, index) => (
                       <tr key={index}>
-                        <td>{part.id}</td>
+                        <td>{part.name || "Desconocido"}</td>
+                        <td>{part.part_id}</td>
                         <td>{part.quantity}</td>
-                        <td>{part.image}</td>
                         <td>{part.status}</td>
                       </tr>
                     ))}
@@ -427,31 +528,6 @@ const OrderForm = memo(
                 </Table>
               ) : (
                 <p>No hay repuestos solicitados.</p>
-              )}
-              {isReadOnly && approvedParts.length > 0 && (
-                <>
-                  <Form.Label>Repuestos Aprobados</Form.Label>
-                  <Table striped bordered hover>
-                    <thead>
-                      <tr>
-                        <th>Código</th>
-                        <th>Cantidad</th>
-                        <th>Foto</th>
-                        <th>Estado</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {approvedParts.map((part, index) => (
-                        <tr key={index}>
-                          <td>{part.id}</td>
-                          <td>{part.quantity}</td>
-                          <td>{part.image}</td>
-                          <td>{part.status}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </Table>
-                </>
               )}
               {!isReadOnly && (
                 <CustomButton onClick={() => setShowPartsModal(true)}>
@@ -468,6 +544,7 @@ const OrderForm = memo(
                 multiple
                 onChange={handleImageUpload}
                 disabled={isReadOnly}
+                accept="image/*"
               />
               <Form.Text className="text-muted">
                 Puedes subir varias fotos relacionadas con la orden de servicio.
@@ -475,28 +552,36 @@ const OrderForm = memo(
               {formData.images.length > 0 && (
                 <ul>
                   {formData.images.map((image, index) => (
-                    <li key={index}>{image}</li>
+                    <li key={index}>
+                      {image.name || image}
+                      {typeof image !== "string" && (
+                        <img
+                          src={URL.createObjectURL(image)}
+                          alt="Vista previa"
+                          style={{ maxWidth: "100px", marginLeft: "10px" }}
+                        />
+                      )}
+                    </li>
                   ))}
                 </ul>
               )}
             </Form.Group>
 
-            <FormActions>
-              {!isReadOnly && !hideButtons && (
-                <CustomButton type="submit">
-                  {initialData ? "Actualizar" : "Crear Orden"}
+            {!isReadOnly && !hideButtons && (
+              <FormActions>
+                <CustomButton type="submit" disabled={isSubmitting}>
+                  {initialData?.id ? "Actualizar" : "Crear Orden"}
                 </CustomButton>
-              )}
-              {onCancel && !hideButtons && (
-                <CustomButton type="button" onClick={onCancel}>
-                  Cerrar
-                </CustomButton>
-              )}
-            </FormActions>
+                {onCancel && (
+                  <CustomButton type="button" onClick={onCancel}>
+                    Cerrar
+                  </CustomButton>
+                )}
+              </FormActions>
+            )}
           </Form>
         </ScrollableFormWrapper>
 
-        {/* Modal para historial */}
         <StyledModal
           show={showHistoryModal}
           onHide={() => setShowHistoryModal(false)}
@@ -509,7 +594,7 @@ const OrderForm = memo(
             </Modal.Title>
           </Modal.Header>
           <ModalBody>
-            {vehicleData?.history?.length > 0 ? (
+            {hasHistory ? (
               <TableWrapper>
                 <StyledTableModal striped bordered hover>
                   <thead>
@@ -522,11 +607,11 @@ const OrderForm = memo(
                     </tr>
                   </thead>
                   <tbody>
-                    {vehicleData.history.map((entry, index) => (
-                      <tr key={index}>
-                        <td>{entry.orderNumber}</td>
+                    {history.map((entry) => (
+                      <tr key={entry.id}>
+                        <td>{entry.id}</td>
                         <td>{entry.description}</td>
-                        <td>{formatDate(entry.date)}</td>
+                        <td>{formatDate(entry.created_at)}</td>
                         <td>
                           <HistoryStatusIcon status={entry.status}>
                             <FontAwesomeIcon icon={faCircle} />
@@ -537,9 +622,7 @@ const OrderForm = memo(
                           <Button
                             variant="info"
                             size="sm"
-                            onClick={() =>
-                              handleViewHistoryDetails(entry.orderNumber)
-                            }
+                            onClick={() => handleViewHistoryDetails(entry)}
                           >
                             <FontAwesomeIcon icon={faEye} /> Ver Detalles
                           </Button>
@@ -565,7 +648,6 @@ const OrderForm = memo(
           </Modal.Footer>
         </StyledModal>
 
-        {/* Submodal para detalles del historial */}
         <StyledModal
           show={showHistoryDetailsModal}
           onHide={() => {
@@ -581,10 +663,10 @@ const OrderForm = memo(
           </Modal.Header>
           <ModalBody>
             {selectedHistoryOrder && (
-              <TechnicianCreateOrder
-                order={selectedHistoryOrder}
+              <OrderForm
+                initialData={selectedHistoryOrder}
                 isReadOnly={true}
-                isModal={true}
+                onSubmit={() => {}}
               />
             )}
           </ModalBody>
@@ -601,7 +683,6 @@ const OrderForm = memo(
           </Modal.Footer>
         </StyledModal>
 
-        {/* Modal para solicitud de repuestos */}
         <StyledModal
           show={showPartsModal}
           onHide={() => setShowPartsModal(false)}
@@ -624,33 +705,27 @@ const OrderForm = memo(
                   </tr>
                 </thead>
                 <tbody>
-                  {mockParts
-                    .filter(
-                      (part) =>
-                        !vehicleData ||
-                        part.compatibleModels.includes(vehicleData.Modelo)
-                    )
-                    .map((part) => (
-                      <tr key={part.id}>
-                        <td>{part.id}</td>
-                        <td>{part.name}</td>
-                        <td>{part.compatibleModels.join(", ")}</td>
-                        <td>{part.image}</td>
-                        <td>
-                          {part.quantity > 0 ? "Disponible" : "No Disponible"}
-                        </td>
-                        <td>
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            onClick={() => handleRequestPart(part)}
-                            disabled={part.quantity === 0}
-                          >
-                            Solicitar
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
+                  {parts.map((part) => (
+                    <tr key={part.id}>
+                      <td>{part.id}</td>
+                      <td>{part.name}</td>
+                      <td>{part.compatible_models.join(", ")}</td>
+                      <td>{part.image}</td>
+                      <td>
+                        {part.quantity > 0 ? "Disponible" : "No Disponible"}
+                      </td>
+                      <td>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => handleRequestPart(part)}
+                          disabled={part.quantity === 0}
+                        >
+                          Solicitar
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </StyledTableModal>
             </TableWrapper>
@@ -675,105 +750,95 @@ const TechnicianCreateOrder = ({
   isReadOnly = false,
   isModal = false,
   disableFields = [],
-  hideButtons = false,
+  formRef,
 }) => {
   const { user } = useAuth();
-  const [error, setError] = useState("");
+  const navigate = useNavigate();
+
+  const updateDisableFields = order?.id
+    ? ["branch", "economicNumber", "vin", "serviceType", "serviceDescription"]
+    : disableFields;
+  const hideButtons = isModal; // Ocultar botones en modales, mostrar en crear orden
 
   const handleSaveOrder = useCallback(
-    (formData) => {
+    async (formData) => {
       try {
-        if (!formData.branch || !formData.economicNumber) {
-          setError("La sucursal y el número económico son obligatorios.");
-          return;
-        }
-        if (
-          !formData.serviceDescription ||
-          !formData.diagnosis ||
-          !formData.tasks
-        ) {
-          setError("Por favor, complete la descripción, diagnóstico y tareas.");
-          return;
-        }
-
-        const hasActiveOrder = mockClientOrders.some(
-          (o) =>
-            o.vehicleEconomicNumber === formData.economicNumber &&
-            o.status === "En Proceso" &&
-            o.id !== order?.id
-        );
-        if (hasActiveOrder && !order) {
-          toast.error(
-            `El vehículo (N° Económico ${formData.economicNumber}) ya tiene una orden de servicio activa`
-          );
-          return;
-        }
-
-        const orderData = {
-          branch: formData.branch,
-          type: formData.serviceType,
-          description: formData.serviceDescription,
-          initialDiagnosis: formData.diagnosis,
-          tasks: formData.tasks,
-          images: formData.images,
-          vehicleEconomicNumber: formData.economicNumber,
-          parts: formData.partsList,
-        };
-
-        if (order) {
-          const updatedOrder = {
+        console.log("Guardando orden con datos:", formData);
+        let newOrder;
+        if (order?.id) {
+          newOrder = await updateOrder(order.id, {
+            initial_diagnosis: formData.diagnosis,
+            tasks: formData.tasks,
+            images: formData.images || [],
+            kilometraje: formData.kilometraje
+              ? parseInt(formData.kilometraje, 10)
+              : undefined,
+            branch: formData.branch,
+            vehicle_economic_number: formData.economicNumber,
+          });
+          // Combinar los datos existentes con los actualizados para preservar vehicle_economic_number y otros
+          newOrder = {
             ...order,
-            ...orderData,
-            history: [
-              ...order.history,
-              {
-                description: formData.diagnosis,
-                date: new Date().toISOString().split("T")[0],
-                status: order.status,
-              },
-            ],
+            ...newOrder,
+            vehicle_economic_number:
+              formData.economicNumber || order.vehicle_economic_number,
+            branch: formData.branch || order.branch,
+            kilometraje:
+              newOrder.kilometraje || formData.kilometraje || order.kilometraje,
+            vin: formData.vin || order.vin || newOrder.vin,
+            plate: order.plate || formData.plate,
+            brand: order.brand || formData.brand,
+            model: order.model || formData.model,
+            year: order.year || formData.year,
           };
-          updateOrder(updatedOrder);
-          toast.success(
-            `Orden #${updatedOrder.id} actualizada satisfactoriamente`
-          );
+          toast.success(`Orden #${newOrder.id} actualizada satisfactoriamente`);
         } else {
-          const newOrder = createOrder(orderData, user.id);
-          const vehicle = mockVehicles.find(
-            (v) => v.Económico === formData.economicNumber
-          );
-          if (vehicle) vehicle.Kilometraje = formData.kilometraje;
+          newOrder = await createOrder({
+            type: formData.serviceType,
+            description: formData.serviceDescription,
+            initial_diagnosis: formData.diagnosis,
+            tasks: formData.tasks,
+            images: formData.images || [],
+            technician_id: user.id,
+            vehicle_economic_number: formData.economicNumber,
+            kilometraje: parseInt(formData.kilometraje, 10),
+            branch: formData.branch,
+            plate: formData.plate,
+            brand: formData.brand,
+            model: formData.model,
+            year: formData.year,
+          });
           toast.success(`Orden #${newOrder.id} creada satisfactoriamente`);
         }
-
-        if (onClose) onClose();
+        if (onClose) {
+          onClose(newOrder);
+        } else {
+          navigate("/technician");
+        }
+        return newOrder;
       } catch (err) {
         console.error("Error al guardar la orden:", err);
-        setError("Ocurrió un error al guardar la orden.");
+        const message =
+          err.response?.data?.message || "Error al guardar la orden";
+        toast.error(message);
+        throw err;
       }
     },
-    [order, onClose, user.id]
-  );
-
-  const FormContent = () => (
-    <OrderForm
-      initialData={order}
-      onSubmit={handleSaveOrder}
-      onCancel={onClose}
-      isReadOnly={isReadOnly}
-      error={error}
-      onShowHistory={() => {}}
-      onRequestPart={() => {}}
-      onImageUpload={() => {}}
-      disableFields={disableFields}
-      hideButtons={hideButtons} // Pasamos la prop al formulario
-    />
+    [user.id, onClose, navigate, order]
   );
 
   return (
     <>
       {isModal ? (
-        <FormContent />
+        <OrderForm
+          initialData={order}
+          onSubmit={handleSaveOrder}
+          onCancel={onClose}
+          isReadOnly={isReadOnly}
+          disableFields={updateDisableFields}
+          hideButtons={hideButtons}
+          formRef={formRef}
+        />
       ) : (
         <MainContainer fluid>
           <Sidebar menuItems={technicianMenu} title="Menú" />
@@ -783,19 +848,17 @@ const TechnicianCreateOrder = ({
                 order ? "Editar Orden de Servicio" : "Crear Orden de Servicio"
               }
               userId={user.id}
-              userName={user.name}
-              activeOrdersCount={
-                mockClientOrders.filter((o) => o.technicianId === user.id)
-                  .length
-              }
-              notificationsCount={
-                mockClientOrders.filter(
-                  (o) =>
-                    o.technicianId === user.id && o.notifications?.length > 0
-                ).length
-              }
+              userName={`${user.first_name} ${user.last_name}`}
             />
-            <FormContent />
+            <OrderForm
+              initialData={order}
+              onSubmit={handleSaveOrder}
+              onCancel={onClose}
+              isReadOnly={isReadOnly}
+              disableFields={updateDisableFields}
+              hideButtons={hideButtons}
+              formRef={formRef}
+            />
           </Content>
         </MainContainer>
       )}

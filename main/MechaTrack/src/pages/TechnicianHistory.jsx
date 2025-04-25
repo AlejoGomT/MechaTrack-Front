@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
-import { Container, Table, Button, Modal, Form } from "react-bootstrap";
+import { Container, Table, Button, Modal } from "react-bootstrap";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import TechnicianCreateOrder from "./TechnicianCreateOrder";
-import { mockClientOrders, mockVehicles } from "../data/mock"; // Añadimos mockVehicles
+import { getOrders } from "../services/orderService";
 import {
   MainContainer,
   Content,
@@ -60,10 +60,10 @@ const StyledFiltersContainer = styled(FiltersContainer)`
 `;
 
 const technicianMenu = [
-  { label: "Inicio", path: "/technician" },
-  { label: "Crear Orden de Servicio", path: "/technician/create-order" },
-  { label: "Historial de Órdenes", path: "/technician/history" },
-  { label: "Notificaciones", path: "/technician/notifications" },
+  { label: "Inicio", path: "../technician" },
+  { label: "Crear Orden de Servicio", path: "../technician/create-order" },
+  { label: "Historial de Órdenes", path: "../technician/history" },
+  { label: "Notificaciones", path: "../technician/notifications" },
   { label: "Cerrar Sesión", path: "/" },
 ];
 
@@ -73,14 +73,24 @@ const TechnicianHistory = () => {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [economicNumberFilter, setEconomicNumberFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [orders, setOrders] = useState([]);
 
-  const technicianOrders = mockClientOrders.filter(
-    (order) => order.technicianId === user.id
-  );
-  const filteredOrders = technicianOrders
+  useEffect(() => {
+    const fetchOrders = async () => {
+      try {
+        const ordersData = await getOrders({ technician_id: user.id });
+        setOrders(ordersData);
+      } catch (err) {
+        console.error("Error al cargar órdenes:", err);
+      }
+    };
+    fetchOrders();
+  }, [user.id]);
+
+  const filteredOrders = orders
     .filter((order) =>
       economicNumberFilter
-        ? order.vehicleEconomicNumber.includes(economicNumberFilter)
+        ? order.vehicle_economic_number.includes(economicNumberFilter)
         : true
     )
     .filter((order) => (statusFilter ? order.status === statusFilter : true));
@@ -95,17 +105,7 @@ const TechnicianHistory = () => {
   };
 
   const handleViewDetails = (order) => {
-    const vehicle = mockVehicles.find(
-      (v) => v.Económico === order.vehicleEconomicNumber
-    );
-    const enrichedOrder = {
-      ...order,
-      branch: vehicle?.Sucursal || order.branch || "",
-      vehicleEconomicNumber: vehicle?.Económico || order.vehicleEconomicNumber,
-      kilometraje: vehicle?.Kilometraje || order.kilometraje || "",
-      vin: vehicle?.VIN || order.vin || "",
-    };
-    setSelectedOrder(enrichedOrder);
+    setSelectedOrder(order);
     setShowDetailsModal(true);
   };
 
@@ -113,16 +113,7 @@ const TechnicianHistory = () => {
     <MainContainer fluid>
       <Sidebar menuItems={technicianMenu} title="Menú" />
       <Content>
-        <DashboardHeader
-          title="Historial de Órdenes"
-          userId={user.id}
-          userName={user.name}
-          activeOrdersCount={technicianOrders.length}
-          notificationsCount={
-            technicianOrders.filter((order) => order.notifications?.length > 0)
-              .length
-          }
-        />
+        <DashboardHeader title="Historial de Órdenes" />
         <Container fluid>
           <h3>Todas las Órdenes</h3>
           <StyledFiltersContainer>
@@ -167,14 +158,14 @@ const TechnicianHistory = () => {
                     <tr key={order.id}>
                       <td>{order.id}</td>
                       <HighlightedTd>
-                        {order.vehicleEconomicNumber}
+                        {order.vehicle_economic_number}
                       </HighlightedTd>
                       <td>{order.description}</td>
                       <td>
-                        {formatDate(order.createdAt)} /{" "}
+                        {formatDate(order.created_at)} /{" "}
                         {order.status === "Finalizado"
                           ? formatDate(
-                              order.history[order.history.length - 1]?.date
+                              order.history?.[order.history.length - 1]?.date
                             )
                           : "-"}
                       </td>
