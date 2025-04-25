@@ -61,10 +61,6 @@ const TechnicianDashboard = () => {
           getOrders({ technician_id: user.id }),
           getVehicles(),
         ]);
-        /*console.log("Datos cargados:", {
-          orders: ordersData,
-          vehicles: vehiclesData,
-        });*/
         setOrders(ordersData);
         setVehicles(vehiclesData);
       } catch (err) {
@@ -185,7 +181,6 @@ const TechnicianDashboard = () => {
       formRef.current.requestSubmit();
     } catch (err) {
       console.error("Error al actualizar:", err);
-      // Error ya manejado en TechnicianCreateOrder
     } finally {
       setIsSubmitting(false);
     }
@@ -380,7 +375,6 @@ const TechnicianDashboard = () => {
                 order={selectedOrder}
                 onClose={(updatedOrder) => {
                   if (updatedOrder) {
-                    console.log("Orden actualizada:", updatedOrder);
                     setOrders((prev) =>
                       prev.map((o) =>
                         o.id === updatedOrder.id
@@ -398,6 +392,7 @@ const TechnicianDashboard = () => {
                               brand: updatedOrder.brand || o.brand,
                               model: updatedOrder.model || o.model,
                               year: updatedOrder.year || o.year,
+                              parts: updatedOrder.parts || o.parts,
                             }
                           : o
                       )
@@ -416,6 +411,7 @@ const TechnicianDashboard = () => {
                       brand: updatedOrder.brand || selectedOrder.brand,
                       model: updatedOrder.model || selectedOrder.model,
                       year: updatedOrder.year || selectedOrder.year,
+                      parts: updatedOrder.parts || selectedOrder.parts,
                     });
                   }
                   closeModal("edit", "main", "pending");
