@@ -84,6 +84,8 @@ const OrderForm = memo(
     hideButtons = false,
     formRef,
   }) => {
+    const { user } = useAuth();
+
     // Normalizar partsList
     const normalizedParts = Array.isArray(initialData?.parts)
       ? initialData.parts
@@ -119,7 +121,6 @@ const OrderForm = memo(
     const [history, setHistory] = useState([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState("");
-    const { user } = useAuth();
 
     const branches = [...new Set(vehicles.map((v) => v.branch))];
 
@@ -295,7 +296,12 @@ const OrderForm = memo(
       }
 
       try {
+        console.log("formData enviado a onSubmit:", formData);
         await onSubmit(formData);
+      } catch (err) {
+        console.error("Error en handleFormSubmit:", err);
+        setError(err.message || "Error al guardar la orden");
+        toast.error(err.message || "Error al guardar la orden");
       } finally {
         setIsSubmitting(false);
       }

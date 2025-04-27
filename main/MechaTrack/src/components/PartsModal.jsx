@@ -36,7 +36,7 @@ const PartsModal = ({
       }
       const newPart = {
         part_id: part.id,
-        name: part.name,
+        name: part.name, // Incluido para la UI
         quantity: 1,
         status: "Solicitado",
         requested_by: userId,
@@ -50,11 +50,12 @@ const PartsModal = ({
       }
       setPartsList((prev) => {
         const newList = Array.isArray(prev) ? [...prev, newPart] : [newPart];
-        console.log("partsList actualizado:", newList);
+        console.log("partsList actualizado en PartsModal:", newList);
         return newList;
       });
       setShowPartsModal(false);
     } catch (err) {
+      console.error("Error en handleRequestPart:", err);
       toast.error(err.message || "Error al solicitar repuesto");
     }
   };
@@ -92,6 +93,7 @@ const PartsModal = ({
       setPartsList(updatedPartsList);
       toast.success(`Cantidad actualizada para ${part.name}`);
     } catch (err) {
+      console.error("Error en handleUpdatePartQuantity:", err);
       toast.error(err.message || "Error al actualizar cantidad");
     }
   };
@@ -115,6 +117,7 @@ const PartsModal = ({
       );
       toast.success(`Solicitud de devolución enviada para ${part.name}`);
     } catch (err) {
+      console.error("Error en handleRequestPartReturn:", err);
       toast.error(err.message || "Error al solicitar devolución");
     }
   };

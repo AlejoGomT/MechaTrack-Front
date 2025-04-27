@@ -30,42 +30,19 @@ export const getOrderById = async (id) => {
 export const createOrder = async (orderData) => {
   try {
     const formData = new FormData();
-    formData.append("type", orderData.type || "");
-    formData.append("description", orderData.description || "");
-    formData.append("initial_diagnosis", orderData.initial_diagnosis || "");
-    formData.append("tasks", orderData.tasks || "");
-    formData.append("technician_id", orderData.technician_id || "");
-    formData.append(
-      "vehicle_economic_number",
-      orderData.vehicle_economic_number || ""
-    );
-    formData.append("kilometraje", orderData.kilometraje || "");
-    formData.append("branch", orderData.branch || "");
-    formData.append("plate", orderData.plate || "");
-    formData.append("brand", orderData.brand || "");
-    formData.append("model", orderData.model || "");
-    formData.append("year", orderData.year || "");
-
-    // Manejar parts como JSON
-    if (orderData.parts && Array.isArray(orderData.parts)) {
-      try {
-        formData.append("parts", JSON.stringify(orderData.parts));
-      } catch (error) {
-        console.error("Error al serializar parts:", error);
-        throw new Error("Formato inválido para parts");
+    Object.entries(orderData).forEach(([key, value]) => {
+      if (key === "images" && Array.isArray(value)) {
+        value.forEach((file, index) => {
+          if (file instanceof File) {
+            formData.append(`images`, file);
+          }
+        });
+      } else if (key === "parts" && Array.isArray(value)) {
+        formData.append("parts", JSON.stringify(value));
+      } else {
+        formData.append(key, value);
       }
-    }
-
-    // Manejar imágenes
-    if (orderData.images && Array.isArray(orderData.images)) {
-      orderData.images.forEach((image, index) => {
-        if (image instanceof File) {
-          formData.append("images", image);
-        } else if (typeof image === "string") {
-          formData.append(`existingImages[${index}]`, image);
-        }
-      });
-    }
+    });
 
     // Log para depurar FormData
     for (let [key, value] of formData.entries()) {
@@ -88,27 +65,25 @@ export const createOrder = async (orderData) => {
 export const updateOrder = async (orderId, orderData) => {
   try {
     const formData = new FormData();
-    formData.append("initial_diagnosis", orderData.initial_diagnosis || "");
-    formData.append("tasks", orderData.tasks || "");
-    formData.append("kilometraje", orderData.kilometraje || "");
-    formData.append("branch", orderData.branch || "");
-    formData.append(
-      "vehicle_economic_number",
-      orderData.vehicle_economic_number || ""
-    );
+    Object.entries(orderData).forEach(([key, value]) => {
+      if (key === "images" && Array.isArray(value)) {
+        value.forEach((item, index) => {
+          if (item instanceof File) {
+            formData.append(`images`, item);
+          } else if (typeof item === "string") {
+            formData.append(`existingImages[${index}]`, item);
+          }
+        });
+      } else if (key === "parts" && Array.isArray(value)) {
+        formData.append("parts", JSON.stringify(value));
+      } else {
+        formData.append(key, value);
+      }
+    });
 
-    if (orderData.parts && orderData.parts.length > 0) {
-      formData.append("parts", JSON.stringify(orderData.parts));
-    }
-
-    if (orderData.images && orderData.images.length > 0) {
-      orderData.images.forEach((image, index) => {
-        if (image instanceof File) {
-          formData.append("images", image);
-        } else if (typeof image === "string") {
-          formData.append(`existingImages[${index}]`, image);
-        }
-      });
+    // Log para depurar FormData
+    for (let [key, value] of formData.entries()) {
+      console.log(`FormData: ${key} =`, value);
     }
 
     const response = await axios.put(`${API_URL}/orders/${orderId}`, formData, {
@@ -203,16 +178,11 @@ export const getVehicles = async (filters = {}) => {
 };
 
 export const getParts = async (model) => {
-  try {
-    const response = await axios.get(`${API_URL}/parts`, {
-      headers: getAuthHeaders(),
-      params: { model },
-    });
-    return response.data;
-  } catch (err) {
-    console.error("Error en getParts:", err.response?.data);
-    throw err.response?.data || { message: "Error al obtener repuestos" };
-  }
+  const response = await axios.get(`${API_URL}/parts`, {
+    headers: getAuthHeaders(),
+    params: { model },
+  });
+  return response.data;
 };
 
 export const getNotifications = async (userId) => {
@@ -223,7 +193,6 @@ export const getNotifications = async (userId) => {
     });
     return response.data;
   } catch (err) {
-    console.error("Error en getNotifications:", err.response?.data);
     throw err.response?.data || { message: "Error al obtener notificaciones" };
   }
 };
