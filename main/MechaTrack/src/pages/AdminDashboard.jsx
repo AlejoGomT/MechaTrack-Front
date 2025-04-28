@@ -9,12 +9,12 @@ import axios from "axios";
 import { toast } from "react-toastify";
 
 const adminMenu = [
-  { label: "Inicio", path: "/admin" },
-  { label: "Órdenes de Servicio", path: "/admin/orders" },
-  { label: "Inventario", path: "/admin/inventory" },
-  { label: "Gestión de Usuarios", path: "/admin/users" },
-  { label: "Notificaciones", path: "/admin/notifications" },
-  { label: "Informes", path: "/admin/reports" },
+  { label: "Inicio", path: "../admin" },
+  { label: "Órdenes de Servicio", path: "../admin/orders" },
+  { label: "Inventario", path: "../admin/inventory" },
+  { label: "Gestión de Usuarios", path: "../admin/users" },
+  { label: "Notificaciones", path: "../admin/notifications" },
+  { label: "Informes", path: "../admin/reports" },
   { label: "Cerrar Sesión", path: "/" },
 ];
 
@@ -80,20 +80,25 @@ const AdminDashboard = () => {
       buttonText: "Ver Notificaciones",
       onClick: () => navigate("/admin/notifications"),
     },
+    {
+      title: "Usuarios",
+      content: "Gestión de cuentas de usuarios",
+      buttonText: "Ver Usuarios",
+      onClick: () => navigate("/admin/users"),
+    },
+    {
+      title: "Informes",
+      content: "Crear y revisar informes del sistema",
+      buttonText: "Ver Informes",
+      onClick: () => navigate("/admin/reports"),
+    },
   ];
-
-  const userData = {
-    userId: user?.id,
-    userName: `${user?.first_name} ${user?.last_name}`,
-    activeOrdersCount: stats.activeOrdersCount,
-    notificationsCount: stats.notificationsCount,
-  };
 
   return (
     <>
       <Sidebar menuItems={adminMenu} title="Menú Administrador" />
       <div className="content" style={{ marginLeft: "270px", padding: "20px" }}>
-        <DashboardHeader title="Panel Administrador" {...userData} />
+        <DashboardHeader title="Panel Administrador" />
         <Container className="mt-4">
           <Row className="justify-content-between">
             {statCards.map((stat, index) => (
