@@ -19,6 +19,7 @@ import {
   getParts,
   updateOrder,
   getOrders,
+  getOrderById,
 } from "../services/orderService";
 import {
   MainContainer,
@@ -121,14 +122,36 @@ const OrderForm = memo(
     const [history, setHistory] = useState([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState("");
-
     const branches = [...new Set(vehicles.map((v) => v.branch))];
 
     // Depurar inicialización y cambios en partsList
-    useEffect(() => {
+    /*useEffect(() => {
+      console.log("initialData recibido:", initialData);
       console.log("initialData.parts:", initialData?.parts);
-      console.log("formData.partsList:", formData.partsList);
-    }, [initialData, formData.partsList]);
+      console.log("formData.partsList inicial:", formData.partsList);
+    }, [initialData]);*/
+
+    useEffect(() => {
+      //console.log("formData.partsList actualizado:", formData.partsList);
+    }, [formData.partsList]);
+
+    useEffect(() => {
+      const fetchOrderData = async () => {
+        if (initialData?.id) {
+          try {
+            const orderData = await getOrderById(initialData.id);
+            setFormData((prev) => ({
+              ...prev,
+              partsList: Array.isArray(orderData.parts) ? orderData.parts : [],
+            }));
+          } catch (err) {
+            console.error("Error al cargar datos de la orden:", err);
+            toast.error("Error al cargar los repuestos de la orden");
+          }
+        }
+      };
+      fetchOrderData();
+    }, [initialData?.id]);
 
     useEffect(() => {
       const fetchVehicles = async () => {
@@ -157,10 +180,9 @@ const OrderForm = memo(
                   initialData?.description || prev.serviceDescription,
                 diagnosis: initialData?.initial_diagnosis || prev.diagnosis,
                 tasks: initialData?.tasks || prev.tasks,
-                partsList:
-                  initialData?.parts?.length > 0
-                    ? initialData.parts
-                    : prev.partsList,
+                partsList: Array.isArray(initialData?.parts)
+                  ? initialData.parts
+                  : prev.partsList,
                 images: initialData?.images || prev.images,
                 plate: vehicle.plate || prev.plate || "",
                 brand: vehicle.brand || prev.brand || "",
@@ -180,10 +202,9 @@ const OrderForm = memo(
                   initialData?.description || prev.serviceDescription,
                 diagnosis: initialData?.initial_diagnosis || prev.diagnosis,
                 tasks: initialData?.tasks || prev.tasks,
-                partsList:
-                  initialData?.parts?.length > 0
-                    ? initialData.parts
-                    : prev.partsList,
+                partsList: Array.isArray(initialData?.parts)
+                  ? initialData.parts
+                  : prev.partsList,
                 images: initialData?.images || prev.images,
               }));
             }
@@ -296,7 +317,7 @@ const OrderForm = memo(
       }
 
       try {
-        console.log("formData enviado a onSubmit:", formData);
+        //console.log("formData enviado a onSubmit:", formData);
         await onSubmit(formData);
       } catch (err) {
         console.error("Error en handleFormSubmit:", err);
@@ -514,6 +535,7 @@ const OrderForm = memo(
 
             <FormSectionTitle>Repuestos Necesarios</FormSectionTitle>
             <Form.Group className="mb-3">
+              <p>Repuestos solicitados: {formData.partsList.length}</p>
               {formData.partsList.length > 0 ? (
                 <>
                   <CustomButton
@@ -688,14 +710,17 @@ const OrderForm = memo(
           setShowPartsManagementModal={setShowPartsManagementModal}
           partsList={formData.partsList}
           setPartsList={(newPartsList) => {
-            console.log(
-              "Actualizando partsList en TechnicianCreateOrder:",
-              newPartsList
-            );
-            setFormData((prev) => ({
-              ...prev,
-              partsList: Array.isArray(newPartsList) ? newPartsList : [],
-            }));
+            //console.log("setPartsList llamado con:", newPartsList);
+            setFormData((prev) => {
+              const updatedPartsList = Array.isArray(newPartsList)
+                ? newPartsList
+                : [];
+              //console.log("Actualizando formData.partsList:", updatedPartsList);
+              return {
+                ...prev,
+                partsList: updatedPartsList,
+              };
+            });
           }}
           availableParts={parts}
           orderId={initialData?.id}
@@ -726,7 +751,7 @@ const TechnicianCreateOrder = ({
   const handleSaveOrder = useCallback(
     async (formData) => {
       try {
-        console.log("Guardando orden con datos:", formData);
+        //console.log("Guardando orden con datos:", formData);
         let newOrder;
         if (order?.id) {
           newOrder = await updateOrder(order.id, {

@@ -188,12 +188,20 @@ const TechnicianDashboard = () => {
 
   const submitForApproval = async (order) => {
     try {
-      const updatedOrder = await updateOrder(order.id, { status: "Pendiente" });
+      console.log(
+        `[TechnicianDashboard] Enviando orden #${order.id} para aprobación con estado Pendiente`
+      );
+      const updatedOrder = await updateOrderStatus(order.id, "Pendiente");
+      console.log(`[TechnicianDashboard] Orden actualizada:`, updatedOrder);
       toast.success(`Orden #${order.id} enviada para aprobación`);
       setOrders((prev) =>
         prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o))
       );
     } catch (err) {
+      console.error(
+        `[TechnicianDashboard] Error al enviar orden #${order.id}:`,
+        err
+      );
       toast.error(err.message || "Error al enviar la orden para aprobación");
     }
   };

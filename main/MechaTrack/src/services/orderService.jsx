@@ -21,10 +21,16 @@ export const getOrders = async (filters = {}) => {
 };
 
 export const getOrderById = async (id) => {
-  const response = await axios.get(`${API_URL}/orders/${id}`, {
-    headers: getAuthHeaders(),
-  });
-  return response.data;
+  try {
+    const response = await axios.get(`${API_URL}/orders/${id}`, {
+      headers: getAuthHeaders(),
+    });
+    //console.log("Respuesta de getOrderById:", response.data);
+    return response.data;
+  } catch (err) {
+    console.error("Error en getOrderById:", err.response?.data || err);
+    throw err.response?.data || { message: "Error al obtener la orden" };
+  }
 };
 
 export const createOrder = async (orderData) => {
@@ -45,9 +51,9 @@ export const createOrder = async (orderData) => {
     });
 
     // Log para depurar FormData
-    for (let [key, value] of formData.entries()) {
-      console.log(`FormData: ${key} =`, value);
-    }
+    /*for (let [key, value] of formData.entries()) {
+      console.log(`FormData createOrder: ${key} =`, value);
+    }*/
 
     const response = await axios.post(`${API_URL}/orders`, formData, {
       headers: {
@@ -55,6 +61,7 @@ export const createOrder = async (orderData) => {
         ...getAuthHeaders(),
       },
     });
+    console.log("Respuesta de createOrder:", response.data);
     return response.data;
   } catch (error) {
     console.error("Error en createOrder:", error.response?.data || error);
@@ -83,7 +90,7 @@ export const updateOrder = async (orderId, orderData) => {
 
     // Log para depurar FormData
     for (let [key, value] of formData.entries()) {
-      console.log(`FormData: ${key} =`, value);
+      console.log(`FormData updateOrder: ${key} =`, value);
     }
 
     const response = await axios.put(`${API_URL}/orders/${orderId}`, formData, {
@@ -92,10 +99,34 @@ export const updateOrder = async (orderId, orderData) => {
         ...getAuthHeaders(),
       },
     });
+    //console.log("Respuesta de updateOrder:", response.data);
     return response.data;
   } catch (error) {
     console.error("Error en updateOrder:", error.response?.data || error);
     throw error.response?.data || { message: "Error al actualizar la orden" };
+  }
+};
+
+export const updateOrderStatus = async (orderId, status) => {
+  try {
+    const response = await axios.put(
+      `${API_URL}/orders/${orderId}/status`,
+      { status },
+      {
+        headers: {
+          ...getAuthHeaders(),
+        },
+      }
+    );
+    console.log("Respuesta de updateOrderStatus:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error("Error en updateOrderStatus:", error.response?.data || error);
+    throw (
+      error.response?.data || {
+        message: "Error al actualizar estado de la orden",
+      }
+    );
   }
 };
 
@@ -178,11 +209,17 @@ export const getVehicles = async (filters = {}) => {
 };
 
 export const getParts = async (model) => {
-  const response = await axios.get(`${API_URL}/parts`, {
-    headers: getAuthHeaders(),
-    params: { model },
-  });
-  return response.data;
+  try {
+    const response = await axios.get(`${API_URL}/parts`, {
+      headers: getAuthHeaders(),
+      params: { model },
+    });
+    //console.log("Respuesta de getParts:", response.data);
+    return response.data;
+  } catch (err) {
+    console.error("Error en getParts:", err.response?.data || err);
+    throw err.response?.data || { message: "Error al obtener repuestos" };
+  }
 };
 
 export const getNotifications = async (userId) => {
@@ -193,6 +230,7 @@ export const getNotifications = async (userId) => {
     });
     return response.data;
   } catch (err) {
+    console.error("Error en getNotifications:", err.response?.data || err);
     throw err.response?.data || { message: "Error al obtener notificaciones" };
   }
 };
