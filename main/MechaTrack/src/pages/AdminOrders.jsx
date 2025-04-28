@@ -20,6 +20,7 @@ import styled from "@emotion/styled";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCircle, faCheck, faTimes } from "@fortawesome/free-solid-svg-icons";
 import { toast } from "react-toastify";
+import { updateOrderNumbers } from "../services/orderService"; // Añadir import
 
 const adminMenu = [
   { label: "Inicio", path: "/admin" },
@@ -99,6 +100,8 @@ const AdminOrders = () => {
   const [editedParts, setEditedParts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [branches, setBranches] = useState([]);
+  const [orderNumber, setOrderNumber] = useState(""); // Nuevo estado
+  const [deliveryNoteNumber, setDeliveryNoteNumber] = useState(""); // Nuevo estado
 
   useEffect(() => {
     const fetchData = async () => {
@@ -138,6 +141,8 @@ const AdminOrders = () => {
       });
       setSelectedOrder(response.data);
       setEditedParts(response.data.parts || []);
+      setOrderNumber(response.data.order_number || ""); // Inicializar con valor actual
+      setDeliveryNoteNumber(response.data.invoice?.delivery_note_number || ""); // Inicializar con valor actual
       setShowModal(true);
     } catch (error) {
       toast.error("Error al cargar detalles de la orden");
@@ -232,6 +237,26 @@ const AdminOrders = () => {
     } catch (error) {
       toast.error("Error al procesar finalización");
       console.error("[AdminOrders] Error al procesar finalización:", error);
+    }
+  };
+
+  const handleSaveNumbers = async () => {
+    try {
+      await updateOrderNumbers(selectedOrder.id, {
+        orderNumber,
+        deliveryNoteNumber,
+      });
+      toast.success(`Números actualizados para orden #${selectedOrder.id}`);
+      const updatedOrder = await axios.get(`/api/orders/${selectedOrder.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setSelectedOrder(updatedOrder.data);
+      setOrders((prev) =>
+        prev.map((o) => (o.id === updatedOrder.data.id ? updatedOrder.data : o))
+      );
+    } catch (error) {
+      toast.error(error.message || "Error al actualizar números");
+      console.error("[AdminOrders] Error al actualizar números:", error);
     }
   };
 
@@ -367,31 +392,77 @@ const AdminOrders = () => {
             ) : (
               <p>Sin historial disponible</p>
             )}
-            {selectedOrder?.status === "Facturado" &&
-              selectedOrder?.invoice && (
-                <>
+            {selectedOrder?.order_number && (
+              <HistoryItem>
+                <HistoryTitle>Número de Pedido</HistoryTitle>
+                <HistoryDate>{selectedOrder.order_number}</HistoryDate>
+              </HistoryItem>
+            )}
+            {selectedOrder?.invoice && (
+              <>
+                {selectedOrder.invoice.invoice_number && (
                   <HistoryItem>
                     <HistoryTitle>Número de Factura</HistoryTitle>
                     <HistoryDate>
                       {selectedOrder.invoice.invoice_number}
                     </HistoryDate>
                   </HistoryItem>
+                )}
+                {selectedOrder.invoice.delivery_note_number && (
                   <HistoryItem>
-                    <HistoryTitle>Pedido de Albarán</HistoryTitle>
+                    <HistoryTitle>Número de Albarán</HistoryTitle>
                     <HistoryDate>
                       {selectedOrder.invoice.delivery_note_number}
                     </HistoryDate>
                   </HistoryItem>
-                </>
-              )}
+                )}
+              </>
+            )}
           </HistorySidebar>
           <div style={{ flex: 1, padding: "15px" }}>
             {selectedOrder && (
-              <TechnicianCreateOrder
-                order={selectedOrder}
-                isReadOnly={selectedOrder.status !== "Pendiente"}
-                isModal={true}
-              />
+              <>
+                <TechnicianCreateOrder
+                  order={selectedOrder}
+                  isReadOnly={selectedOrder.status !== "Pendiente"}
+                  isModal={true}
+                />
+                {selectedOrder.status !== "Facturado" && (
+                  <ActionSection>
+                    <h6>Gestión de Números</h6>
+                    <Form.Group className="mb-3">
+                      <Form.Label>Número de Pedido</Form.Label>
+                      <Form.Control
+                        type="text"
+                        value={orderNumber}
+                        onChange={(e) => setOrderNumber(e.target.value)}
+                        placeholder="Ej: PED-12345"
+                        disabled={selectedOrder.status === "Facturado"}
+                      />
+                    </Form.Group>
+                    <Form.Group className="mb-3">
+                      <Form.Label>Número de Solicitud de Albarán</Form.Label>
+                      <Form.Control
+                        type="text"
+                        value={deliveryNoteNumber}
+                        onChange={(e) => setDeliveryNoteNumber(e.target.value)}
+                        placeholder="Ej: ALB-12345"
+                        disabled={selectedOrder.status === "Facturado"}
+                      />
+                    </Form.Group>
+                    <Button
+                      variant="primary"
+                      onClick={handleSaveNumbers}
+                      disabled={
+                        (!orderNumber && !deliveryNoteNumber) ||
+                        selectedOrder.status === "Facturado"
+                      }
+                    >
+                      Guardar Números
+                    </Button>
+                  </ActionSection>
+                )}
+              </>
             )}
             {selectedOrder?.status === "En Proceso" &&
               selectedOrder?.parts?.some((p) => p.status === "Solicitado") && (

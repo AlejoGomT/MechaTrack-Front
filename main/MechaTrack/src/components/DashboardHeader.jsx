@@ -40,7 +40,7 @@ const DashboardHeader = ({ title }) => {
   useEffect(() => {
     const fetchCounts = async () => {
       try {
-        const ordersData = await getOrders({ technician_id: user.id });
+        const ordersData = await getOrders({ id: user.id });
         const notificationsData = await getNotifications(user.id);
         const activeOrders = ordersData.filter((order) =>
           ["En Proceso", "Pendiente"].includes(order.status)

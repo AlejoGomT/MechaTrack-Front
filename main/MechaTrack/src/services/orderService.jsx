@@ -130,6 +130,32 @@ export const updateOrderStatus = async (orderId, status) => {
   }
 };
 
+export const updateOrderNumbers = async (orderId, numbers) => {
+  try {
+    const response = await axios.put(
+      `${API_URL}/orders/${orderId}/numbers`,
+      numbers,
+      {
+        headers: {
+          ...getAuthHeaders(),
+        },
+      }
+    );
+    console.log("Respuesta de updateOrderNumbers:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error(
+      "Error en updateOrderNumbers:",
+      error.response?.data || error
+    );
+    throw (
+      error.response?.data || {
+        message: "Error al actualizar números de orden/factura",
+      }
+    );
+  }
+};
+
 export const requestPart = async (orderId, part) => {
   try {
     const response = await axios.post(

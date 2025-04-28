@@ -24,7 +24,11 @@ import {
   OrderDetailsBody,
 } from "../styles/GlobalStyles";
 import { Container } from "react-bootstrap";
-import { getOrders, getVehicles, updateOrder } from "../services/orderService";
+import {
+  getOrders,
+  getVehicles,
+  updateOrderStatus,
+} from "../services/orderService";
 import { toast } from "react-toastify";
 
 const baseTechnicianMenu = [
