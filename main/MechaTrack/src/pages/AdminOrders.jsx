@@ -101,7 +101,7 @@ const AdminOrders = () => {
   const [branches, setBranches] = useState([]);
 
   useEffect(() => {
-    const fetchOrders = async () => {
+    const fetchData = async () => {
       try {
         const response = await axios.get("/api/orders", {
           headers: { Authorization: `Bearer ${token}` },
@@ -118,10 +118,10 @@ const AdminOrders = () => {
         setBranches(uniqueBranches);
       } catch (error) {
         toast.error("Error al cargar órdenes");
-        console.error(error);
+        console.error("[AdminOrders] Error al cargar órdenes:", error);
       }
     };
-    if (token) fetchOrders();
+    if (token) fetchData();
   }, [statusFilter, economicNumberFilter, orderNumberFilter, token]);
 
   const activeOrdersCount = orders.filter(
@@ -141,7 +141,7 @@ const AdminOrders = () => {
       setShowModal(true);
     } catch (error) {
       toast.error("Error al cargar detalles de la orden");
-      console.error(error);
+      console.error("[AdminOrders] Error al cargar detalles:", error);
     }
   };
 
@@ -157,7 +157,7 @@ const AdminOrders = () => {
   const handlePartAction = async (partIndex, action) => {
     const part = selectedOrder.parts[partIndex];
     try {
-      const response = await axios.put(
+      await axios.put(
         `/api/orders/${selectedOrder.id}/parts/${part.part_id}`,
         { action, note: rejectionNote },
         { headers: { Authorization: `Bearer ${token}` } }
@@ -166,6 +166,7 @@ const AdminOrders = () => {
         headers: { Authorization: `Bearer ${token}` },
       });
       setSelectedOrder(updatedOrder.data);
+      setEditedParts(updatedOrder.data.parts || []);
       toast.success(
         `Repuesto ${part.name} ${
           action === "accept" ? "aprobado" : "rechazado"
@@ -174,51 +175,63 @@ const AdminOrders = () => {
       setRejectionNote("");
     } catch (error) {
       toast.error("Error al procesar repuesto");
-      console.error(error);
+      console.error("[AdminOrders] Error al procesar repuesto:", error);
     }
   };
 
-  const handleFinalizeAction = async (action) => {
+  const handleEditPart = (index, field, value) => {
+    const updatedParts = [...editedParts];
+    updatedParts[index] = { ...updatedParts[index], [field]: value };
+    setEditedParts(updatedParts);
+  };
+
+  const saveEditedParts = async () => {
     try {
-      const response = await axios.put(
-        `/api/orders/${selectedOrder.id}/finalize`,
-        { action, note: rejectionNote },
+      await axios.put(
+        `/api/orders/${selectedOrder.id}`,
+        { ...selectedOrder, parts: editedParts },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const updatedOrder = await axios.get(`/api/orders/${selectedOrder.id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setSelectedOrder(updatedOrder.data);
+      setEditedParts(updatedOrder.data.parts || []);
+      toast.success("Repuestos actualizados");
+    } catch (error) {
+      toast.error("Error al guardar repuestos");
+      console.error("[AdminOrders] Error al guardar repuestos:", error);
+    }
+  };
+
+  const handleFinalizeAction = async (action) => {
+    try {
+      const newStatus = action === "accept" ? "Finalizado" : "En Proceso";
+      await axios.put(
+        `/api/orders/${selectedOrder.id}/finalize`,
+        { action, note: rejectionNote, status: newStatus },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const updatedOrder = await axios.get(`/api/orders/${selectedOrder.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setSelectedOrder(updatedOrder.data);
+      setEditedParts(updatedOrder.data.parts || []);
       toast.success(
         `Orden #${selectedOrder.id} ${
           action === "accept" ? "aprobada" : "rechazada"
         }`
       );
+      setOrders((prev) =>
+        prev.map((o) => (o.id === updatedOrder.data.id ? updatedOrder.data : o))
+      );
       setRejectionNote("");
+      if (action === "accept") {
+        setShowModal(false);
+      }
     } catch (error) {
       toast.error("Error al procesar finalización");
-      console.error(error);
-    }
-  };
-
-  const handlePartEdit = (index, field, value) => {
-    const updatedParts = [...editedParts];
-    updatedParts[index][field] = field === "quantity" ? Number(value) : value;
-    setEditedParts(updatedParts);
-  };
-
-  const saveEditedParts = async () => {
-    try {
-      const response = await axios.put(
-        `/api/orders/${selectedOrder.id}`,
-        { ...selectedOrder, parts: editedParts },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setSelectedOrder(response.data);
-      toast.success("Repuestos actualizados");
-    } catch (error) {
-      toast.error("Error al guardar repuestos");
-      console.error(error);
+      console.error("[AdminOrders] Error al procesar finalización:", error);
     }
   };
 
@@ -300,24 +313,28 @@ const AdminOrders = () => {
               </tr>
             </thead>
             <tbody>
-              {orders.map((order) => (
-                <tr key={order.id}>
-                  <td>{order.vehicle_economic_number}</td>
-                  <td>{order.id}</td>
-                  <td>{order.branch || "-"}</td>
-                  <td>
-                    <StatusIcon status={order.status}>
-                      <FontAwesomeIcon icon={faCircle} />
-                    </StatusIcon>
-                    {order.status}
-                  </td>
-                  <td>
-                    <CustomButton onClick={() => handleViewDetails(order)}>
-                      Ver Detalles
-                    </CustomButton>
-                  </td>
-                </tr>
-              ))}
+              {orders
+                .filter((order) =>
+                  branchFilter ? order.branch === branchFilter : true
+                )
+                .map((order) => (
+                  <tr key={order.id}>
+                    <td>{order.vehicle_economic_number}</td>
+                    <td>{order.id}</td>
+                    <td>{order.branch || "-"}</td>
+                    <td>
+                      <StatusIcon status={order.status}>
+                        <FontAwesomeIcon icon={faCircle} />
+                      </StatusIcon>
+                      {order.status}
+                    </td>
+                    <td>
+                      <CustomButton onClick={() => handleViewDetails(order)}>
+                        Ver Detalles
+                      </CustomButton>
+                    </td>
+                  </tr>
+                ))}
             </tbody>
           </Table>
         </Container>
@@ -425,31 +442,20 @@ const AdminOrders = () => {
             {selectedOrder?.status === "Pendiente" && (
               <ActionSection>
                 <h6>Revisión de Finalización</h6>
-                {selectedOrder.parts?.length > 0 && (
-                  <>
+                {editedParts.length > 0 && (
+                  <div className="mb-3">
                     <h6>Editar Repuestos</h6>
                     {editedParts.map((part, index) => (
                       <Row key={index} className="mb-2 align-items-center">
                         <Col>{part.name}</Col>
                         <Col>
-                          <FormControl
+                          <Form.Control
                             type="number"
                             value={part.quantity}
                             onChange={(e) =>
-                              handlePartEdit(index, "quantity", e.target.value)
+                              handleEditPart(index, "quantity", e.target.value)
                             }
                             placeholder="Cantidad"
-                            style={{ width: "100px" }}
-                          />
-                        </Col>
-                        <Col>
-                          <FormControl
-                            type="number"
-                            value={part.price || 0}
-                            onChange={(e) =>
-                              handlePartEdit(index, "price", e.target.value)
-                            }
-                            placeholder="Precio"
                             style={{ width: "100px" }}
                           />
                         </Col>
@@ -458,11 +464,11 @@ const AdminOrders = () => {
                     <Button
                       variant="primary"
                       onClick={saveEditedParts}
-                      className="mb-3"
+                      className="mt-2"
                     >
-                      Guardar Cambios
+                      Guardar Repuestos
                     </Button>
-                  </>
+                  </div>
                 )}
                 <Row className="mt-3">
                   <Col>

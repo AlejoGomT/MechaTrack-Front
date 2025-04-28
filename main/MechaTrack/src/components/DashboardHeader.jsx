@@ -42,7 +42,11 @@ const DashboardHeader = ({ title }) => {
       try {
         const ordersData = await getOrders({ technician_id: user.id });
         const notificationsData = await getNotifications(user.id);
-        setActiveOrdersCount(ordersData.length);
+        const activeOrders = ordersData.filter((order) =>
+          ["En Proceso", "Pendiente"].includes(order.status)
+        );
+        //console.log("Órdenes activas:", activeOrders);
+        setActiveOrdersCount(activeOrders.length);
         setNotificationsCount(notificationsData.length);
       } catch (err) {
         console.error("Error al cargar contadores:", err);

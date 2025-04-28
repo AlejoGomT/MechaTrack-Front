@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Container, Table, Form, Modal } from "react-bootstrap";
 import { useAuth } from "../context/AuthContext";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import CustomButton from "../components/CustomButton";
-import { mockParts, mockClientOrders } from "../data/mock";
-import { StyledModal, ModalBody } from "../styles/GlobalStyles";
+import axios from "axios";
+import { toast } from "react-toastify";
 
 const adminMenu = [
   { label: "Inicio", path: "/admin" },
@@ -18,27 +18,35 @@ const adminMenu = [
 ];
 
 const AdminInventory = () => {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const [codeFilter, setCodeFilter] = useState("");
   const [nameFilter, setNameFilter] = useState("");
   const [showModal, setShowModal] = useState(false);
+  const [parts, setParts] = useState([]);
   const [newPart, setNewPart] = useState({
     id: "",
     name: "",
     description: "",
     quantity: 0,
     price: 0,
-    image: "",
   });
 
-  const activeOrdersCount = mockClientOrders.filter(
-    (o) => o.status === "En Proceso"
-  ).length;
-  const notificationsCount = mockClientOrders.filter(
-    (o) => o.notifications?.length > 0
-  ).length;
+  useEffect(() => {
+    const fetchParts = async () => {
+      try {
+        const response = await axios.get("/api/parts", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setParts(response.data);
+      } catch (error) {
+        toast.error("Error al cargar repuestos");
+        console.error("[AdminInventory] Error al cargar repuestos:", error);
+      }
+    };
+    if (token) fetchParts();
+  }, [token]);
 
-  const filteredParts = mockParts.filter(
+  const filteredParts = parts.filter(
     (part) =>
       (!codeFilter ||
         part.id.toLowerCase().includes(codeFilter.toLowerCase())) &&
@@ -46,24 +54,32 @@ const AdminInventory = () => {
         part.name.toLowerCase().includes(nameFilter.toLowerCase()))
   );
 
-  const handleCreatePart = () => {
-    mockParts.push({ ...newPart, compatibleModels: [] });
-    setShowModal(false);
-    setNewPart({
-      id: "",
-      name: "",
-      description: "",
-      quantity: 0,
-      price: 0,
-      image: "",
-    });
+  const handleCreatePart = async () => {
+    try {
+      const response = await axios.post("/api/parts", newPart, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setParts([...parts, response.data]);
+      setShowModal(false);
+      setNewPart({
+        id: "",
+        name: "",
+        description: "",
+        quantity: 0,
+        price: 0,
+      });
+      toast.success("Repuesto creado");
+    } catch (error) {
+      toast.error("Error al crear repuesto");
+      console.error("[AdminInventory] Error al crear repuesto:", error);
+    }
   };
 
   const userData = {
     userId: user?.id,
-    userName: user?.name,
-    activeOrdersCount,
-    notificationsCount,
+    userName: `${user?.first_name} ${user?.last_name}`,
+    activeOrdersCount: 0,
+    notificationsCount: 0,
   };
 
   return (
@@ -106,7 +122,6 @@ const AdminInventory = () => {
                 <th>Nombre</th>
                 <th>Cantidad</th>
                 <th>Precio</th>
-                <th>Imagen</th>
                 <th>Acciones</th>
               </tr>
             </thead>
@@ -117,7 +132,6 @@ const AdminInventory = () => {
                   <td>{part.name}</td>
                   <td>{part.quantity}</td>
                   <td>${part.price}</td>
-                  <td>{part.image || "Sin imagen"}</td>
                   <td>
                     <CustomButton>Ver Detalles</CustomButton>{" "}
                     <CustomButton>Actualizar</CustomButton>{" "}
@@ -187,18 +201,6 @@ const AdminInventory = () => {
                   setNewPart({ ...newPart, price: Number(e.target.value) })
                 }
                 placeholder="Precio en $"
-              />
-            </Form.Group>
-            <Form.Group className="mb-3">
-              <Form.Label>Imagen</Form.Label>
-              <Form.Control
-                type="file"
-                onChange={(e) =>
-                  setNewPart({
-                    ...newPart,
-                    image: e.target.files[0]?.name || "",
-                  })
-                }
               />
             </Form.Group>
           </Form>

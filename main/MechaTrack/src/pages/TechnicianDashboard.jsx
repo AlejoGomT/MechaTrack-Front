@@ -47,6 +47,8 @@ const TechnicianDashboard = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showViewFinalizedModal, setShowViewFinalizedModal] = useState(false);
   const [economicNumberFilter, setEconomicNumberFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("Todos");
+  const [orderNumberFilter, setOrderNumberFilter] = useState("");
   const [orders, setOrders] = useState([]);
   const [vehicles, setVehicles] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -59,10 +61,6 @@ const TechnicianDashboard = () => {
           getOrders({ technician_id: user.id }),
           getVehicles(),
         ]);
-        console.log("Datos cargados:", {
-          orders: ordersData,
-          vehicles: vehiclesData,
-        });
         setOrders(ordersData);
         setVehicles(vehiclesData);
       } catch (err) {
@@ -87,11 +85,17 @@ const TechnicianDashboard = () => {
   ).length;
 
   const filteredOrders = activeAndPendingOrders
-    .filter((order) =>
-      economicNumberFilter
+    .filter((order) => {
+      const matchesStatus =
+        statusFilter === "Todos" || order.status === statusFilter;
+      const matchesOrderNumber = orderNumberFilter
+        ? String(order.id).includes(orderNumberFilter)
+        : true;
+      const matchesEconomicNumber = economicNumberFilter
         ? order.vehicle_economic_number.includes(economicNumberFilter)
-        : true
-    )
+        : true;
+      return matchesStatus && matchesOrderNumber && matchesEconomicNumber;
+    })
     .map((order) => ({
       id: order.id,
       title: `Orden #${order.id}`,
@@ -177,7 +181,6 @@ const TechnicianDashboard = () => {
       formRef.current.requestSubmit();
     } catch (err) {
       console.error("Error al actualizar:", err);
-      // Error ya manejado en TechnicianCreateOrder
     } finally {
       setIsSubmitting(false);
     }
@@ -185,12 +188,20 @@ const TechnicianDashboard = () => {
 
   const submitForApproval = async (order) => {
     try {
-      const updatedOrder = await updateOrder(order.id, { status: "Pendiente" });
+      console.log(
+        `[TechnicianDashboard] Enviando orden #${order.id} para aprobación con estado Pendiente`
+      );
+      const updatedOrder = await updateOrderStatus(order.id, "Pendiente");
+      console.log(`[TechnicianDashboard] Orden actualizada:`, updatedOrder);
       toast.success(`Orden #${order.id} enviada para aprobación`);
       setOrders((prev) =>
         prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o))
       );
     } catch (err) {
+      console.error(
+        `[TechnicianDashboard] Error al enviar orden #${order.id}:`,
+        err
+      );
       toast.error(err.message || "Error al enviar la orden para aprobación");
     }
   };
@@ -227,6 +238,10 @@ const TechnicianDashboard = () => {
           <OrderFilters
             economicNumberFilter={economicNumberFilter}
             setEconomicNumberFilter={setEconomicNumberFilter}
+            statusFilter={statusFilter}
+            setStatusFilter={setStatusFilter}
+            orderNumberFilter={orderNumberFilter}
+            setOrderNumberFilter={setOrderNumberFilter}
           />
           <OrderList orders={filteredOrders} />
         </Container>
@@ -368,7 +383,6 @@ const TechnicianDashboard = () => {
                 order={selectedOrder}
                 onClose={(updatedOrder) => {
                   if (updatedOrder) {
-                    console.log("Orden actualizada:", updatedOrder);
                     setOrders((prev) =>
                       prev.map((o) =>
                         o.id === updatedOrder.id
@@ -386,6 +400,7 @@ const TechnicianDashboard = () => {
                               brand: updatedOrder.brand || o.brand,
                               model: updatedOrder.model || o.model,
                               year: updatedOrder.year || o.year,
+                              parts: updatedOrder.parts || o.parts,
                             }
                           : o
                       )
@@ -404,6 +419,7 @@ const TechnicianDashboard = () => {
                       brand: updatedOrder.brand || selectedOrder.brand,
                       model: updatedOrder.model || selectedOrder.model,
                       year: updatedOrder.year || selectedOrder.year,
+                      parts: updatedOrder.parts || selectedOrder.parts,
                     });
                   }
                   closeModal("edit", "main", "pending");

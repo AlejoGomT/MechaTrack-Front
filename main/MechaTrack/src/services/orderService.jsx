@@ -21,10 +21,16 @@ export const getOrders = async (filters = {}) => {
 };
 
 export const getOrderById = async (id) => {
-  const response = await axios.get(`${API_URL}/orders/${id}`, {
-    headers: getAuthHeaders(),
-  });
-  return response.data;
+  try {
+    const response = await axios.get(`${API_URL}/orders/${id}`, {
+      headers: getAuthHeaders(),
+    });
+    //console.log("Respuesta de getOrderById:", response.data);
+    return response.data;
+  } catch (err) {
+    console.error("Error en getOrderById:", err.response?.data || err);
+    throw err.response?.data || { message: "Error al obtener la orden" };
+  }
 };
 
 export const createOrder = async (orderData) => {
@@ -37,20 +43,29 @@ export const createOrder = async (orderData) => {
             formData.append(`images`, file);
           }
         });
+      } else if (key === "parts" && Array.isArray(value)) {
+        formData.append("parts", JSON.stringify(value));
       } else {
         formData.append(key, value);
       }
     });
+
+    // Log para depurar FormData
+    /*for (let [key, value] of formData.entries()) {
+      console.log(`FormData createOrder: ${key} =`, value);
+    }*/
+
     const response = await axios.post(`${API_URL}/orders`, formData, {
       headers: {
         "Content-Type": "multipart/form-data",
         ...getAuthHeaders(),
       },
     });
+    console.log("Respuesta de createOrder:", response.data);
     return response.data;
   } catch (error) {
     console.error("Error en createOrder:", error.response?.data || error);
-    throw error.response?.data || error;
+    throw error.response?.data || { message: "Error al crear la orden" };
   }
 };
 
@@ -66,20 +81,117 @@ export const updateOrder = async (orderId, orderData) => {
             formData.append(`existingImages[${index}]`, item);
           }
         });
+      } else if (key === "parts" && Array.isArray(value)) {
+        formData.append("parts", JSON.stringify(value));
       } else {
         formData.append(key, value);
       }
     });
+
+    // Log para depurar FormData
+    for (let [key, value] of formData.entries()) {
+      console.log(`FormData updateOrder: ${key} =`, value);
+    }
+
     const response = await axios.put(`${API_URL}/orders/${orderId}`, formData, {
       headers: {
         "Content-Type": "multipart/form-data",
         ...getAuthHeaders(),
       },
     });
+    //console.log("Respuesta de updateOrder:", response.data);
     return response.data;
   } catch (error) {
     console.error("Error en updateOrder:", error.response?.data || error);
-    throw error.response?.data || error;
+    throw error.response?.data || { message: "Error al actualizar la orden" };
+  }
+};
+
+export const updateOrderStatus = async (orderId, status) => {
+  try {
+    const response = await axios.put(
+      `${API_URL}/orders/${orderId}/status`,
+      { status },
+      {
+        headers: {
+          ...getAuthHeaders(),
+        },
+      }
+    );
+    console.log("Respuesta de updateOrderStatus:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error("Error en updateOrderStatus:", error.response?.data || error);
+    throw (
+      error.response?.data || {
+        message: "Error al actualizar estado de la orden",
+      }
+    );
+  }
+};
+
+export const requestPart = async (orderId, part) => {
+  try {
+    const response = await axios.post(
+      `${API_URL}/orders/${orderId}/parts`,
+      part,
+      {
+        headers: {
+          ...getAuthHeaders(),
+        },
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error("Error en requestPart:", error.response?.data || error);
+    throw error.response?.data || { message: "Error al solicitar repuesto" };
+  }
+};
+
+export const updatePartQuantity = async (orderId, partId, quantity) => {
+  try {
+    const response = await axios.put(
+      `${API_URL}/orders/${orderId}/parts/${partId}`,
+      { quantity },
+      {
+        headers: {
+          ...getAuthHeaders(),
+        },
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error(
+      "Error en updatePartQuantity:",
+      error.response?.data || error
+    );
+    throw (
+      error.response?.data || {
+        message: "Error al actualizar cantidad de repuesto",
+      }
+    );
+  }
+};
+
+export const requestPartReturn = async (orderId, partId, quantity) => {
+  try {
+    const response = await axios.post(
+      `${API_URL}/orders/${orderId}/parts/${partId}/return`,
+      { quantity },
+      {
+        headers: {
+          ...getAuthHeaders(),
+        },
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error("Error en requestPartReturn:", error.response?.data || error);
+    throw (
+      error.response?.data || {
+        message: "Error al solicitar devolución de repuesto",
+      }
+    );
   }
 };
 
@@ -97,11 +209,17 @@ export const getVehicles = async (filters = {}) => {
 };
 
 export const getParts = async (model) => {
-  const response = await axios.get(`${API_URL}/parts`, {
-    headers: getAuthHeaders(),
-    params: { model },
-  });
-  return response.data;
+  try {
+    const response = await axios.get(`${API_URL}/parts`, {
+      headers: getAuthHeaders(),
+      params: { model },
+    });
+    //console.log("Respuesta de getParts:", response.data);
+    return response.data;
+  } catch (err) {
+    console.error("Error en getParts:", err.response?.data || err);
+    throw err.response?.data || { message: "Error al obtener repuestos" };
+  }
 };
 
 export const getNotifications = async (userId) => {
@@ -112,6 +230,7 @@ export const getNotifications = async (userId) => {
     });
     return response.data;
   } catch (err) {
+    console.error("Error en getNotifications:", err.response?.data || err);
     throw err.response?.data || { message: "Error al obtener notificaciones" };
   }
 };

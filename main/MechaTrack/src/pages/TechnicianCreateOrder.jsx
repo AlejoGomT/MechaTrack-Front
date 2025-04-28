@@ -7,26 +7,25 @@ import {
   Col,
   Button,
   Modal,
-  Table,
   Alert,
 } from "react-bootstrap";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import CustomButton from "../components/CustomButton";
+import PartsModal from "../components/PartsModal";
 import {
   createOrder,
   getVehicles,
   getParts,
   updateOrder,
   getOrders,
+  getOrderById,
 } from "../services/orderService";
 import {
   MainContainer,
   Content,
   StyledModal,
   ModalBody,
-  TableWrapper,
-  StyledTableModal,
   FormContainer,
   FormSectionTitle,
   FormActions,
@@ -86,6 +85,13 @@ const OrderForm = memo(
     hideButtons = false,
     formRef,
   }) => {
+    const { user } = useAuth();
+
+    // Normalizar partsList
+    const normalizedParts = Array.isArray(initialData?.parts)
+      ? initialData.parts
+      : [];
+
     const [formData, setFormData] = useState({
       branch: initialData?.branch || "",
       economicNumber: initialData?.vehicle_economic_number || "",
@@ -95,29 +101,62 @@ const OrderForm = memo(
       serviceDescription: initialData?.description || "",
       diagnosis: initialData?.initial_diagnosis || "",
       tasks: initialData?.tasks || "",
-      partsList: initialData?.parts?.length > 0 ? initialData.parts : [],
+      partsList: normalizedParts,
       images: initialData?.images || [],
+      plate: initialData?.plate || "",
+      brand: initialData?.brand || "",
+      model: initialData?.model || "",
+      year: initialData?.year || "",
     });
+
     const [vehicleData, setVehicleData] = useState(null);
     const [vehicles, setVehicles] = useState([]);
     const [parts, setParts] = useState([]);
     const [showHistoryModal, setShowHistoryModal] = useState(false);
     const [showPartsModal, setShowPartsModal] = useState(false);
+    const [showPartsManagementModal, setShowPartsManagementModal] =
+      useState(false);
     const [showHistoryDetailsModal, setShowHistoryDetailsModal] =
       useState(false);
     const [selectedHistoryOrder, setSelectedHistoryOrder] = useState(null);
     const [history, setHistory] = useState([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState("");
-
     const branches = [...new Set(vehicles.map((v) => v.branch))];
 
+    // Depurar inicialización y cambios en partsList
+    /*useEffect(() => {
+      console.log("initialData recibido:", initialData);
+      console.log("initialData.parts:", initialData?.parts);
+      console.log("formData.partsList inicial:", formData.partsList);
+    }, [initialData]);*/
+
     useEffect(() => {
-      console.log("initialData:", initialData);
+      //console.log("formData.partsList actualizado:", formData.partsList);
+    }, [formData.partsList]);
+
+    useEffect(() => {
+      const fetchOrderData = async () => {
+        if (initialData?.id) {
+          try {
+            const orderData = await getOrderById(initialData.id);
+            setFormData((prev) => ({
+              ...prev,
+              partsList: Array.isArray(orderData.parts) ? orderData.parts : [],
+            }));
+          } catch (err) {
+            console.error("Error al cargar datos de la orden:", err);
+            toast.error("Error al cargar los repuestos de la orden");
+          }
+        }
+      };
+      fetchOrderData();
+    }, [initialData?.id]);
+
+    useEffect(() => {
       const fetchVehicles = async () => {
         try {
           const data = await getVehicles();
-          console.log("Vehículos cargados:", data);
           setVehicles(data);
           if (initialData?.vehicle_economic_number && initialData?.branch) {
             const vehicle = data.find(
@@ -141,19 +180,16 @@ const OrderForm = memo(
                   initialData?.description || prev.serviceDescription,
                 diagnosis: initialData?.initial_diagnosis || prev.diagnosis,
                 tasks: initialData?.tasks || prev.tasks,
-                partsList:
-                  initialData?.parts?.length > 0
-                    ? initialData.parts
-                    : prev.partsList,
+                partsList: Array.isArray(initialData?.parts)
+                  ? initialData.parts
+                  : prev.partsList,
                 images: initialData?.images || prev.images,
-                // Asegurar que los datos del vehículo se mantengan
                 plate: vehicle.plate || prev.plate || "",
                 brand: vehicle.brand || prev.brand || "",
                 model: vehicle.model || prev.model || "",
                 year: vehicle.year || prev.year || "",
               }));
             } else {
-              // Si no se encuentra el vehículo, mantener los datos de initialData
               setFormData((prev) => ({
                 ...prev,
                 branch: initialData.branch || prev.branch,
@@ -166,10 +202,9 @@ const OrderForm = memo(
                   initialData?.description || prev.serviceDescription,
                 diagnosis: initialData?.initial_diagnosis || prev.diagnosis,
                 tasks: initialData?.tasks || prev.tasks,
-                partsList:
-                  initialData?.parts?.length > 0
-                    ? initialData.parts
-                    : prev.partsList,
+                partsList: Array.isArray(initialData?.parts)
+                  ? initialData.parts
+                  : prev.partsList,
                 images: initialData?.images || prev.images,
               }));
             }
@@ -202,24 +237,32 @@ const OrderForm = memo(
             model: vehicle.model || prev.model || "",
             year: vehicle.year || prev.year || "",
           }));
-          if (vehicle.economic_number) {
+          if (vehicle.economic_number && vehicle.branch) {
             try {
               const historyData = await getOrders({
                 vehicle_economic_number: vehicle.economic_number,
+                branch: vehicle.branch,
               });
-              setHistory(
-                historyData.filter((order) => order.id !== initialData?.id)
+              const filteredHistory = historyData.filter(
+                (order) =>
+                  order.id !== initialData?.id &&
+                  order.vehicle_economic_number === vehicle.economic_number &&
+                  order.branch === vehicle.branch
               );
+              setHistory(filteredHistory);
             } catch (err) {
               console.error("Error al cargar historial:", err);
               setHistory([]);
             }
-          }
-          try {
-            const partsData = await getParts(vehicle.model);
-            setParts(partsData);
-          } catch (err) {
-            toast.error("Error al cargar repuestos");
+            try {
+              const partsData = await getParts(vehicle.model);
+              setParts(partsData);
+            } catch (err) {
+              toast.error("Error al cargar repuestos");
+            }
+          } else {
+            setHistory([]);
+            setParts([]);
           }
         } else {
           setVehicleData(null);
@@ -241,24 +284,6 @@ const OrderForm = memo(
       }));
     };
 
-    const handleRequestPart = (part) => {
-      setFormData((prev) => ({
-        ...prev,
-        partsList: [
-          ...prev.partsList,
-          {
-            part_id: part.id,
-            name: part.name,
-            quantity: 1,
-            status: "Solicitado",
-            requested_by: "U002",
-            authorized_by: null,
-          },
-        ],
-      }));
-      setShowPartsModal(false);
-    };
-
     const handleImageUpload = (e) => {
       const files = Array.from(e.target.files);
       setFormData((prev) => ({
@@ -272,7 +297,6 @@ const OrderForm = memo(
       if (isSubmitting) return;
       setIsSubmitting(true);
       setError("");
-      console.log("Formulario enviado:", formData);
 
       const requiredFields = [
         { key: "branch", label: "Sucursal" },
@@ -293,7 +317,12 @@ const OrderForm = memo(
       }
 
       try {
+        //console.log("formData enviado a onSubmit:", formData);
         await onSubmit(formData);
+      } catch (err) {
+        console.error("Error en handleFormSubmit:", err);
+        setError(err.message || "Error al guardar la orden");
+        toast.error(err.message || "Error al guardar la orden");
       } finally {
         setIsSubmitting(false);
       }
@@ -503,35 +532,28 @@ const OrderForm = memo(
                 disabled={isReadOnly}
               />
             </Form.Group>
+
+            <FormSectionTitle>Repuestos Necesarios</FormSectionTitle>
             <Form.Group className="mb-3">
-              <Form.Label>Repuestos Necesarios</Form.Label>
+              <p>Repuestos solicitados: {formData.partsList.length}</p>
               {formData.partsList.length > 0 ? (
-                <Table striped bordered hover>
-                  <thead>
-                    <tr>
-                      <th>Nombre</th>
-                      <th>Código</th>
-                      <th>Cantidad</th>
-                      <th>Estado</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {formData.partsList.map((part, index) => (
-                      <tr key={index}>
-                        <td>{part.name || "Desconocido"}</td>
-                        <td>{part.part_id}</td>
-                        <td>{part.quantity}</td>
-                        <td>{part.status}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </Table>
+                <>
+                  <CustomButton
+                    onClick={() => setShowPartsManagementModal(true)}
+                    disabled={isReadOnly}
+                  >
+                    Gestionar Repuestos
+                  </CustomButton>
+                </>
               ) : (
                 <p>No hay repuestos solicitados.</p>
               )}
               {!isReadOnly && (
-                <CustomButton onClick={() => setShowPartsModal(true)}>
-                  Solicitar Repuesto
+                <CustomButton
+                  onClick={() => setShowPartsModal(true)}
+                  style={{ marginLeft: "10px" }}
+                >
+                  Solicitar Nuevo Repuesto
                 </CustomButton>
               )}
             </Form.Group>
@@ -595,43 +617,41 @@ const OrderForm = memo(
           </Modal.Header>
           <ModalBody>
             {hasHistory ? (
-              <TableWrapper>
-                <StyledTableModal striped bordered hover>
-                  <thead>
-                    <tr>
-                      <th>N° Orden</th>
-                      <th>Descripción</th>
-                      <th>Fecha</th>
-                      <th>Estado</th>
-                      <th>Acción</th>
+              <table className="table table-striped table-bordered">
+                <thead>
+                  <tr>
+                    <th>N° Orden</th>
+                    <th>Descripción</th>
+                    <th>Fecha</th>
+                    <th>Estado</th>
+                    <th>Acción</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.map((entry) => (
+                    <tr key={entry.id}>
+                      <td>{entry.id}</td>
+                      <td>{entry.description}</td>
+                      <td>{formatDate(entry.created_at)}</td>
+                      <td>
+                        <HistoryStatusIcon status={entry.status}>
+                          <FontAwesomeIcon icon={faCircle} />
+                        </HistoryStatusIcon>
+                        {entry.status}
+                      </td>
+                      <td>
+                        <Button
+                          variant="info"
+                          size="sm"
+                          onClick={() => handleViewHistoryDetails(entry)}
+                        >
+                          <FontAwesomeIcon icon={faEye} /> Ver Detalles
+                        </Button>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {history.map((entry) => (
-                      <tr key={entry.id}>
-                        <td>{entry.id}</td>
-                        <td>{entry.description}</td>
-                        <td>{formatDate(entry.created_at)}</td>
-                        <td>
-                          <HistoryStatusIcon status={entry.status}>
-                            <FontAwesomeIcon icon={faCircle} />
-                          </HistoryStatusIcon>
-                          {entry.status}
-                        </td>
-                        <td>
-                          <Button
-                            variant="info"
-                            size="sm"
-                            onClick={() => handleViewHistoryDetails(entry)}
-                          >
-                            <FontAwesomeIcon icon={faEye} /> Ver Detalles
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </StyledTableModal>
-              </TableWrapper>
+                  ))}
+                </tbody>
+              </table>
             ) : (
               <HistoryEmptyMessage>
                 <p>No hay historial disponible para este vehículo.</p>
@@ -683,62 +703,30 @@ const OrderForm = memo(
           </Modal.Footer>
         </StyledModal>
 
-        <StyledModal
-          show={showPartsModal}
-          onHide={() => setShowPartsModal(false)}
-          centered
-        >
-          <Modal.Header closeButton>
-            <Modal.Title>Seleccionar Repuestos</Modal.Title>
-          </Modal.Header>
-          <ModalBody>
-            <TableWrapper>
-              <StyledTableModal striped bordered hover>
-                <thead>
-                  <tr>
-                    <th>Código</th>
-                    <th>Nombre</th>
-                    <th>Modelo Compatible</th>
-                    <th>Foto</th>
-                    <th>Estado</th>
-                    <th>Acción</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {parts.map((part) => (
-                    <tr key={part.id}>
-                      <td>{part.id}</td>
-                      <td>{part.name}</td>
-                      <td>{part.compatible_models.join(", ")}</td>
-                      <td>{part.image}</td>
-                      <td>
-                        {part.quantity > 0 ? "Disponible" : "No Disponible"}
-                      </td>
-                      <td>
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          onClick={() => handleRequestPart(part)}
-                          disabled={part.quantity === 0}
-                        >
-                          Solicitar
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </StyledTableModal>
-            </TableWrapper>
-          </ModalBody>
-          <Modal.Footer>
-            <Button
-              variant="secondary"
-              onClick={() => setShowPartsModal(false)}
-            >
-              Cerrar
-            </Button>
-          </Modal.Footer>
-        </StyledModal>
+        <PartsModal
+          showPartsModal={showPartsModal}
+          setShowPartsModal={setShowPartsModal}
+          showPartsManagementModal={showPartsManagementModal}
+          setShowPartsManagementModal={setShowPartsManagementModal}
+          partsList={formData.partsList}
+          setPartsList={(newPartsList) => {
+            //console.log("setPartsList llamado con:", newPartsList);
+            setFormData((prev) => {
+              const updatedPartsList = Array.isArray(newPartsList)
+                ? newPartsList
+                : [];
+              //console.log("Actualizando formData.partsList:", updatedPartsList);
+              return {
+                ...prev,
+                partsList: updatedPartsList,
+              };
+            });
+          }}
+          availableParts={parts}
+          orderId={initialData?.id}
+          isReadOnly={isReadOnly}
+          userId={user.id}
+        />
       </FormContainer>
     );
   }
@@ -758,25 +746,25 @@ const TechnicianCreateOrder = ({
   const updateDisableFields = order?.id
     ? ["branch", "economicNumber", "vin", "serviceType", "serviceDescription"]
     : disableFields;
-  const hideButtons = isModal; // Ocultar botones en modales, mostrar en crear orden
+  const hideButtons = isModal;
 
   const handleSaveOrder = useCallback(
     async (formData) => {
       try {
-        console.log("Guardando orden con datos:", formData);
+        //console.log("Guardando orden con datos:", formData);
         let newOrder;
         if (order?.id) {
           newOrder = await updateOrder(order.id, {
             initial_diagnosis: formData.diagnosis,
             tasks: formData.tasks,
             images: formData.images || [],
+            parts: formData.partsList,
             kilometraje: formData.kilometraje
               ? parseInt(formData.kilometraje, 10)
               : undefined,
             branch: formData.branch,
             vehicle_economic_number: formData.economicNumber,
           });
-          // Combinar los datos existentes con los actualizados para preservar vehicle_economic_number y otros
           newOrder = {
             ...order,
             ...newOrder,
@@ -790,8 +778,13 @@ const TechnicianCreateOrder = ({
             brand: order.brand || formData.brand,
             model: order.model || formData.model,
             year: order.year || formData.year,
+            parts: formData.partsList,
           };
-          toast.success(`Orden #${newOrder.id} actualizada satisfactoriamente`);
+          toast.success(
+            newOrder.id
+              ? `Orden #${newOrder.id} actualizada satisfactoriamente`
+              : "Orden actualizada satisfactoriamente"
+          );
         } else {
           newOrder = await createOrder({
             type: formData.serviceType,
@@ -799,6 +792,7 @@ const TechnicianCreateOrder = ({
             initial_diagnosis: formData.diagnosis,
             tasks: formData.tasks,
             images: formData.images || [],
+            parts: formData.partsList,
             technician_id: user.id,
             vehicle_economic_number: formData.economicNumber,
             kilometraje: parseInt(formData.kilometraje, 10),
@@ -808,7 +802,11 @@ const TechnicianCreateOrder = ({
             model: formData.model,
             year: formData.year,
           });
-          toast.success(`Orden #${newOrder.id} creada satisfactoriamente`);
+          toast.success(
+            newOrder.id
+              ? `Orden #${newOrder.id} creada satisfactoriamente`
+              : "Orden creada satisfactoriamente"
+          );
         }
         if (onClose) {
           onClose(newOrder);
@@ -819,9 +817,11 @@ const TechnicianCreateOrder = ({
       } catch (err) {
         console.error("Error al guardar la orden:", err);
         const message =
-          err.response?.data?.message || "Error al guardar la orden";
+          err.response?.data?.message ||
+          err.message ||
+          "Error al guardar la orden";
         toast.error(message);
-        throw err;
+        throw new Error(message);
       }
     },
     [user.id, onClose, navigate, order]
