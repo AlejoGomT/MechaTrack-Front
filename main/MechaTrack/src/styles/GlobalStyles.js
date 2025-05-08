@@ -200,14 +200,27 @@ export const StyledTable = styled.table`
   }
 `;
 
-export const ActionButton = styled(Button)`
-  background-color: ${colors.primary};
-  border: none;
-  padding: 8px 16px;
-  transition: background-color 0.3s;
-  &:hover {
-    background-color: ${colors.primaryHover};
-  }
+export const ActionButton = styled(Button)(({ variant }) => ({
+  backgroundColor:
+    variant === "secondary"
+      ? colors.secondary
+      : variant === "primary"
+      ? colors.backgroundLight
+      : colors.primary,
+  border: "none",
+  padding: "8px 16px",
+  transition: "background-color 0.3s",
+  "&:hover": {
+    backgroundColor:
+      variant === "secondary" ? colors.secondaryHover : colors.primaryHover,
+  },
+}));
+
+export const ActionsContainer = styled.div`
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
 `;
 
 // --- Estilos para TechnicianDashboard ---
@@ -475,42 +488,45 @@ export const StyledTableModal = styled(Table)`
   }
   th:nth-of-type(1),
   td:nth-of-type(1) {
-    /* Núm. Económico */
+    /* Código */
     min-width: 100px;
   }
   th:nth-of-type(2),
   td:nth-of-type(2) {
-    /* Orden */
-    min-width: 100px;
+    /* Nombre */
+    min-width: 150px;
   }
   th:nth-of-type(3),
   td:nth-of-type(3) {
-    /* Fecha Ingreso */
-    min-width: 120px;
+    /* Modelo Compatible */
+    min-width: 150px;
   }
   th:nth-of-type(4),
   td:nth-of-type(4) {
-    /* Diagnóstico */
-    min-width: 200px;
-    max-width: 200px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    /* Inventario */
+    min-width: 80px;
+    text-align: center;
   }
   th:nth-of-type(5),
   td:nth-of-type(5) {
-    /* Notificación o Acción */
-    min-width: 80px;
+    /* Cantidad */
+    min-width: 120px;
     text-align: center;
   }
   th:nth-of-type(6),
   td:nth-of-type(6) {
-    /* Acción (solo pending) */
-    min-width: 80px;
+    /* Precio (si isFinalized) */
+    min-width: 120px;
     text-align: center;
   }
-  td:nth-of-type(4) {
-    /* Tooltip para Diagnóstico */
+  th:nth-of-type(7),
+  td:nth-of-type(7) {
+    /* Acción */
+    min-width: 100px;
+    text-align: center;
+  }
+  td:nth-of-type(3) {
+    /* Tooltip para Modelo Compatible */
     cursor: pointer;
   }
 `;

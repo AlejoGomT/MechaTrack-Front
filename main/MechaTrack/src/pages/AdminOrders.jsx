@@ -14,13 +14,20 @@ import axios from "axios";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import CustomButton from "../components/CustomButton";
-import TechnicianCreateOrder from "./TechnicianCreateOrder";
+import OrderDetails from "../components/OrderDetails";
 import { StyledModal, ModalBody } from "../styles/GlobalStyles";
 import styled from "@emotion/styled";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCircle, faCheck, faTimes } from "@fortawesome/free-solid-svg-icons";
 import { toast } from "react-toastify";
-import { updateOrderNumbers } from "../services/orderService"; // Añadir import
+import {
+  updateOrderNumbers,
+  updateOrderStatus,
+  updateOrder,
+  updatePartQuantity,
+  requestPart,
+  updatePart,
+} from "../services/orderService";
 
 const adminMenu = [
   { label: "Inicio", path: "/admin" },
@@ -52,35 +59,6 @@ const StatusIcon = styled.span`
   }};
 `;
 
-const HistorySidebar = styled.div`
-  width: 300px;
-  background-color: #f8f9fa;
-  padding: 15px;
-  border-right: 1px solid #dee2e6;
-  height: 100%;
-  overflow-y: auto;
-`;
-
-const HistoryItem = styled.div`
-  margin-bottom: 15px;
-  padding: 10px;
-  background-color: #fff;
-  border-radius: 5px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-`;
-
-const HistoryTitle = styled.h6`
-  margin: 0;
-  font-size: 0.9rem;
-  color: #343a40;
-`;
-
-const HistoryDate = styled.p`
-  margin: 0;
-  font-size: 0.8rem;
-  color: #6c757d;
-`;
-
 const ActionSection = styled.div`
   margin-top: 20px;
   padding: 15px;
@@ -95,13 +73,17 @@ const AdminOrders = () => {
   const [economicNumberFilter, setEconomicNumberFilter] = useState("");
   const [orderNumberFilter, setOrderNumberFilter] = useState("");
   const [showModal, setShowModal] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [rejectionNote, setRejectionNote] = useState("");
   const [editedParts, setEditedParts] = useState([]);
+  const [editedOrder, setEditedOrder] = useState({});
   const [orders, setOrders] = useState([]);
   const [branches, setBranches] = useState([]);
-  const [orderNumber, setOrderNumber] = useState(""); // Nuevo estado
-  const [deliveryNoteNumber, setDeliveryNoteNumber] = useState(""); // Nuevo estado
+  const [orderNumber, setOrderNumber] = useState("");
+  const [deliveryNoteNumber, setDeliveryNoteNumber] = useState("");
+  const [isEditingNumbers, setIsEditingNumbers] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -140,9 +122,16 @@ const AdminOrders = () => {
         headers: { Authorization: `Bearer ${token}` },
       });
       setSelectedOrder(response.data);
+      setEditedOrder(response.data);
       setEditedParts(response.data.parts || []);
-      setOrderNumber(response.data.order_number || ""); // Inicializar con valor actual
-      setDeliveryNoteNumber(response.data.invoice?.delivery_note_number || ""); // Inicializar con valor actual
+      setOrderNumber(response.data.order_number || "");
+      setDeliveryNoteNumber(response.data.invoice?.delivery_note_number || "");
+      setIsEditingNumbers(
+        !(
+          response.data.order_number ||
+          response.data.invoice?.delivery_note_number
+        )
+      );
       setShowModal(true);
     } catch (error) {
       toast.error("Error al cargar detalles de la orden");
@@ -150,22 +139,23 @@ const AdminOrders = () => {
     }
   };
 
-  const formatDate = (dateStr) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString("es-ES", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
-  };
-
-  const handlePartAction = async (partIndex, action) => {
-    const part = selectedOrder.parts[partIndex];
+  const handlePartAction = async (partIndex, action, note) => {
+    const part = editedParts[partIndex];
     try {
-      await axios.put(
-        `/api/orders/${selectedOrder.id}/parts/${part.part_id}`,
-        { action, note: rejectionNote },
-        { headers: { Authorization: `Bearer ${token}` } }
+      const status = action === "accept" ? "Aprobado" : "Rechazado";
+      // Pasar el nombre completo del usuario como authorizedBy para aprobaciones, null para rechazos
+      const authorizedBy =
+        action === "accept" ? `${user.first_name} ${user.last_name}` : null;
+      await updatePart(
+        selectedOrder.id,
+        part.part_id,
+        {
+          quantity: part.quantity,
+          status,
+          price: part.price || null,
+          note: action === "reject" ? note : "",
+        },
+        authorizedBy
       );
       const updatedOrder = await axios.get(`/api/orders/${selectedOrder.id}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -177,7 +167,6 @@ const AdminOrders = () => {
           action === "accept" ? "aprobado" : "rechazado"
         }`
       );
-      setRejectionNote("");
     } catch (error) {
       toast.error("Error al procesar repuesto");
       console.error("[AdminOrders] Error al procesar repuesto:", error);
@@ -190,22 +179,52 @@ const AdminOrders = () => {
     setEditedParts(updatedParts);
   };
 
-  const saveEditedParts = async () => {
+  const handleDeletePart = async (index) => {
+    const part = editedParts[index];
     try {
-      await axios.put(
-        `/api/orders/${selectedOrder.id}`,
-        { ...selectedOrder, parts: editedParts },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await updatePartQuantity(selectedOrder.id, part.part_id, 0);
+      const updatedParts = editedParts.filter((_, i) => i !== index);
+      setEditedParts(updatedParts);
+      toast.success(`Repuesto ${part.name} eliminado`);
+    } catch (error) {
+      toast.error("Error al eliminar repuesto");
+      console.error("[AdminOrders] Error al eliminar repuesto:", error);
+    }
+  };
+
+  const handleAddPart = async (part) => {
+    try {
+      await requestPart(selectedOrder.id, part);
+      const updatedOrder = await axios.get(`/api/orders/${selectedOrder.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setEditedParts(updatedOrder.data.parts || []);
+      setSelectedOrder(updatedOrder.data);
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  const handleEditOrderField = (field, value) => {
+    setEditedOrder({ ...editedOrder, [field]: value });
+  };
+
+  const saveEditedOrder = async () => {
+    try {
+      await updateOrder(selectedOrder.id, {
+        ...editedOrder,
+        parts: editedParts,
+      });
       const updatedOrder = await axios.get(`/api/orders/${selectedOrder.id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setSelectedOrder(updatedOrder.data);
+      setEditedOrder(updatedOrder.data);
       setEditedParts(updatedOrder.data.parts || []);
-      toast.success("Repuestos actualizados");
+      toast.success("Orden actualizada");
     } catch (error) {
-      toast.error("Error al guardar repuestos");
-      console.error("[AdminOrders] Error al guardar repuestos:", error);
+      toast.error("Error al guardar orden");
+      console.error("[AdminOrders] Error al guardar orden:", error);
     }
   };
 
@@ -221,6 +240,7 @@ const AdminOrders = () => {
         headers: { Authorization: `Bearer ${token}` },
       });
       setSelectedOrder(updatedOrder.data);
+      setEditedOrder(updatedOrder.data);
       setEditedParts(updatedOrder.data.parts || []);
       toast.success(
         `Orden #${selectedOrder.id} ${
@@ -251,6 +271,7 @@ const AdminOrders = () => {
         headers: { Authorization: `Bearer ${token}` },
       });
       setSelectedOrder(updatedOrder.data);
+      setEditedOrder(updatedOrder.data);
       setOrders((prev) =>
         prev.map((o) => (o.id === updatedOrder.data.id ? updatedOrder.data : o))
       );
@@ -260,12 +281,94 @@ const AdminOrders = () => {
     }
   };
 
+  const handleSendToBilling = () => {
+    setConfirmAction(() => async () => {
+      try {
+        await updateOrderStatus(selectedOrder.id, "Pendiente de Facturación");
+        const updatedOrder = await axios.get(
+          `/api/orders/${selectedOrder.id}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        setSelectedOrder(updatedOrder.data);
+        setEditedOrder(updatedOrder.data);
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.id === updatedOrder.data.id ? updatedOrder.data : o
+          )
+        );
+        toast.success(`Orden #${selectedOrder.id} enviada a facturación`);
+        setShowModal(false);
+      } catch (error) {
+        toast.error("Error al enviar a facturación");
+        console.error("[AdminOrders] Error al enviar a facturación:", error);
+      }
+    });
+    setShowConfirmModal(true);
+  };
+
+  const handleCancelBilling = async () => {
+    setConfirmAction(() => async () => {
+      try {
+        await updateOrderStatus(selectedOrder.id, "Finalizado");
+        const updatedOrder = await axios.get(
+          `/api/orders/${selectedOrder.id}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        setSelectedOrder(updatedOrder.data);
+        setEditedOrder(updatedOrder.data);
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.id === updatedOrder.data.id ? updatedOrder.data : o
+          )
+        );
+        toast.success(`Orden #${selectedOrder.id} devuelta a Finalizado`);
+        setShowModal(false);
+      } catch (error) {
+        toast.error("Error al cancelar facturación");
+        console.error("[AdminOrders] Error al cancelar facturación:", error);
+      }
+    });
+    setShowConfirmModal(true);
+  };
+
+  const handleDownloadReport = () => {
+    const report = {
+      order: selectedOrder,
+      invoice: selectedOrder.invoice,
+      parts: editedParts,
+      total: editedParts
+        .reduce((sum, part) => sum + part.quantity * (part.price || 0), 0)
+        .toFixed(2),
+    };
+    const blob = new Blob([JSON.stringify(report, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `order_${selectedOrder.id}_report.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    toast.success("Informe descargado");
+  };
+
   const userData = {
     userId: user?.id,
     userName: `${user?.first_name} ${user?.last_name}`,
     activeOrdersCount,
     notificationsCount,
   };
+
+  const isReadOnly = [
+    "Pendiente",
+    "Pendiente de Facturación",
+    "Facturado",
+  ].includes(selectedOrder?.status);
+  const canEditParts = selectedOrder?.status === "Finalizado";
 
   return (
     <>
@@ -374,62 +477,13 @@ const AdminOrders = () => {
         <Modal.Header closeButton>
           <Modal.Title>Detalles de la Orden #{selectedOrder?.id}</Modal.Title>
         </Modal.Header>
-        <ModalBody style={{ display: "flex", padding: 0 }}>
-          <HistorySidebar>
-            <h5>Historial</h5>
-            {selectedOrder?.history?.length > 0 ? (
-              selectedOrder.history.map((entry, index) => (
-                <HistoryItem key={index}>
-                  <HistoryTitle>
-                    <StatusIcon status={entry.status}>
-                      <FontAwesomeIcon icon={faCircle} />
-                    </StatusIcon>
-                    {entry.description}
-                  </HistoryTitle>
-                  <HistoryDate>{formatDate(entry.date)}</HistoryDate>
-                </HistoryItem>
-              ))
-            ) : (
-              <p>Sin historial disponible</p>
-            )}
-            {selectedOrder?.order_number && (
-              <HistoryItem>
-                <HistoryTitle>Número de Pedido</HistoryTitle>
-                <HistoryDate>{selectedOrder.order_number}</HistoryDate>
-              </HistoryItem>
-            )}
-            {selectedOrder?.invoice && (
-              <>
-                {selectedOrder.invoice.invoice_number && (
-                  <HistoryItem>
-                    <HistoryTitle>Número de Factura</HistoryTitle>
-                    <HistoryDate>
-                      {selectedOrder.invoice.invoice_number}
-                    </HistoryDate>
-                  </HistoryItem>
-                )}
-                {selectedOrder.invoice.delivery_note_number && (
-                  <HistoryItem>
-                    <HistoryTitle>Número de Albarán</HistoryTitle>
-                    <HistoryDate>
-                      {selectedOrder.invoice.delivery_note_number}
-                    </HistoryDate>
-                  </HistoryItem>
-                )}
-              </>
-            )}
-          </HistorySidebar>
-          <div style={{ flex: 1, padding: "15px" }}>
-            {selectedOrder && (
-              <>
-                <TechnicianCreateOrder
-                  order={selectedOrder}
-                  isReadOnly={selectedOrder.status !== "Pendiente"}
-                  isModal={true}
-                />
-                {selectedOrder.status !== "Facturado" && (
-                  <ActionSection>
-                    <h6>Gestión de Números</h6>
+        <ModalBody>
+          {selectedOrder && (
+            <>
+              <ActionSection>
+                <h6>N° de solicitud de pedido</h6>
+                <Row>
+                  <Col md={6}>
                     <Form.Group className="mb-3">
                       <Form.Label>Número de Pedido</Form.Label>
                       <Form.Control
@@ -437,9 +491,15 @@ const AdminOrders = () => {
                         value={orderNumber}
                         onChange={(e) => setOrderNumber(e.target.value)}
                         placeholder="Ej: PED-12345"
-                        disabled={selectedOrder.status === "Facturado"}
+                        disabled={
+                          !isEditingNumbers ||
+                          selectedOrder.status === "Pendiente de Facturación" ||
+                          selectedOrder.status === "Facturado"
+                        }
                       />
                     </Form.Group>
+                  </Col>
+                  <Col md={6}>
                     <Form.Group className="mb-3">
                       <Form.Label>Número de Solicitud de Albarán</Form.Label>
                       <Form.Control
@@ -447,55 +507,81 @@ const AdminOrders = () => {
                         value={deliveryNoteNumber}
                         onChange={(e) => setDeliveryNoteNumber(e.target.value)}
                         placeholder="Ej: ALB-12345"
-                        disabled={selectedOrder.status === "Facturado"}
+                        disabled={
+                          !isEditingNumbers ||
+                          selectedOrder.status === "Pendiente de Facturación" ||
+                          selectedOrder.status === "Facturado"
+                        }
                       />
                     </Form.Group>
+                  </Col>
+                </Row>
+                <div className="d-flex justify-content-center align-items-center">
+                  {(orderNumber || deliveryNoteNumber) && !isEditingNumbers ? (
+                    <Button
+                      variant="secondary"
+                      onClick={() => setIsEditingNumbers(true)}
+                      disabled={
+                        selectedOrder.status === "Pendiente de Facturación" ||
+                        selectedOrder.status === "Facturado"
+                      }
+                    >
+                      Editar
+                    </Button>
+                  ) : (
                     <Button
                       variant="primary"
-                      onClick={handleSaveNumbers}
+                      onClick={async () => {
+                        await handleSaveNumbers();
+                        setIsEditingNumbers(false);
+                      }}
                       disabled={
                         (!orderNumber && !deliveryNoteNumber) ||
+                        selectedOrder.status === "Pendiente de Facturación" ||
                         selectedOrder.status === "Facturado"
                       }
                     >
                       Guardar Números
                     </Button>
-                  </ActionSection>
-                )}
-              </>
-            )}
-            {selectedOrder?.status === "En Proceso" &&
-              selectedOrder?.parts?.some((p) => p.status === "Solicitado") && (
+                  )}
+                </div>
+              </ActionSection>
+
+              <OrderDetails
+                order={editedOrder}
+                isReadOnly={isReadOnly}
+                onPartAction={handlePartAction}
+                onEditPart={handleEditOrderField}
+                onDeletePart={handleDeletePart}
+                onAddPart={handleAddPart}
+                editedParts={editedParts}
+                setEditedParts={setEditedParts}
+                canEditParts={canEditParts}
+                userId={user.id}
+              />
+
+              {selectedOrder.status === "Pendiente" && (
                 <ActionSection>
-                  <h6>Solicitudes de Repuestos Pendientes</h6>
-                  {selectedOrder.parts
-                    .filter((part) => part.status === "Solicitado")
-                    .map((part, index) => (
-                      <Row key={index} className="mb-2 align-items-center">
-                        <Col>
-                          {part.name} (Cantidad: {part.quantity})
-                        </Col>
-                        <Col>
-                          <Button
-                            variant="success"
-                            size="sm"
-                            onClick={() => handlePartAction(index, "accept")}
-                          >
-                            <FontAwesomeIcon icon={faCheck} /> Aceptar
-                          </Button>{" "}
-                          <Button
-                            variant="danger"
-                            size="sm"
-                            onClick={() =>
-                              rejectionNote && handlePartAction(index, "reject")
-                            }
-                            disabled={!rejectionNote}
-                          >
-                            <FontAwesomeIcon icon={faTimes} /> Rechazar
-                          </Button>
-                        </Col>
-                      </Row>
-                    ))}
+                  <h6>Revisión de Finalización</h6>
+                  <Row className="mt-3">
+                    <Col>
+                      <Button
+                        variant="success"
+                        onClick={() => handleFinalizeAction("accept")}
+                      >
+                        <FontAwesomeIcon icon={faCheck} /> Aceptar Finalización
+                      </Button>{" "}
+                      <Button
+                        variant="danger"
+                        onClick={() =>
+                          rejectionNote && handleFinalizeAction("reject")
+                        }
+                        disabled={!rejectionNote}
+                      >
+                        <FontAwesomeIcon icon={faTimes} /> Rechazar Finalización
+                      </Button>
+                    </Col>
+                  </Row>
                   <Form.Group className="mt-2">
                     <Form.Label>
                       Observaciones (obligatorio para rechazar)
@@ -510,76 +596,78 @@ const AdminOrders = () => {
                   </Form.Group>
                 </ActionSection>
               )}
-            {selectedOrder?.status === "Pendiente" && (
-              <ActionSection>
-                <h6>Revisión de Finalización</h6>
-                {editedParts.length > 0 && (
-                  <div className="mb-3">
-                    <h6>Editar Repuestos</h6>
-                    {editedParts.map((part, index) => (
-                      <Row key={index} className="mb-2 align-items-center">
-                        <Col>{part.name}</Col>
-                        <Col>
-                          <Form.Control
-                            type="number"
-                            value={part.quantity}
-                            onChange={(e) =>
-                              handleEditPart(index, "quantity", e.target.value)
-                            }
-                            placeholder="Cantidad"
-                            style={{ width: "100px" }}
-                          />
-                        </Col>
-                      </Row>
-                    ))}
-                    <Button
-                      variant="primary"
-                      onClick={saveEditedParts}
-                      className="mt-2"
-                    >
-                      Guardar Repuestos
-                    </Button>
-                  </div>
-                )}
-                <Row className="mt-3">
-                  <Col>
-                    <Button
-                      variant="success"
-                      onClick={() => handleFinalizeAction("accept")}
-                    >
-                      <FontAwesomeIcon icon={faCheck} /> Aceptar Finalización
-                    </Button>{" "}
-                    <Button
-                      variant="danger"
-                      onClick={() =>
-                        rejectionNote && handleFinalizeAction("reject")
-                      }
-                      disabled={!rejectionNote}
-                    >
-                      <FontAwesomeIcon icon={faTimes} /> Rechazar Finalización
-                    </Button>
-                  </Col>
-                </Row>
-                <Form.Group className="mt-2">
-                  <Form.Label>
-                    Observaciones (obligatorio para rechazar)
-                  </Form.Label>
-                  <FormControl
-                    as="textarea"
-                    rows={2}
-                    value={rejectionNote}
-                    onChange={(e) => setRejectionNote(e.target.value)}
-                    placeholder="Motivo del rechazo"
-                  />
-                </Form.Group>
-              </ActionSection>
-            )}
-          </div>
+
+              {selectedOrder.status === "Finalizado" && (
+                <ActionSection>
+                  <h6>Acciones</h6>
+                  <Button
+                    variant="primary"
+                    onClick={saveEditedOrder}
+                    className="me-2"
+                  >
+                    Guardar Cambios
+                  </Button>
+                  <Button variant="success" onClick={handleSendToBilling}>
+                    Enviar a Facturación
+                  </Button>
+                </ActionSection>
+              )}
+
+              {selectedOrder.status === "Pendiente de Facturación" && (
+                <ActionSection>
+                  <h6>Acciones</h6>
+                  <Button variant="danger" onClick={handleCancelBilling}>
+                    Cancelar Solicitud de Facturación
+                  </Button>
+                </ActionSection>
+              )}
+
+              {selectedOrder.status === "Facturado" && (
+                <ActionSection>
+                  <h6>Acciones</h6>
+                  <Button variant="primary" onClick={handleDownloadReport}>
+                    Descargar Informe
+                  </Button>
+                </ActionSection>
+              )}
+            </>
+          )}
         </ModalBody>
         <Modal.Footer>
           <CustomButton onClick={() => setShowModal(false)}>
             Cerrar
           </CustomButton>
+        </Modal.Footer>
+      </StyledModal>
+
+      <StyledModal
+        show={showConfirmModal}
+        onHide={() => setShowConfirmModal(false)}
+        size="sm"
+        centered
+      >
+        <Modal.Header closeButton>
+          <Modal.Title>Confirmar Acción</Modal.Title>
+        </Modal.Header>
+        <ModalBody>
+          <p>¿Está seguro de realizar esta acción?</p>
+        </ModalBody>
+        <Modal.Footer>
+          <Button
+            variant="secondary"
+            onClick={() => setShowConfirmModal(false)}
+          >
+            Cancelar
+          </Button>
+          <Button
+            variant="primary"
+            onClick={async () => {
+              await confirmAction();
+              setShowConfirmModal(false);
+            }}
+          >
+            Confirmar
+          </Button>
         </Modal.Footer>
       </StyledModal>
     </>

@@ -25,7 +25,6 @@ export const getOrderById = async (id) => {
     const response = await axios.get(`${API_URL}/orders/${id}`, {
       headers: getAuthHeaders(),
     });
-    //console.log("Respuesta de getOrderById:", response.data);
     return response.data;
   } catch (err) {
     console.error("Error en getOrderById:", err.response?.data || err);
@@ -49,11 +48,6 @@ export const createOrder = async (orderData) => {
         formData.append(key, value);
       }
     });
-
-    // Log para depurar FormData
-    /*for (let [key, value] of formData.entries()) {
-      console.log(`FormData createOrder: ${key} =`, value);
-    }*/
 
     const response = await axios.post(`${API_URL}/orders`, formData, {
       headers: {
@@ -88,7 +82,6 @@ export const updateOrder = async (orderId, orderData) => {
       }
     });
 
-    // Log para depurar FormData
     for (let [key, value] of formData.entries()) {
       console.log(`FormData updateOrder: ${key} =`, value);
     }
@@ -99,7 +92,6 @@ export const updateOrder = async (orderId, orderData) => {
         ...getAuthHeaders(),
       },
     });
-    //console.log("Respuesta de updateOrder:", response.data);
     return response.data;
   } catch (error) {
     console.error("Error en updateOrder:", error.response?.data || error);
@@ -158,19 +150,55 @@ export const updateOrderNumbers = async (orderId, numbers) => {
 
 export const requestPart = async (orderId, part) => {
   try {
+    if (!part.price || part.price <= 0) {
+      throw new Error("El precio del repuesto debe ser mayor que 0");
+    }
     const response = await axios.post(
       `${API_URL}/orders/${orderId}/parts`,
-      part,
+      {
+        part_id: part.part_id,
+        name: part.name,
+        quantity: part.quantity,
+        price: parseFloat(part.price),
+        requested_by: part.requested_by,
+        status: part.status || "Solicitado",
+      },
       {
         headers: {
           ...getAuthHeaders(),
         },
       }
     );
+    console.log("Respuesta de requestPart:", response.data);
     return response.data;
   } catch (error) {
     console.error("Error en requestPart:", error.response?.data || error);
     throw error.response?.data || { message: "Error al solicitar repuesto" };
+  }
+};
+
+export const updatePart = async (orderId, partId, partData, authorizedBy) => {
+  try {
+    const response = await axios.put(
+      `${API_URL}/orders/${orderId}/parts/${partId}`,
+      {
+        quantity: partData.quantity,
+        status: partData.status,
+        price: partData.price || null,
+        note: partData.note || "",
+        authorized_by: partData.status === "Aprobado" ? authorizedBy : null, // Enviar authorized_by solo si el estado es "Aprobado"
+      },
+      {
+        headers: {
+          ...getAuthHeaders(),
+        },
+      }
+    );
+    console.log("Respuesta de updatePart:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error("Error en updatePart:", error.response?.data || error);
+    throw error.response?.data || { message: "Error al actualizar repuesto" };
   }
 };
 
@@ -240,7 +268,6 @@ export const getParts = async (model) => {
       headers: getAuthHeaders(),
       params: { model },
     });
-    //console.log("Respuesta de getParts:", response.data);
     return response.data;
   } catch (err) {
     console.error("Error en getParts:", err.response?.data || err);
@@ -258,5 +285,24 @@ export const getNotifications = async (userId) => {
   } catch (err) {
     console.error("Error en getNotifications:", err.response?.data || err);
     throw err.response?.data || { message: "Error al obtener notificaciones" };
+  }
+};
+
+export const finalizeOrder = async (orderId, data) => {
+  try {
+    const response = await axios.put(
+      `${API_URL}/orders/${orderId}/finalize`,
+      data,
+      {
+        headers: {
+          ...getAuthHeaders(),
+        },
+      }
+    );
+    console.log("Respuesta de finalizeOrder:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error("Error en finalizeOrder:", error.response?.data || error);
+    throw error.response?.data || { message: "Error al finalizar orden" };
   }
 };

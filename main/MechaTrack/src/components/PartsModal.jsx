@@ -14,8 +14,9 @@ import {
   StyledTableModal,
   StyledModal,
   ModalBody,
+  ActionButton,
+  ActionsContainer,
 } from "../styles/GlobalStyles";
-import CustomButton from "../components/CustomButton";
 
 const PartsModal = ({
   showPartsModal,
@@ -28,33 +29,32 @@ const PartsModal = ({
   orderId,
   isReadOnly,
   userId,
+  isFinalized,
 }) => {
   const [localPartsList, setLocalPartsList] = useState(partsList);
   const [selectedPartQuantities, setSelectedPartQuantities] = useState({});
+  const [selectedPartPrices, setSelectedPartPrices] = useState({});
   const [isLoading, setIsLoading] = useState(false);
 
-  // Sincronizar localPartsList con partsList del padre
   useEffect(() => {
     setLocalPartsList(partsList);
-    //console.log("partsList recibido en PartsModal:", partsList);
+    console.log("partsList recibido en PartsModal:", partsList);
   }, [partsList]);
 
-  // Cargar repuestos de la orden si existe orderId
   const fetchOrderParts = useCallback(async () => {
     if (!orderId || (!showPartsModal && !showPartsManagementModal)) {
-      return; // No cargar si el modal no está abierto
+      return;
     }
     setIsLoading(true);
     try {
-      //console.log("Cargando repuestos para orderId:", orderId);
+      console.log("Cargando repuestos para orderId:", orderId);
       const orderData = await getOrderById(orderId);
       const orderParts = Array.isArray(orderData.parts) ? orderData.parts : [];
       setLocalPartsList(orderParts);
-      // Solo actualizar partsList si es diferente para evitar ciclos
       if (JSON.stringify(orderParts) !== JSON.stringify(partsList)) {
         setPartsList(orderParts);
       }
-      //console.log("Repuestos cargados desde la orden:", orderParts);
+      console.log("Repuestos cargados desde la orden:", orderParts);
     } catch (err) {
       console.error("Error al cargar repuestos de la orden:", err);
       toast.error("Error al cargar repuestos de la orden");
@@ -73,7 +73,6 @@ const PartsModal = ({
     fetchOrderParts();
   }, [fetchOrderParts]);
 
-  // Manejar cambios en la cantidad de un repuesto a solicitar
   const handleQuantityChange = (partId, value) => {
     setSelectedPartQuantities((prev) => ({
       ...prev,
@@ -81,11 +80,23 @@ const PartsModal = ({
     }));
   };
 
+  const handlePriceChange = (partId, value) => {
+    setSelectedPartPrices((prev) => ({
+      ...prev,
+      [partId]: parseFloat(value) || 0,
+    }));
+  };
+
   const handleRequestPart = async (part) => {
     try {
       const quantity = selectedPartQuantities[part.id] || 1;
+      const price = selectedPartPrices[part.id] || 0;
       if (quantity < 1) {
         toast.error("La cantidad debe ser al menos 1");
+        return;
+      }
+      if (price < 0) {
+        toast.error("El precio no puede ser negativo");
         return;
       }
       if (quantity > part.quantity) {
@@ -98,31 +109,30 @@ const PartsModal = ({
         part_id: part.id,
         name: part.name,
         quantity,
-        status: "Solicitado",
+        price,
+        status: isFinalized ? "Aprobado" : "Solicitado",
         requested_by: userId,
-        authorized_by: null,
+        authorized_by: isFinalized ? userId : null,
       };
-      //console.log("newPart a añadir:", newPart);
+      console.log("newPart a añadir:", newPart);
 
-      // Actualizar localPartsList y propagar al padre
       const updatedList = [...localPartsList, newPart];
       setLocalPartsList(updatedList);
       setPartsList(updatedList);
-      //console.log("partsList actualizado en handleRequestPart:", updatedList);
+      console.log("partsList actualizado en handleRequestPart:", updatedList);
 
-      // Solo enviar al servidor si hay orderId (modo edición)
       if (orderId) {
         await requestPart(orderId, newPart);
-        toast.success(`Repuesto ${part.name} solicitado`);
+        toast.success(
+          `Repuesto ${part.name} ${isFinalized ? "añadido" : "solicitado"}`
+        );
       } else {
-        /*console.log(
-          "Orden nueva: Repuesto añadido localmente, se procesará al crear la orden"
-        );*/
         toast.success(`Repuesto ${part.name} añadido a la orden`);
       }
 
       setShowPartsModal(false);
-      setSelectedPartQuantities((prev) => ({ ...prev, [part.id]: 1 })); // Resetear cantidad
+      setSelectedPartQuantities((prev) => ({ ...prev, [part.id]: 1 }));
+      setSelectedPartPrices((prev) => ({ ...prev, [part.id]: 0 }));
     } catch (err) {
       console.error("Error en handleRequestPart:", err);
       toast.error(err.message || "Error al solicitar repuesto");
@@ -213,6 +223,8 @@ const PartsModal = ({
         <ModalBody>
           {isLoading ? (
             <p>Cargando repuestos...</p>
+          ) : availableParts.length === 0 ? (
+            <p>No hay repuestos disponibles para este vehículo.</p>
           ) : (
             <TableWrapper>
               <StyledTableModal striped bordered hover>
@@ -223,6 +235,7 @@ const PartsModal = ({
                     <th>Modelo Compatible</th>
                     <th>Inventario</th>
                     <th>Cantidad</th>
+                    {isFinalized && <th>Precio</th>}
                     <th>Acción</th>
                   </tr>
                 </thead>
@@ -231,7 +244,7 @@ const PartsModal = ({
                     <tr key={part.id}>
                       <td>{part.id}</td>
                       <td>{part.name}</td>
-                      <td>{part.compatible_models.join(", ")}</td>
+                      <td>{part.compatible_models?.join(", ") || "N/A"}</td>
                       <td>{part.quantity}</td>
                       <td>
                         <InputGroup style={{ maxWidth: "120px" }}>
@@ -247,15 +260,32 @@ const PartsModal = ({
                           />
                         </InputGroup>
                       </td>
+                      {isFinalized && (
+                        <td>
+                          <InputGroup style={{ maxWidth: "120px" }}>
+                            <Form.Control
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={selectedPartPrices[part.id] || 0}
+                              onChange={(e) =>
+                                handlePriceChange(part.id, e.target.value)
+                              }
+                            />
+                          </InputGroup>
+                        </td>
+                      )}
                       <td>
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          onClick={() => handleRequestPart(part)}
-                          disabled={part.quantity === 0}
-                        >
-                          Solicitar
-                        </Button>
+                        <ActionsContainer>
+                          <ActionButton
+                            variant="primary"
+                            size="sm"
+                            onClick={() => handleRequestPart(part)}
+                            disabled={part.quantity === 0}
+                          >
+                            {isFinalized ? "Añadir" : "Solicitar"}
+                          </ActionButton>
+                        </ActionsContainer>
                       </td>
                     </tr>
                   ))}
@@ -265,9 +295,12 @@ const PartsModal = ({
           )}
         </ModalBody>
         <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowPartsModal(false)}>
+          <ActionButton
+            variant="secondary"
+            onClick={() => setShowPartsModal(false)}
+          >
             Cerrar
-          </Button>
+          </ActionButton>
         </Modal.Footer>
       </StyledModal>
 
@@ -325,26 +358,28 @@ const PartsModal = ({
                           </td>
                           <td>{part.status}</td>
                           <td>
-                            {part.status === "Solicitado" && !isReadOnly && (
-                              <Button
-                                variant="danger"
-                                size="sm"
-                                onClick={() =>
-                                  handleUpdatePartQuantity(index, 0)
-                                }
-                              >
-                                <FontAwesomeIcon icon={faTrash} />
-                              </Button>
-                            )}
-                            {part.status === "Aprobado" && !isReadOnly && (
-                              <Button
-                                variant="warning"
-                                size="sm"
-                                onClick={() => handleRequestPartReturn(index)}
-                              >
-                                Solicitar Devolución
-                              </Button>
-                            )}
+                            <ActionsContainer>
+                              {part.status === "Solicitado" && !isReadOnly && (
+                                <ActionButton
+                                  variant="danger"
+                                  size="sm"
+                                  onClick={() =>
+                                    handleUpdatePartQuantity(index, 0)
+                                  }
+                                >
+                                  <FontAwesomeIcon icon={faTrash} />
+                                </ActionButton>
+                              )}
+                              {part.status === "Aprobado" && !isReadOnly && (
+                                <ActionButton
+                                  variant="warning"
+                                  size="sm"
+                                  onClick={() => handleRequestPartReturn(index)}
+                                >
+                                  Solicitar Devolución
+                                </ActionButton>
+                              )}
+                            </ActionsContainer>
                           </td>
                         </tr>
                       ))
@@ -359,25 +394,26 @@ const PartsModal = ({
                 </StyledTableModal>
               </TableWrapper>
               {!isReadOnly && (
-                <CustomButton
+                <ActionButton
+                  variant="primary"
                   onClick={() => {
                     setShowPartsManagementModal(false);
                     setShowPartsModal(true);
                   }}
                 >
                   Solicitar Nuevo Repuesto
-                </CustomButton>
+                </ActionButton>
               )}
             </>
           )}
         </ModalBody>
         <Modal.Footer>
-          <Button
+          <ActionButton
             variant="secondary"
             onClick={() => setShowPartsManagementModal(false)}
           >
             Cerrar
-          </Button>
+          </ActionButton>
         </Modal.Footer>
       </StyledModal>
     </>
