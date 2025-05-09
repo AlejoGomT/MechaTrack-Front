@@ -8,12 +8,13 @@ import { mockUsers, mockClientOrders } from "../data/mock";
 import { StyledModal, ModalBody } from "../styles/GlobalStyles";
 
 const adminMenu = [
-  { label: "Inicio", path: "/admin" },
-  { label: "Órdenes de Servicio", path: "/admin/orders" },
-  { label: "Inventario", path: "/admin/inventory" },
-  { label: "Gestión de Usuarios", path: "/admin/users" },
-  { label: "Notificaciones", path: "/admin/notifications" },
-  { label: "Informes", path: "/admin/reports" },
+  { label: "Inicio", path: "../admin" },
+  { label: "Órdenes de Servicio", path: "../admin/orders" },
+  { label: "Inventario", path: "../admin/inventory" },
+  { label: "Vehiculos", path: "../admin/vehicles" },
+  { label: "Gestión de Usuarios", path: "../admin/users" },
+  { label: "Notificaciones", path: "../admin/notifications" },
+  { label: "Informes", path: "../admin/reports" },
   { label: "Cerrar Sesión", path: "/" },
 ];
 

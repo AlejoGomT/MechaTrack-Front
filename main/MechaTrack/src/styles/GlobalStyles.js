@@ -203,6 +203,10 @@ export const StyledTable = styled.table`
   tr:hover {
     background-color: #f1f1f1;
   }
+  td.actions {
+    white-space: nowrap;
+    min-width: 150px;
+  }
 `;
 
 export const ActionButton = styled(Button)(({ variant }) => ({
@@ -223,6 +227,8 @@ export const ActionButton = styled(Button)(({ variant }) => ({
 
 export const ActionsContainer = styled.div`
   display: flex;
+  flex-direction: row;
+  flex-shrink: 0;
   gap: 8px;
   align-items: center;
   justify-content: center;
@@ -377,10 +383,10 @@ export const CustomButton = styled(Button)`
   border: none;
   padding: auto;
   font-size: 0.9rem;
-  transition: background-color 0.3s, transform 0.3s;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: background-color 0.3s, transform 0.3s;
   &:hover {
     background-color: ${colors.primaryHover};
     transform: scale(1.05);

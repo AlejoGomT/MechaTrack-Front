@@ -12,6 +12,7 @@ const adminMenu = [
   { label: "Inicio", path: "../admin" },
   { label: "Órdenes de Servicio", path: "../admin/orders" },
   { label: "Inventario", path: "../admin/inventory" },
+  { label: "Vehiculos", path: "../admin/vehicles" },
   { label: "Gestión de Usuarios", path: "../admin/users" },
   { label: "Notificaciones", path: "../admin/notifications" },
   { label: "Informes", path: "../admin/reports" },
@@ -73,6 +74,12 @@ const AdminDashboard = () => {
       content: "Gestión de repuestos disponibles",
       buttonText: "Ver Inventario",
       onClick: () => navigate("/admin/inventory"),
+    },
+    {
+      title: "Vehiculos",
+      content: "Vehiculos registrados (# de vehiculos por sede)",
+      buttonText: "Ver Vehiculos",
+      onClick: () => navigate("/admin/vehicles"),
     },
     {
       title: "Mensajes",

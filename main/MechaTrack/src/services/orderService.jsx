@@ -274,6 +274,61 @@ export const getVehicles = async (filters = {}) => {
   }
 };
 
+export const createVehicle = async (vehicleData) => {
+  try {
+    const response = await axios.post(`${API_URL}/api/vehicles`, vehicleData, {
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  } catch (err) {
+    console.error("Error en createVehicle:", err.response?.data || err);
+    throw err.response?.data || { message: "Error al crear vehículo" };
+  }
+};
+
+export const updateVehicle = async (economicNumber, vehicleData) => {
+  try {
+    const response = await axios.put(
+      `${API_URL}/api/vehicles/${economicNumber}`,
+      vehicleData,
+      {
+        headers: getAuthHeaders(),
+      }
+    );
+    return response.data;
+  } catch (err) {
+    console.error("Error en updateVehicle:", err.response?.data || err);
+    throw err.response?.data || { message: "Error al actualizar vehículo" };
+  }
+};
+
+export const deleteVehicle = async (economicNumber) => {
+  try {
+    const response = await axios.delete(
+      `${API_URL}/api/vehicles/${economicNumber}`,
+      {
+        headers: getAuthHeaders(),
+      }
+    );
+    return response.data;
+  } catch (err) {
+    console.error("Error en deleteVehicle:", err.response?.data || err);
+    throw err.response?.data || { message: "Error al eliminar vehículo" };
+  }
+};
+
+export const getBranches = async () => {
+  try {
+    const response = await axios.get(`${API_URL}/api/vehicles/branches`, {
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  } catch (err) {
+    console.error("Error en getBranches:", err.response?.data || err);
+    throw err.response?.data || { message: "Error al obtener sucursales" };
+  }
+};
+
 export const getParts = async (model, page = 1, limit = 10) => {
   try {
     const response = await axios.get(`${API_URL}/api/parts`, {
