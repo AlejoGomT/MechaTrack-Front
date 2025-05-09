@@ -184,13 +184,18 @@ export const StyledTable = styled.table`
   margin-top: 20px;
   th,
   td {
-    padding: 10px;
+    padding: 12px;
     border: 1px solid #ddd;
     text-align: left;
+    vertical-align: middle;
   }
   th {
     background-color: ${colors.backgroundLight};
     color: white;
+    font-weight: bold;
+  }
+  td {
+    line-height: 1.5;
   }
   tr:nth-of-type(even) {
     background-color: #f9f9f9;
@@ -370,9 +375,12 @@ export const StatusIcon = styled.span`
 export const CustomButton = styled(Button)`
   background-color: ${colors.backgroundLight};
   border: none;
-  padding: 8px 16px;
-  font-size: 1rem;
+  padding: auto;
+  font-size: 0.9rem;
   transition: background-color 0.3s, transform 0.3s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   &:hover {
     background-color: ${colors.primaryHover};
     transform: scale(1.05);
@@ -467,14 +475,19 @@ export const MobileToggleButton = styled(Button)`
 
 export const StyledModal = styled(Modal)`
   .modal-dialog {
-    max-width: 900px;
+    max-width: ${(props) =>
+      props.variant === "detailsParts"
+        ? "800px"
+        : props.variant === "createParts"
+        ? "600px"
+        : "900px"};
   }
 `;
 
 export const ModalBody = styled(Modal.Body)`
   max-height: 60vh;
   overflow-y: auto;
-  padding: 1rem;
+  padding: 1.5rem;
 `;
 
 export const TableWrapper = styled.div`
@@ -594,7 +607,9 @@ export const FilterGroup = styled(Form.Group)`
 `;
 
 export const FilterLabel = styled(Form.Label)`
-  margin-bottom: 0;
+  margin-bottom: ${(props) => (props.variant === "createPart" ? "5px" : "0")};
+  font-weight: ${(props) =>
+    props.variant === "createPart" ? "500" : "normal"};
   white-space: nowrap;
 `;
 
@@ -604,4 +619,85 @@ export const FilterSelect = styled(Form.Select)`
 
 export const FilterInput = styled(Form.Control)`
   width: 100%;
+`;
+
+// --- Estilos para el contenido interno de PartDetailsModal ---
+
+export const DetailLabel = styled.p`
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin-bottom: 0.25rem;
+`;
+
+export const DetailValue = styled.p`
+  font-size: 1rem;
+  font-weight: 500;
+  color: ${colors.backgroundDark};
+  margin-bottom: 1rem;
+
+  &.price {
+    color: ${colors.success};
+  }
+`;
+
+export const ModelTag = styled.span`
+  display: inline-block;
+  background-color: ${(props) => (props.active ? colors.primary : "#f3f4f6")};
+  color: ${(props) => (props.active ? "white" : colors.backgroundDark)};
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  margin-right: 0.5rem;
+  margin-bottom: 0.5rem;
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s;
+  &:hover {
+    background-color: ${colors.primaryHover};
+    color: white;
+  }
+`;
+
+export const ImageContainer = styled.div`
+  width: 150px;
+  height: 150px;
+  background-color: #edf2f7;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+`;
+
+// --- Nuevos estilos para PartForm ---
+
+export const FormSection = styled.div`
+  margin-bottom: 1.5rem;
+`;
+
+export const ModelTagContainer = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  max-height: 150px;
+  overflow-y: auto;
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+`;
+
+export const AllModelsTag = styled(ModelTag)`
+  background-color: ${(props) => (props.active ? colors.success : "#f3f4f6")};
+  color: ${(props) => (props.active ? "white" : colors.backgroundDark)};
+  &:hover {
+    background-color: ${colors.success};
+    color: white;
+  }
 `;

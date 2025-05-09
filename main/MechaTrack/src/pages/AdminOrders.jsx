@@ -26,7 +26,7 @@ import {
   updateOrder,
   updatePartQuantity,
   requestPart,
-  updatePart,
+  updatePartAdmin,
 } from "../services/orderService";
 
 const adminMenu = [
@@ -146,7 +146,7 @@ const AdminOrders = () => {
       // Pasar el nombre completo del usuario como authorizedBy para aprobaciones, null para rechazos
       const authorizedBy =
         action === "accept" ? `${user.first_name} ${user.last_name}` : null;
-      await updatePart(
+      await updatePartAdmin(
         selectedOrder.id,
         part.part_id,
         {

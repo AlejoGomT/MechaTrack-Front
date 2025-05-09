@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_URL = "http://localhost:5000/api";
+export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem("token");
@@ -8,12 +8,15 @@ const getAuthHeaders = () => {
 };
 
 export const login = async (id, password) => {
-  const response = await axios.post(`${API_URL}/auth/login`, { id, password });
+  const response = await axios.post(`${API_URL}/api/auth/login`, {
+    id,
+    password,
+  });
   return response.data;
 };
 
 export const getOrders = async (filters = {}) => {
-  const response = await axios.get(`${API_URL}/orders`, {
+  const response = await axios.get(`${API_URL}/api/orders`, {
     headers: getAuthHeaders(),
     params: filters,
   });
@@ -22,7 +25,7 @@ export const getOrders = async (filters = {}) => {
 
 export const getOrderById = async (id) => {
   try {
-    const response = await axios.get(`${API_URL}/orders/${id}`, {
+    const response = await axios.get(`${API_URL}/api/orders/${id}`, {
       headers: getAuthHeaders(),
     });
     return response.data;
@@ -49,7 +52,7 @@ export const createOrder = async (orderData) => {
       }
     });
 
-    const response = await axios.post(`${API_URL}/orders`, formData, {
+    const response = await axios.post(`${API_URL}/api/orders`, formData, {
       headers: {
         "Content-Type": "multipart/form-data",
         ...getAuthHeaders(),
@@ -86,12 +89,16 @@ export const updateOrder = async (orderId, orderData) => {
       console.log(`FormData updateOrder: ${key} =`, value);
     }
 
-    const response = await axios.put(`${API_URL}/orders/${orderId}`, formData, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-        ...getAuthHeaders(),
-      },
-    });
+    const response = await axios.put(
+      `${API_URL}/api/orders/${orderId}`,
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+          ...getAuthHeaders(),
+        },
+      }
+    );
     return response.data;
   } catch (error) {
     console.error("Error en updateOrder:", error.response?.data || error);
@@ -102,7 +109,7 @@ export const updateOrder = async (orderId, orderData) => {
 export const updateOrderStatus = async (orderId, status) => {
   try {
     const response = await axios.put(
-      `${API_URL}/orders/${orderId}/status`,
+      `${API_URL}/api/orders/${orderId}/status`,
       { status },
       {
         headers: {
@@ -125,7 +132,7 @@ export const updateOrderStatus = async (orderId, status) => {
 export const updateOrderNumbers = async (orderId, numbers) => {
   try {
     const response = await axios.put(
-      `${API_URL}/orders/${orderId}/numbers`,
+      `${API_URL}/api/orders/${orderId}/numbers`,
       numbers,
       {
         headers: {
@@ -154,7 +161,7 @@ export const requestPart = async (orderId, part) => {
       throw new Error("El precio del repuesto debe ser mayor que 0");
     }
     const response = await axios.post(
-      `${API_URL}/orders/${orderId}/parts`,
+      `${API_URL}/api/orders/${orderId}/parts`,
       {
         part_id: part.part_id,
         name: part.name,
@@ -177,16 +184,21 @@ export const requestPart = async (orderId, part) => {
   }
 };
 
-export const updatePart = async (orderId, partId, partData, authorizedBy) => {
+export const updatePartAdmin = async (
+  orderId,
+  partId,
+  partData,
+  authorizedBy
+) => {
   try {
     const response = await axios.put(
-      `${API_URL}/orders/${orderId}/parts/${partId}`,
+      `${API_URL}/api/orders/${orderId}/parts/${partId}`,
       {
         quantity: partData.quantity,
         status: partData.status,
         price: partData.price || null,
         note: partData.note || "",
-        authorized_by: partData.status === "Aprobado" ? authorizedBy : null, // Enviar authorized_by solo si el estado es "Aprobado"
+        authorized_by: partData.status === "Aprobado" ? authorizedBy : null,
       },
       {
         headers: {
@@ -205,7 +217,7 @@ export const updatePart = async (orderId, partId, partData, authorizedBy) => {
 export const updatePartQuantity = async (orderId, partId, quantity) => {
   try {
     const response = await axios.put(
-      `${API_URL}/orders/${orderId}/parts/${partId}`,
+      `${API_URL}/api/orders/${orderId}/parts/${partId}`,
       { quantity },
       {
         headers: {
@@ -230,7 +242,7 @@ export const updatePartQuantity = async (orderId, partId, quantity) => {
 export const requestPartReturn = async (orderId, partId, quantity) => {
   try {
     const response = await axios.post(
-      `${API_URL}/orders/${orderId}/parts/${partId}/return`,
+      `${API_URL}/api/orders/${orderId}/parts/${partId}/return`,
       { quantity },
       {
         headers: {
@@ -251,7 +263,7 @@ export const requestPartReturn = async (orderId, partId, quantity) => {
 
 export const getVehicles = async (filters = {}) => {
   try {
-    const response = await axios.get(`${API_URL}/vehicles`, {
+    const response = await axios.get(`${API_URL}/api/vehicles`, {
       headers: getAuthHeaders(),
       params: filters,
     });
@@ -262,11 +274,11 @@ export const getVehicles = async (filters = {}) => {
   }
 };
 
-export const getParts = async (model) => {
+export const getParts = async (model, page = 1, limit = 10) => {
   try {
-    const response = await axios.get(`${API_URL}/parts`, {
+    const response = await axios.get(`${API_URL}/api/parts`, {
       headers: getAuthHeaders(),
-      params: { model },
+      params: { model, page, limit },
     });
     return response.data;
   } catch (err) {
@@ -275,9 +287,91 @@ export const getParts = async (model) => {
   }
 };
 
+export const createPart = async (partData) => {
+  try {
+    const formData = new FormData();
+    Object.entries(partData).forEach(([key, value]) => {
+      if (key === "image" && value instanceof File) {
+        formData.append("image", value);
+      } else if (key === "compatible_models" && Array.isArray(value)) {
+        formData.append("compatible_models", JSON.stringify(value));
+      } else {
+        formData.append(key, value);
+      }
+    });
+
+    const response = await axios.post(`${API_URL}/api/parts`, formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+        ...getAuthHeaders(),
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error en createPart:", error.response?.data || error);
+    throw error.response?.data || { message: "Error al crear repuesto" };
+  }
+};
+
+export const updatePart = async (partId, partData) => {
+  try {
+    const formData = new FormData();
+    Object.entries(partData).forEach(([key, value]) => {
+      if (key === "image" && value instanceof File) {
+        formData.append("image", value);
+      } else if (key === "compatible_models" && Array.isArray(value)) {
+        formData.append("compatible_models", JSON.stringify(value));
+      } else {
+        formData.append(key, value);
+      }
+    });
+
+    const response = await axios.put(
+      `${API_URL}/api/parts/${partId}`,
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+          ...getAuthHeaders(),
+        },
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error("Error en updatePart:", error.response?.data || error);
+    throw error.response?.data || { message: "Error al actualizar repuesto" };
+  }
+};
+
+export const deletePart = async (partId) => {
+  try {
+    const response = await axios.delete(`${API_URL}/api/parts/${partId}`, {
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error en deletePart:", error.response?.data || error);
+    throw error.response?.data || { message: "Error al eliminar repuesto" };
+  }
+};
+
+export const getVehicleModels = async () => {
+  try {
+    const response = await axios.get(`${API_URL}/api/vehicles/models`, {
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  } catch (err) {
+    console.error("Error en getVehicleModels:", err.response?.data || err);
+    throw (
+      err.response?.data || { message: "Error al obtener modelos de vehículos" }
+    );
+  }
+};
+
 export const getNotifications = async (userId) => {
   try {
-    const response = await axios.get(`${API_URL}/notifications`, {
+    const response = await axios.get(`${API_URL}/api/notifications`, {
       headers: getAuthHeaders(),
       params: { to_user_id: userId },
     });
@@ -291,7 +385,7 @@ export const getNotifications = async (userId) => {
 export const finalizeOrder = async (orderId, data) => {
   try {
     const response = await axios.put(
-      `${API_URL}/orders/${orderId}/finalize`,
+      `${API_URL}/api/orders/${orderId}/finalize`,
       data,
       {
         headers: {
