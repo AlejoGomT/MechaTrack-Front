@@ -1,11 +1,9 @@
 import styled from "@emotion/styled";
 import {
   Container,
-  Row,
   Col,
   Form,
   Button,
-  Alert,
   Carousel,
   Card,
   Nav,
@@ -13,7 +11,6 @@ import {
   Table,
 } from "react-bootstrap";
 
-// Exportamos colors para que pueda ser usado en otros archivos
 export const colors = {
   primary: "#d74a49",
   primaryHover: "#ff6b6b",
@@ -29,7 +26,6 @@ export const colors = {
   danger: "#dc3545",
 };
 
-// --- Estilos específicos para Login ---
 export const LoginWrapper = styled.div`
   background: url(${(props) => props.background}) no-repeat center center fixed;
   background-size: cover;
@@ -125,8 +121,6 @@ export const StyledButton = styled(Button)`
     transform: scale(1);
   }
 `;
-
-// --- Estilos comunes para las otras páginas (/admin, /technician, /secretary, /client) ---
 
 export const MainContainer = styled(Container)`
   padding: 0;
@@ -233,8 +227,6 @@ export const ActionsContainer = styled.div`
   align-items: center;
   justify-content: center;
 `;
-
-// --- Estilos para TechnicianDashboard ---
 
 export const Sidebar = styled.aside`
   width: 250px;
@@ -444,7 +436,7 @@ export const Content = styled.div`
   margin-left: 250px;
   padding: 20px;
   min-height: 100vh;
-  overflow-y: auto; /* Añadimos overflow-y: auto para controlar el scroll */
+  overflow-y: auto;
   transition: margin-left 0.3s ease-in-out;
   @media (max-width: 768px) {
     margin-left: 0;
@@ -464,8 +456,6 @@ export const ContentBtn = styled.div`
   }
 `;
 
-// --- Nuevos estilos para TechnicianDashboard ---
-
 export const MobileToggleButton = styled(Button)`
   display: none;
   position: fixed;
@@ -484,7 +474,7 @@ export const StyledModal = styled(Modal)`
     max-width: ${(props) =>
       props.variant === "detailsParts"
         ? "800px"
-        : props.variant === "createParts"
+        : props.variant === "createParts" || props.variant === "createVehicle"
         ? "600px"
         : "900px"};
   }
@@ -507,45 +497,37 @@ export const StyledTableModal = styled(Table)`
   }
   th:nth-of-type(1),
   td:nth-of-type(1) {
-    /* Código */
     min-width: 100px;
   }
   th:nth-of-type(2),
   td:nth-of-type(2) {
-    /* Nombre */
     min-width: 150px;
   }
   th:nth-of-type(3),
   td:nth-of-type(3) {
-    /* Modelo Compatible */
     min-width: 150px;
   }
   th:nth-of-type(4),
   td:nth-of-type(4) {
-    /* Inventario */
     min-width: 80px;
     text-align: center;
   }
   th:nth-of-type(5),
   td:nth-of-type(5) {
-    /* Cantidad */
     min-width: 120px;
     text-align: center;
   }
   th:nth-of-type(6),
   td:nth-of-type(6) {
-    /* Precio (si isFinalized) */
     min-width: 120px;
     text-align: center;
   }
   th:nth-of-type(7),
   td:nth-of-type(7) {
-    /* Acción */
     min-width: 100px;
     text-align: center;
   }
   td:nth-of-type(3) {
-    /* Tooltip para Modelo Compatible */
     cursor: pointer;
   }
 `;
@@ -560,10 +542,8 @@ export const OrderDetailsBody = styled(Modal.Body)`
   padding: 1.5rem;
 `;
 
-// --- Nuevos estilos para TechnicianCreateOrder ---
-
 export const FormContainer = styled(Container)`
-  margin-top: 0; /* Eliminamos margin-top para evitar desplazamiento */
+  margin-top: 0;
   padding: 1.5rem;
   background-color: white;
   border-radius: 8px;
@@ -579,11 +559,10 @@ export const FormSectionTitle = styled.h4`
 `;
 
 export const FormActions = styled.div`
-  text-align: center;
-  margin-top: 1.5rem;
   display: flex;
   justify-content: center;
   gap: 1rem;
+  margin-top: 1.5rem;
 `;
 
 export const HistoryButtonWrapper = styled(Col)`
@@ -591,8 +570,6 @@ export const HistoryButtonWrapper = styled(Col)`
   align-items: flex-end;
   margin-bottom: 1rem;
 `;
-
-// --- Nuevos estilos para los filtros en TechnicianDashboard ---
 
 export const FiltersContainer = styled.div`
   display: flex;
@@ -626,8 +603,6 @@ export const FilterSelect = styled(Form.Select)`
 export const FilterInput = styled(Form.Control)`
   width: 100%;
 `;
-
-// --- Estilos para el contenido interno de PartDetailsModal ---
 
 export const DetailLabel = styled.p`
   font-size: 0.875rem;
@@ -682,8 +657,6 @@ export const ImageContainer = styled.div`
   }
 `;
 
-// --- Nuevos estilos para PartForm ---
-
 export const FormSection = styled.div`
   margin-bottom: 1.5rem;
 `;
@@ -706,4 +679,11 @@ export const AllModelsTag = styled(ModelTag)`
     background-color: ${colors.success};
     color: white;
   }
+`;
+
+export const ConditionalInputContainer = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
 `;

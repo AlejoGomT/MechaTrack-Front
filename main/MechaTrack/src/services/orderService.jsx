@@ -329,6 +329,20 @@ export const getBranches = async () => {
   }
 };
 
+export const getVehicleBrands = async () => {
+  try {
+    const response = await axios.get(`${API_URL}/api/vehicles/brands`, {
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  } catch (err) {
+    console.error("Error en getVehicleBrands:", err.response?.data || err);
+    throw (
+      err.response?.data || { message: "Error al obtener marcas de vehículos" }
+    );
+  }
+};
+
 export const getParts = async (model, page = 1, limit = 10) => {
   try {
     const response = await axios.get(`${API_URL}/api/parts`, {
