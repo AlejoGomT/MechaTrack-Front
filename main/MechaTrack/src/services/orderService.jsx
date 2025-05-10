@@ -2,13 +2,38 @@ import axios from "axios";
 
 export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
-const getAuthHeaders = () => {
-  const token = localStorage.getItem("token");
-  return { Authorization: `Bearer ${token}` };
-};
+// Crear una instancia de Axios
+const axiosInstance = axios.create({
+  baseURL: API_URL,
+});
+
+// Interceptor para agregar el token a todas las solicitudes
+axiosInstance.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem("token");
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// Interceptor para manejar errores de respuesta (por ejemplo, 401)
+axiosInstance.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 401) {
+      // Token expirado o no válido
+      localStorage.removeItem("token");
+      window.location.href = "/";
+    }
+    return Promise.reject(error);
+  }
+);
 
 export const login = async (id, password) => {
-  const response = await axios.post(`${API_URL}/api/auth/login`, {
+  const response = await axiosInstance.post("/api/auth/login", {
     id,
     password,
   });
@@ -16,8 +41,7 @@ export const login = async (id, password) => {
 };
 
 export const getOrders = async (filters = {}) => {
-  const response = await axios.get(`${API_URL}/api/orders`, {
-    headers: getAuthHeaders(),
+  const response = await axiosInstance.get("/api/orders", {
     params: filters,
   });
   return response.data;
@@ -25,9 +49,7 @@ export const getOrders = async (filters = {}) => {
 
 export const getOrderById = async (id) => {
   try {
-    const response = await axios.get(`${API_URL}/api/orders/${id}`, {
-      headers: getAuthHeaders(),
-    });
+    const response = await axiosInstance.get(`/api/orders/${id}`);
     return response.data;
   } catch (err) {
     console.error("Error en getOrderById:", err.response?.data || err);
@@ -52,10 +74,9 @@ export const createOrder = async (orderData) => {
       }
     });
 
-    const response = await axios.post(`${API_URL}/api/orders`, formData, {
+    const response = await axiosInstance.post("/api/orders", formData, {
       headers: {
         "Content-Type": "multipart/form-data",
-        ...getAuthHeaders(),
       },
     });
     console.log("Respuesta de createOrder:", response.data);
@@ -89,13 +110,12 @@ export const updateOrder = async (orderId, orderData) => {
       console.log(`FormData updateOrder: ${key} =`, value);
     }
 
-    const response = await axios.put(
-      `${API_URL}/api/orders/${orderId}`,
+    const response = await axiosInstance.put(
+      `/api/orders/${orderId}`,
       formData,
       {
         headers: {
           "Content-Type": "multipart/form-data",
-          ...getAuthHeaders(),
         },
       }
     );
@@ -108,15 +128,9 @@ export const updateOrder = async (orderId, orderData) => {
 
 export const updateOrderStatus = async (orderId, status) => {
   try {
-    const response = await axios.put(
-      `${API_URL}/api/orders/${orderId}/status`,
-      { status },
-      {
-        headers: {
-          ...getAuthHeaders(),
-        },
-      }
-    );
+    const response = await axiosInstance.put(`/api/orders/${orderId}/status`, {
+      status,
+    });
     console.log("Respuesta de updateOrderStatus:", response.data);
     return response.data;
   } catch (error) {
@@ -131,14 +145,9 @@ export const updateOrderStatus = async (orderId, status) => {
 
 export const updateOrderNumbers = async (orderId, numbers) => {
   try {
-    const response = await axios.put(
-      `${API_URL}/api/orders/${orderId}/numbers`,
-      numbers,
-      {
-        headers: {
-          ...getAuthHeaders(),
-        },
-      }
+    const response = await axiosInstance.put(
+      `/api/orders/${orderId}/numbers`,
+      numbers
     );
     console.log("Respuesta de updateOrderNumbers:", response.data);
     return response.data;
@@ -160,22 +169,14 @@ export const requestPart = async (orderId, part) => {
     if (!part.price || part.price <= 0) {
       throw new Error("El precio del repuesto debe ser mayor que 0");
     }
-    const response = await axios.post(
-      `${API_URL}/api/orders/${orderId}/parts`,
-      {
-        part_id: part.part_id,
-        name: part.name,
-        quantity: part.quantity,
-        price: parseFloat(part.price),
-        requested_by: part.requested_by,
-        status: part.status || "Solicitado",
-      },
-      {
-        headers: {
-          ...getAuthHeaders(),
-        },
-      }
-    );
+    const response = await axiosInstance.post(`/api/orders/${orderId}/parts`, {
+      part_id: part.part_id,
+      name: part.name,
+      quantity: part.quantity,
+      price: parseFloat(part.price),
+      requested_by: part.requested_by,
+      status: part.status || "Solicitado",
+    });
     console.log("Respuesta de requestPart:", response.data);
     return response.data;
   } catch (error) {
@@ -191,19 +192,14 @@ export const updatePartAdmin = async (
   authorizedBy
 ) => {
   try {
-    const response = await axios.put(
-      `${API_URL}/api/orders/${orderId}/parts/${partId}`,
+    const response = await axiosInstance.put(
+      `/api/orders/${orderId}/parts/${partId}`,
       {
         quantity: partData.quantity,
         status: partData.status,
         price: partData.price || null,
         note: partData.note || "",
         authorized_by: partData.status === "Aprobado" ? authorizedBy : null,
-      },
-      {
-        headers: {
-          ...getAuthHeaders(),
-        },
       }
     );
     console.log("Respuesta de updatePart:", response.data);
@@ -216,13 +212,10 @@ export const updatePartAdmin = async (
 
 export const updatePartQuantity = async (orderId, partId, quantity) => {
   try {
-    const response = await axios.put(
-      `${API_URL}/api/orders/${orderId}/parts/${partId}`,
-      { quantity },
+    const response = await axiosInstance.put(
+      `/api/orders/${orderId}/parts/${partId}`,
       {
-        headers: {
-          ...getAuthHeaders(),
-        },
+        quantity,
       }
     );
     return response.data;
@@ -241,13 +234,10 @@ export const updatePartQuantity = async (orderId, partId, quantity) => {
 
 export const requestPartReturn = async (orderId, partId, quantity) => {
   try {
-    const response = await axios.post(
-      `${API_URL}/api/orders/${orderId}/parts/${partId}/return`,
-      { quantity },
+    const response = await axiosInstance.post(
+      `/api/orders/${orderId}/parts/${partId}/return`,
       {
-        headers: {
-          ...getAuthHeaders(),
-        },
+        quantity,
       }
     );
     return response.data;
@@ -263,8 +253,7 @@ export const requestPartReturn = async (orderId, partId, quantity) => {
 
 export const getVehicles = async (filters = {}) => {
   try {
-    const response = await axios.get(`${API_URL}/api/vehicles`, {
-      headers: getAuthHeaders(),
+    const response = await axiosInstance.get("/api/vehicles", {
       params: filters,
     });
     return response.data;
@@ -276,9 +265,7 @@ export const getVehicles = async (filters = {}) => {
 
 export const createVehicle = async (vehicleData) => {
   try {
-    const response = await axios.post(`${API_URL}/api/vehicles`, vehicleData, {
-      headers: getAuthHeaders(),
-    });
+    const response = await axiosInstance.post("/api/vehicles", vehicleData);
     return response.data;
   } catch (err) {
     console.error("Error en createVehicle:", err.response?.data || err);
@@ -288,12 +275,9 @@ export const createVehicle = async (vehicleData) => {
 
 export const updateVehicle = async (economicNumber, vehicleData) => {
   try {
-    const response = await axios.put(
-      `${API_URL}/api/vehicles/${economicNumber}`,
-      vehicleData,
-      {
-        headers: getAuthHeaders(),
-      }
+    const response = await axiosInstance.put(
+      `/api/vehicles/${economicNumber}`,
+      vehicleData
     );
     return response.data;
   } catch (err) {
@@ -304,11 +288,8 @@ export const updateVehicle = async (economicNumber, vehicleData) => {
 
 export const deleteVehicle = async (economicNumber) => {
   try {
-    const response = await axios.delete(
-      `${API_URL}/api/vehicles/${economicNumber}`,
-      {
-        headers: getAuthHeaders(),
-      }
+    const response = await axiosInstance.delete(
+      `/api/vehicles/${economicNumber}`
     );
     return response.data;
   } catch (err) {
@@ -319,9 +300,7 @@ export const deleteVehicle = async (economicNumber) => {
 
 export const getBranches = async () => {
   try {
-    const response = await axios.get(`${API_URL}/api/vehicles/branches`, {
-      headers: getAuthHeaders(),
-    });
+    const response = await axiosInstance.get("/api/vehicles/branches");
     return response.data;
   } catch (err) {
     console.error("Error en getBranches:", err.response?.data || err);
@@ -331,9 +310,7 @@ export const getBranches = async () => {
 
 export const getVehicleBrands = async () => {
   try {
-    const response = await axios.get(`${API_URL}/api/vehicles/brands`, {
-      headers: getAuthHeaders(),
-    });
+    const response = await axiosInstance.get("/api/vehicles/brands");
     return response.data;
   } catch (err) {
     console.error("Error en getVehicleBrands:", err.response?.data || err);
@@ -345,8 +322,7 @@ export const getVehicleBrands = async () => {
 
 export const getParts = async (model, page = 1, limit = 10) => {
   try {
-    const response = await axios.get(`${API_URL}/api/parts`, {
-      headers: getAuthHeaders(),
+    const response = await axiosInstance.get("/api/parts", {
       params: { model, page, limit },
     });
     return response.data;
@@ -369,10 +345,9 @@ export const createPart = async (partData) => {
       }
     });
 
-    const response = await axios.post(`${API_URL}/api/parts`, formData, {
+    const response = await axiosInstance.post("/api/parts", formData, {
       headers: {
         "Content-Type": "multipart/form-data",
-        ...getAuthHeaders(),
       },
     });
     return response.data;
@@ -395,16 +370,11 @@ export const updatePart = async (partId, partData) => {
       }
     });
 
-    const response = await axios.put(
-      `${API_URL}/api/parts/${partId}`,
-      formData,
-      {
-        headers: {
-          "Content-Type": "multipart/form-data",
-          ...getAuthHeaders(),
-        },
-      }
-    );
+    const response = await axiosInstance.put(`/api/parts/${partId}`, formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    });
     return response.data;
   } catch (error) {
     console.error("Error en updatePart:", error.response?.data || error);
@@ -414,9 +384,7 @@ export const updatePart = async (partId, partData) => {
 
 export const deletePart = async (partId) => {
   try {
-    const response = await axios.delete(`${API_URL}/api/parts/${partId}`, {
-      headers: getAuthHeaders(),
-    });
+    const response = await axiosInstance.delete(`/api/parts/${partId}`);
     return response.data;
   } catch (error) {
     console.error("Error en deletePart:", error.response?.data || error);
@@ -426,9 +394,7 @@ export const deletePart = async (partId) => {
 
 export const getVehicleModels = async () => {
   try {
-    const response = await axios.get(`${API_URL}/api/vehicles/models`, {
-      headers: getAuthHeaders(),
-    });
+    const response = await axiosInstance.get("/api/vehicles/models");
     return response.data;
   } catch (err) {
     console.error("Error en getVehicleModels:", err.response?.data || err);
@@ -440,8 +406,7 @@ export const getVehicleModels = async () => {
 
 export const getNotifications = async (userId) => {
   try {
-    const response = await axios.get(`${API_URL}/api/notifications`, {
-      headers: getAuthHeaders(),
+    const response = await axiosInstance.get("/api/notifications", {
       params: { to_user_id: userId },
     });
     return response.data;
@@ -453,14 +418,9 @@ export const getNotifications = async (userId) => {
 
 export const finalizeOrder = async (orderId, data) => {
   try {
-    const response = await axios.put(
-      `${API_URL}/api/orders/${orderId}/finalize`,
-      data,
-      {
-        headers: {
-          ...getAuthHeaders(),
-        },
-      }
+    const response = await axiosInstance.put(
+      `/api/orders/${orderId}/finalize`,
+      data
     );
     console.log("Respuesta de finalizeOrder:", response.data);
     return response.data;

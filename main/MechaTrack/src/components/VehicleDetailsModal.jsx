@@ -11,7 +11,7 @@ const VehicleDetailsModal = ({ show, onHide, vehicle }) => {
   if (!vehicle) return null;
 
   return (
-    <StyledModal variant="detailsParts" show={show} onHide={onHide} centered>
+    <StyledModal variant="detailsVehicle" show={show} onHide={onHide} centered>
       <Modal.Header closeButton>
         <Modal.Title>Detalles del Vehículo</Modal.Title>
       </Modal.Header>

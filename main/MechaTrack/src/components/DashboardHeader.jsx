@@ -7,8 +7,9 @@ import { getOrders, getNotifications } from "../services/orderService";
 import logo from "../assets/images/logo.jpeg";
 
 const HeaderContainer = styled(Navbar)`
-  background-color: #343a40;
+  background-color: rgb(18, 41, 48);
   padding: 10px 20px;
+  border-radius: 10px;
 `;
 
 const Logo = styled.img`

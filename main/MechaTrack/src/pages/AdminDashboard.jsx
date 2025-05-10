@@ -27,23 +27,56 @@ const AdminDashboard = () => {
     pendingOrdersCount: 0,
     closedOrdersCount: 0,
     notificationsCount: 0,
+    branchesCount: 0,
+    vehiclesCount: 0,
   });
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [ordersResponse, notificationsResponse] = await Promise.all([
-          axios.get("/api/orders", {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-          axios.get("/api/notifications", {
-            headers: { Authorization: `Bearer ${token}` },
-            params: { to_user_id: user.id, status: "Pendiente" },
-          }),
-        ]);
+        const [ordersResponse, notificationsResponse, vehiclesResponse] =
+          await Promise.all([
+            axios.get("/api/orders", {
+              headers: { Authorization: `Bearer ${token}` },
+            }),
+            axios.get("/api/notifications", {
+              headers: { Authorization: `Bearer ${token}` },
+              params: { to_user_id: user.id, status: "Pendiente" },
+            }),
+            axios.get("/api/vehicles", {
+              headers: { Authorization: `Bearer ${token}` },
+              params: { limit: 1000 }, // Obtener todos los vehículos
+            }),
+          ]);
 
         const orders = ordersResponse.data;
         const notifications = notificationsResponse.data;
+        let vehiclesData = vehiclesResponse.data;
+
+        // Depuración: Imprimir la respuesta de /api/vehicles
+        console.log(
+          "[AdminDashboard] Respuesta de /api/vehicles:",
+          vehiclesData
+        );
+
+        // Normalizar vehiclesData para asegurarnos de que sea un objeto con vehicles
+        let vehicles = [];
+        let total = 0;
+        if (vehiclesData && typeof vehiclesData === "object") {
+          vehicles = Array.isArray(vehiclesData.vehicles)
+            ? vehiclesData.vehicles
+            : [];
+          total = vehiclesData.total || vehicles.length;
+        } else {
+          console.warn(
+            "[AdminDashboard] vehiclesData no es válido, usando valores por defecto"
+          );
+        }
+
+        // Calcular estadísticas de vehículos
+        const uniqueBranches = [
+          ...new Set(vehicles.map((vehicle) => vehicle.branch)),
+        ];
 
         setStats({
           activeOrdersCount: orders.filter((o) => o.status === "En Proceso")
@@ -53,6 +86,8 @@ const AdminDashboard = () => {
           closedOrdersCount: orders.filter((o) => o.status === "Finalizado")
             .length,
           notificationsCount: notifications.length,
+          branchesCount: uniqueBranches.length,
+          vehiclesCount: total,
         });
       } catch (error) {
         console.error("[AdminDashboard] Error al cargar datos:", error);
@@ -77,7 +112,7 @@ const AdminDashboard = () => {
     },
     {
       title: "Vehiculos",
-      content: "Vehiculos registrados (# de vehiculos por sede)",
+      content: `Sedes: ${stats.branchesCount} | Vehículos: ${stats.vehiclesCount}`,
       buttonText: "Ver Vehiculos",
       onClick: () => navigate("/admin/vehicles"),
     },

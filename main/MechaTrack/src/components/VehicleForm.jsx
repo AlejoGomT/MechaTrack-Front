@@ -91,6 +91,9 @@ const VehicleForm = ({
   const [newModelInput, setNewModelInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Filtrar ciudades que no están en branches
+  const availableCities = cities.filter((city) => !branches.includes(city));
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -103,18 +106,23 @@ const VehicleForm = ({
         setBrands(brandsData);
         setModels(modelsData);
 
-        // Verificar si los valores iniciales son "nuevos"
-        if (initialData.branch && !branchesData.includes(initialData.branch)) {
-          setIsNewBranch(true);
-          setNewBranchCity(initialData.branch);
-        }
-        if (initialData.brand && !brandsData.includes(initialData.brand)) {
-          setIsNewBrand(true);
-          setNewBrandInput(initialData.brand);
-        }
-        if (initialData.model && !modelsData.includes(initialData.model)) {
-          setIsNewModel(true);
-          setNewModelInput(initialData.model);
+        // Verificar si los valores iniciales son "nuevos" (solo en modo creación)
+        if (!isEdit) {
+          if (
+            initialData.branch &&
+            !branchesData.includes(initialData.branch)
+          ) {
+            setIsNewBranch(true);
+            setNewBranchCity(initialData.branch);
+          }
+          if (initialData.brand && !brandsData.includes(initialData.brand)) {
+            setIsNewBrand(true);
+            setNewBrandInput(initialData.brand);
+          }
+          if (initialData.model && !modelsData.includes(initialData.model)) {
+            setIsNewModel(true);
+            setNewModelInput(initialData.model);
+          }
         }
       } catch (error) {
         toast.error("Error al cargar datos");
@@ -122,7 +130,7 @@ const VehicleForm = ({
       }
     };
     fetchData();
-  }, []);
+  }, [isEdit]);
 
   const validateForm = () => {
     const newErrors = {};
@@ -145,12 +153,25 @@ const VehicleForm = ({
       newErrors.vin = "VIN es requerido (máx. 50 caracteres)";
     if (!formData.plate || formData.plate.length > 20)
       newErrors.plate = "Placa es requerida (máx. 20 caracteres)";
+
+    // Validaciones adicionales para modo creación
+    if (!isEdit) {
+      if (isNewBranch && !newBranchCity)
+        newErrors.newBranchCity = "Ciudad es requerida";
+      if (isNewBranch && branches.includes(newBranchCity))
+        newErrors.newBranchCity = "La ciudad ya existe como sucursal";
+      if (isNewBrand && !newBrandInput)
+        newErrors.newBrandInput = "Nueva marca es requerida";
+      if (isNewModel && !newModelInput)
+        newErrors.newModelInput = "Nuevo modelo es requerido";
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const checkSimilarity = (input, items, field) => {
-    const threshold = 3; // Umbral para considerar similitud
+    const threshold = 3;
     const similarItems = items.filter(
       (item) =>
         levenshteinDistance(input.toLowerCase(), item.toLowerCase()) <=
@@ -168,7 +189,7 @@ const VehicleForm = ({
     e.preventDefault();
     setIsSubmitting(true);
 
-    // Ajustar formData según inputs condicionales
+    // Ajustar formData según inputs condicionales (solo en modo creación)
     const finalFormData = {
       ...formData,
       branch: isNewBranch ? newBranchCity : formData.branch,
@@ -176,26 +197,27 @@ const VehicleForm = ({
       model: isNewModel ? newModelInput : formData.model,
     };
 
-    // Verificar similitudes para marca y modelo
-    if (isNewBrand && newBrandInput) {
+    // Verificar similitudes para marca y modelo (solo en modo creación)
+    if (!isEdit && isNewBrand && newBrandInput) {
       const brandWarning = checkSimilarity(newBrandInput, brands, "marca");
       if (brandWarning) {
-        toast.warn(brandWarning, {
-          autoClose: false,
-          closeOnClick: false,
-          draggable: false,
-          closeButton: true,
-          onClose: () => setIsSubmitting(false),
-          render: ({ closeToast }) => (
+        toast.warn(
+          ({ closeToast }) => (
             <div>
-              {brandWarning}
-              <div style={{ marginTop: "1rem" }}>
+              <p>{brandWarning}</p>
+              <div
+                style={{
+                  marginTop: "1rem",
+                  display: "flex",
+                  gap: "1rem",
+                  justifyContent: "center",
+                }}
+              >
                 <StyledButton
                   onClick={() => {
                     handleFinalSubmit(finalFormData);
                     closeToast();
                   }}
-                  style={{ marginRight: "1rem" }}
                 >
                   Confirmar
                 </StyledButton>
@@ -203,30 +225,38 @@ const VehicleForm = ({
               </div>
             </div>
           ),
-        });
+          {
+            autoClose: false,
+            closeOnClick: false,
+            draggable: false,
+            closeButton: true,
+            onClose: () => setIsSubmitting(false),
+          }
+        );
         return;
       }
     }
 
-    if (isNewModel && newModelInput) {
+    if (!isEdit && isNewModel && newModelInput) {
       const modelWarning = checkSimilarity(newModelInput, models, "modelo");
       if (modelWarning) {
-        toast.warn(modelWarning, {
-          autoClose: false,
-          closeOnClick: false,
-          draggable: false,
-          closeButton: true,
-          onClose: () => setIsSubmitting(false),
-          render: ({ closeToast }) => (
+        toast.warn(
+          ({ closeToast }) => (
             <div>
-              {modelWarning}
-              <div style={{ marginTop: "1rem" }}>
+              <p>{modelWarning}</p>
+              <div
+                style={{
+                  marginTop: "1rem",
+                  display: "flex",
+                  gap: "1rem",
+                  justifyContent: "center",
+                }}
+              >
                 <StyledButton
                   onClick={() => {
                     handleFinalSubmit(finalFormData);
                     closeToast();
                   }}
-                  style={{ marginRight: "1rem" }}
                 >
                   Confirmar
                 </StyledButton>
@@ -234,7 +264,14 @@ const VehicleForm = ({
               </div>
             </div>
           ),
-        });
+          {
+            autoClose: false,
+            closeOnClick: false,
+            draggable: false,
+            closeButton: true,
+            onClose: () => setIsSubmitting(false),
+          }
+        );
         return;
       }
     }
@@ -260,7 +297,11 @@ const VehicleForm = ({
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
+    // Convertir a mayúsculas para brand, model, vin, plate
+    const formattedValue = ["brand", "model", "vin", "plate"].includes(name)
+      ? value.toUpperCase()
+      : value;
+    setFormData({ ...formData, [name]: formattedValue });
     if (errors[name]) {
       setErrors({ ...errors, [name]: "" });
     }
@@ -272,6 +313,16 @@ const VehicleForm = ({
     }
     if (name === "model") {
       setIsNewModel(value === "new");
+    }
+  };
+
+  const handleNewInputChange = (e, setter) => {
+    const value = e.target.value.toUpperCase();
+    setter(value);
+    const field =
+      setter === setNewBrandInput ? "newBrandInput" : "newModelInput";
+    if (errors[field]) {
+      setErrors({ ...errors, [field]: "" });
     }
   };
 
@@ -291,6 +342,7 @@ const VehicleForm = ({
               onChange={handleChange}
               disabled={isEdit}
               isInvalid={!!errors.economic_number}
+              required
             />
             <Form.Control.Feedback type="invalid">
               {errors.economic_number}
@@ -305,28 +357,38 @@ const VehicleForm = ({
               value={formData.branch}
               onChange={handleChange}
               isInvalid={!!errors.branch}
+              required
             >
-              <option value="">Seleccionar sucursal</option>
+              <option value="" disabled>
+                Seleccionar sucursal
+              </option>
               {branches.map((branch) => (
                 <option key={branch} value={branch}>
                   {branch}
                 </option>
               ))}
-              <option value="new">Nueva sucursal</option>
+              {!isEdit && <option value="new">Nueva sucursal</option>}
             </FilterSelect>
-            {isNewBranch && (
+            {!isEdit && isNewBranch && (
               <ConditionalInputContainer>
                 <FilterSelect
                   value={newBranchCity}
                   onChange={(e) => setNewBranchCity(e.target.value)}
+                  isInvalid={!!errors.newBranchCity}
+                  required
                 >
-                  <option value="">Seleccionar ciudad</option>
-                  {cities.map((city) => (
+                  <option value="" disabled>
+                    Seleccionar ciudad
+                  </option>
+                  {availableCities.map((city) => (
                     <option key={city} value={city}>
                       {city}
                     </option>
                   ))}
                 </FilterSelect>
+                <Form.Control.Feedback type="invalid">
+                  {errors.newBranchCity}
+                </Form.Control.Feedback>
               </ConditionalInputContainer>
             )}
             <Form.Control.Feedback type="invalid">
@@ -339,26 +401,36 @@ const VehicleForm = ({
             <Form.Label>Marca</Form.Label>
             <FilterSelect
               name="brand"
-              value={formData.brand}
+              value={isNewBrand ? "new" : formData.brand}
               onChange={handleChange}
               isInvalid={!!errors.brand}
+              required
+              className="uppercase"
             >
-              <option value="">Seleccionar marca</option>
+              <option value="" disabled>
+                Seleccionar marca
+              </option>
               {brands.map((brand) => (
                 <option key={brand} value={brand}>
                   {brand}
                 </option>
               ))}
-              <option value="new">Nueva marca</option>
+              {!isEdit && <option value="new">Nueva marca</option>}
             </FilterSelect>
-            {isNewBrand && (
+            {!isEdit && isNewBrand && (
               <ConditionalInputContainer>
                 <FormInput
                   type="text"
                   value={newBrandInput}
-                  onChange={(e) => setNewBrandInput(e.target.value)}
+                  onChange={(e) => handleNewInputChange(e, setNewBrandInput)}
                   placeholder="Ingresar nueva marca"
+                  isInvalid={!!errors.newBrandInput}
+                  required
+                  className="uppercase"
                 />
+                <Form.Control.Feedback type="invalid">
+                  {errors.newBrandInput}
+                </Form.Control.Feedback>
               </ConditionalInputContainer>
             )}
             <Form.Control.Feedback type="invalid">
@@ -371,26 +443,36 @@ const VehicleForm = ({
             <Form.Label>Modelo</Form.Label>
             <FilterSelect
               name="model"
-              value={formData.model}
+              value={isNewModel ? "new" : formData.model}
               onChange={handleChange}
               isInvalid={!!errors.model}
+              required
+              className="uppercase"
             >
-              <option value="">Seleccionar modelo</option>
+              <option value="" disabled>
+                Seleccionar modelo
+              </option>
               {models.map((model) => (
                 <option key={model} value={model}>
                   {model}
                 </option>
               ))}
-              <option value="new">Nuevo modelo</option>
+              {!isEdit && <option value="new">Nuevo modelo</option>}
             </FilterSelect>
-            {isNewModel && (
+            {!isEdit && isNewModel && (
               <ConditionalInputContainer>
                 <FormInput
                   type="text"
                   value={newModelInput}
-                  onChange={(e) => setNewModelInput(e.target.value)}
+                  onChange={(e) => handleNewInputChange(e, setNewModelInput)}
                   placeholder="Ingresar nuevo modelo"
+                  isInvalid={!!errors.newModelInput}
+                  required
+                  className="uppercase"
                 />
+                <Form.Control.Feedback type="invalid">
+                  {errors.newModelInput}
+                </Form.Control.Feedback>
               </ConditionalInputContainer>
             )}
             <Form.Control.Feedback type="invalid">
@@ -407,6 +489,7 @@ const VehicleForm = ({
               value={formData.year}
               onChange={handleChange}
               isInvalid={!!errors.year}
+              required
             />
             <Form.Control.Feedback type="invalid">
               {errors.year}
@@ -422,6 +505,7 @@ const VehicleForm = ({
               value={formData.mileage}
               onChange={handleChange}
               isInvalid={!!errors.mileage}
+              required
             />
             <Form.Control.Feedback type="invalid">
               {errors.mileage}
@@ -438,6 +522,8 @@ const VehicleForm = ({
               onChange={handleChange}
               disabled={isEdit}
               isInvalid={!!errors.vin}
+              required
+              className="uppercase"
             />
             <Form.Control.Feedback type="invalid">
               {errors.vin}
@@ -454,6 +540,8 @@ const VehicleForm = ({
               onChange={handleChange}
               disabled={isEdit}
               isInvalid={!!errors.plate}
+              required
+              className="uppercase"
             />
             <Form.Control.Feedback type="invalid">
               {errors.plate}

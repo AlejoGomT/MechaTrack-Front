@@ -4,7 +4,7 @@ import {
   Route,
   Navigate,
 } from "react-router-dom";
-import { AuthProvider, useAuth } from "./context/AuthContext"; // Importar AuthProvider
+import { AuthProvider, useAuth } from "./context/AuthContext";
 import Login from "./pages/Login";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminOrders from "./pages/AdminOrders";
@@ -25,7 +25,8 @@ import AdminVehicles from "./pages/AdminVehicles";
 
 // Componente para proteger rutas
 const PrivateRoute = ({ children, allowedRoles }) => {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+  if (loading) return <div>Cargando...</div>;
   if (!user) return <Navigate to="/" replace />;
   if (!allowedRoles.includes(user.role)) return <Navigate to="/" replace />;
   return children;
@@ -33,8 +34,8 @@ const PrivateRoute = ({ children, allowedRoles }) => {
 
 function App() {
   return (
-    <AuthProvider>
-      <Router future={{ v7_relativeSplatPath: true }}>
+    <Router future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+      <AuthProvider>
         <Routes>
           <Route path="/" element={<Login />} />
           <Route
@@ -154,11 +155,15 @@ function App() {
           position="top-right"
           autoClose={3000}
           hideProgressBar={false}
+          newestOnTop={false}
           closeOnClick
+          rtl={false}
+          pauseOnFocusLoss
+          draggable
           pauseOnHover
         />
-      </Router>
-    </AuthProvider>
+      </AuthProvider>
+    </Router>
   );
 }
 

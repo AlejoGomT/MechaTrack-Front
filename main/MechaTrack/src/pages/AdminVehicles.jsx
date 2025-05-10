@@ -63,42 +63,48 @@ const AdminVehicles = () => {
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const fetchData = async () => {
+    try {
+      const [vehiclesData, models, branchesData] = await Promise.all([
+        getVehicles({
+          branch: branchFilter,
+          economicNumber: economicNumberFilter,
+          model: modelFilter,
+          page: pagination.page,
+          limit: pagination.limit,
+        }),
+        getVehicleModels(),
+        getBranches(),
+      ]);
+      setVehicles(vehiclesData.vehicles);
+      setPagination({
+        ...pagination,
+        total: vehiclesData.total,
+        totalPages: vehiclesData.totalPages,
+      });
+      setVehicleModels(models);
+      setBranches(branchesData);
+    } catch (error) {
+      toast.error("Error al cargar datos");
+      console.error("[AdminVehicles] Error al cargar datos:", error);
+    }
+  };
+
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [vehiclesData, models, branchesData] = await Promise.all([
-          getVehicles({
-            branch: branchFilter,
-            economicNumber: economicNumberFilter,
-            model: modelFilter,
-            page: pagination.page,
-            limit: pagination.limit,
-          }),
-          getVehicleModels(),
-          getBranches(),
-        ]);
-        setVehicles(vehiclesData.vehicles);
-        setPagination({
-          ...pagination,
-          total: vehiclesData.total,
-          totalPages: vehiclesData.totalPages,
-        });
-        setVehicleModels(models);
-        setBranches(branchesData);
-      } catch (error) {
-        toast.error("Error al cargar datos");
-        console.error("[AdminVehicles] Error al cargar datos:", error);
-      }
-    };
     if (token) fetchData();
   }, [token, branchFilter, economicNumberFilter, modelFilter, pagination.page]);
 
   const handleCreateVehicle = async (vehicleData) => {
     try {
       const newVehicle = await createVehicle(vehicleData);
-      setVehicles([...vehicles, newVehicle]);
+      setVehicles([...vehicles, newVehicle]); // Actualización optimista
       setShowCreateModal(false);
+      toast.success("Vehículo creado");
+      // Reiniciar paginación y recargar datos
+      setPagination((prev) => ({ ...prev, page: 1 }));
+      await fetchData(); // Recargar datos del servidor
     } catch (error) {
+      toast.error(error.message || "Error al crear vehículo");
       throw error;
     }
   };
@@ -119,7 +125,10 @@ const AdminVehicles = () => {
       );
       setShowEditModal(false);
       setSelectedVehicle(null);
+      toast.success("Vehículo actualizado");
+      await fetchData(); // Recargar datos para asegurar consistencia
     } catch (error) {
+      toast.error(error.message || "Error al actualizar vehículo");
       throw error;
     } finally {
       setIsSubmitting(false);
@@ -134,6 +143,7 @@ const AdminVehicles = () => {
           vehicles.filter((v) => v.economic_number !== economic_number)
         );
         toast.success("Vehículo eliminado");
+        await fetchData(); // Recargar datos
       } catch (error) {
         toast.error(error.message || "Error al eliminar vehículo");
       }
@@ -206,12 +216,12 @@ const AdminVehicles = () => {
               <thead>
                 <tr>
                   <th>Número Económico</th>
-                  <th>Sucursal</th>
+                  <th className="col-2">Sucursal</th>
                   <th>Marca</th>
-                  <th>Modelo</th>
+                  <th className="col-4">Modelo</th>
                   <th>Año</th>
                   <th>Kilometraje</th>
-                  <th>VIN</th>
+                  <th className="col-3">VIN</th>
                   <th>Placa</th>
                   <th>Acciones</th>
                 </tr>

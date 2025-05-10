@@ -104,6 +104,9 @@ export const FormInput = styled(Form.Control)`
   &:blur {
     background: ${colors.inputBg};
   }
+  &.uppercase {
+    text-transform: uppercase;
+  }
 `;
 
 export const StyledButton = styled(Button)`
@@ -118,6 +121,25 @@ export const StyledButton = styled(Button)`
   }
   &:active {
     background-color: ${colors.primary};
+    transform: scale(1);
+  }
+`;
+
+export const CustomButton = styled(Button)`
+  background-color: ${colors.backgroundLight};
+  border: none;
+  padding: 6px 12px;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.3s, transform 0.3s;
+  &:hover {
+    background-color: ${colors.primaryHover};
+    transform: scale(1.05);
+  }
+  &:active {
+    background-color: ${colors.backgroundLight};
     transform: scale(1);
   }
 `;
@@ -370,25 +392,6 @@ export const StatusIcon = styled.span`
   font-size: 12px;
 `;
 
-export const CustomButton = styled(Button)`
-  background-color: ${colors.backgroundLight};
-  border: none;
-  padding: auto;
-  font-size: 0.9rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background-color 0.3s, transform 0.3s;
-  &:hover {
-    background-color: ${colors.primaryHover};
-    transform: scale(1.05);
-  }
-  &:active {
-    background-color: ${colors.backgroundLight};
-    transform: scale(1);
-  }
-`;
-
 export const StatCard = styled(Card)`
   width: 48%;
   border: none;
@@ -472,7 +475,9 @@ export const MobileToggleButton = styled(Button)`
 export const StyledModal = styled(Modal)`
   .modal-dialog {
     max-width: ${(props) =>
-      props.variant === "detailsParts"
+      props.variant === "detailsVehicle"
+        ? "500px"
+        : props.variant === "detailsParts"
         ? "800px"
         : props.variant === "createParts" || props.variant === "createVehicle"
         ? "600px"
@@ -598,6 +603,9 @@ export const FilterLabel = styled(Form.Label)`
 
 export const FilterSelect = styled(Form.Select)`
   width: 100%;
+  &.uppercase {
+    text-transform: uppercase;
+  }
 `;
 
 export const FilterInput = styled(Form.Control)`
