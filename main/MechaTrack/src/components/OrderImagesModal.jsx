@@ -9,7 +9,11 @@ import {
   ActionButton,
   ImageContainer,
 } from "../styles/GlobalStyles";
-import { API_URL, deleteOrderImage } from "../services/orderService";
+import {
+  API_URL,
+  deleteOrderImage,
+  updateOrder,
+} from "../services/orderService";
 
 const OrderImagesModal = ({
   show,
@@ -27,40 +31,42 @@ const OrderImagesModal = ({
     setLocalImages(images || []);
   }, [images]);
 
-  const handleImageUpload = (e) => {
+  const handleImageUpload = async (e) => {
     const files = Array.from(e.target.files);
     if (files.length + localImages.length + newImages.length > 10) {
       toast.error("No se pueden cargar más de 10 imágenes");
       return;
     }
-    setNewImages([...newImages, ...files]);
-    const filePaths = files.map((file) => URL.createObjectURL(file));
-    setLocalImages([...localImages, ...filePaths]);
-    setImages([...images, ...filePaths]);
-    toast.success("Imágenes añadidas");
+
+    try {
+      // Subir imágenes inmediatamente usando updateOrder
+      const updatedOrder = await updateOrder(orderId, {
+        images: files, // Archivos File
+        existingImages: localImages, // Rutas relativas
+      });
+
+      // Actualizar localImages y images con las rutas relativas devueltas
+      const updatedImages = Array.isArray(updatedOrder.images)
+        ? updatedOrder.images
+        : [];
+      setLocalImages(updatedImages);
+      setImages(updatedImages);
+      setNewImages([]); // Limpiar newImages
+      toast.success(`${files.length} imagen(es) subida(s) correctamente`);
+    } catch (error) {
+      console.error("Error al subir imágenes:", error);
+      toast.error(error.message || "Error al subir imágenes");
+    }
   };
 
   const handleImageDelete = async (index) => {
     try {
-      if (localImages[index].startsWith("blob:")) {
-        // Imagen nueva (aún no guardada)
-        const updatedImages = localImages.filter((_, i) => i !== index);
-        const updatedNewImages = newImages.filter(
-          (_, i) =>
-            !localImages[index].includes(URL.createObjectURL(newImages[i]))
-        );
-        setNewImages(updatedNewImages);
-        setLocalImages(updatedImages);
-        setImages(updatedImages);
-        toast.success("Imagen eliminada");
-      } else {
-        // Imagen existente en el servidor
-        await deleteOrderImage(orderId, index);
-        const updatedImages = localImages.filter((_, i) => i !== index);
-        setLocalImages(updatedImages);
-        setImages(updatedImages);
-        toast.success("Imagen eliminada del servidor");
-      }
+      // Imagen existente en el servidor
+      await deleteOrderImage(orderId, index);
+      const updatedImages = localImages.filter((_, i) => i !== index);
+      setLocalImages(updatedImages);
+      setImages(updatedImages);
+      toast.success("Imagen eliminada del servidor");
     } catch (error) {
       toast.error(error.message || "Error al eliminar imagen");
     }
@@ -79,7 +85,7 @@ const OrderImagesModal = ({
                 <div className="position-relative">
                   <ImageContainer>
                     <img
-                      src={img.startsWith("blob:") ? img : `${API_URL}${img}`}
+                      src={`${API_URL}${img}`}
                       alt={`Imagen ${index + 1}`}
                       style={{ maxWidth: "100px" }}
                       onError={(e) => {

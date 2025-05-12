@@ -1,10 +1,11 @@
 import { useState, useCallback, memo, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
-import { Form, Row, Col, Button, Modal, Alert } from "react-bootstrap";
+import { Form, Row, Col, Button, Modal, Alert, Image } from "react-bootstrap";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import CustomButton from "../components/CustomButton";
 import PartsModal from "../components/PartsModal";
+import OrderImagesModal from "../components/OrderImagesModal";
 import {
   createOrder,
   getVehicles,
@@ -12,6 +13,8 @@ import {
   updateOrder,
   getOrders,
   getOrderById,
+  deleteOrderImage,
+  API_URL,
 } from "../services/orderService";
 import {
   MainContainer,
@@ -24,11 +27,13 @@ import {
   HistoryButtonWrapper,
   StyledTable,
   ActionsContainer,
+  ImageContainer,
+  ActionButton,
 } from "../styles/GlobalStyles";
 import styled from "@emotion/styled";
 import { toast } from "react-toastify";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faEye, faCircle } from "@fortawesome/free-solid-svg-icons";
+import { faEye, faCircle, faTrash } from "@fortawesome/free-solid-svg-icons";
 import { useNavigate } from "react-router-dom";
 
 const HistoryStatusIcon = styled.span`
@@ -60,22 +65,14 @@ const StatusIndicator = styled.span`
   color: ${({ status }) => {
     switch (status) {
       case "Aprobado":
-        return "#28a745"; // Verde
+        return "#28a745";
       case "Solicitado":
-        return "#ffc107"; // Amarillo
+        return "#ffc107";
       default:
-        return "#6c757d"; // Gris por defecto
+        return "#6c757d";
     }
   }};
 `;
-
-const technicianMenu = [
-  { label: "Inicio", path: "../technician" },
-  { label: "Crear Orden de Servicio", path: "../technician/create-order" },
-  { label: "Historial de Órdenes", path: "../technician/history" },
-  { label: "Notificaciones", path: "../technician/notifications" },
-  { label: "Cerrar Sesión", path: "/" },
-];
 
 const OrderForm = memo(
   ({
@@ -89,9 +86,18 @@ const OrderForm = memo(
   }) => {
     const { user } = useAuth();
 
-    // Normalizar partsList
+    // Normalizar partsList e images
     const normalizedParts = Array.isArray(initialData?.parts)
-      ? initialData.parts
+      ? initialData.parts.map((part) => ({
+          ...part,
+          requested_by: part.requested_by_id || String(user.id),
+          authorized_by: part.authorized_by_id || null,
+        }))
+      : [];
+    const normalizedImages = Array.isArray(initialData?.images)
+      ? initialData.images.map((img) =>
+          img.startsWith("/uploads/") ? img : `/uploads/${img}`
+        )
       : [];
 
     const [formData, setFormData] = useState({
@@ -104,7 +110,7 @@ const OrderForm = memo(
       diagnosis: initialData?.initial_diagnosis || "",
       tasks: initialData?.tasks || "",
       partsList: normalizedParts,
-      images: initialData?.images || [],
+      images: normalizedImages, // Solo rutas relativas
       plate: initialData?.plate || "",
       brand: initialData?.brand || "",
       model: initialData?.model || "",
@@ -120,8 +126,10 @@ const OrderForm = memo(
       useState(false);
     const [showHistoryDetailsModal, setShowHistoryDetailsModal] =
       useState(false);
+    const [showImagesModal, setShowImagesModal] = useState(false);
     const [selectedHistoryOrder, setSelectedHistoryOrder] = useState(null);
     const [history, setHistory] = useState([]);
+    const [newImages, setNewImages] = useState([]); // Archivos File
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState("");
     const branches = [...new Set(vehicles.map((v) => v.branch))];
@@ -131,18 +139,25 @@ const OrderForm = memo(
         if (initialData?.id) {
           try {
             const orderData = await getOrderById(initialData.id);
+            const updatedParts = Array.isArray(orderData.parts)
+              ? orderData.parts.map((part) => ({
+                  ...part,
+                  requested_by: part.requested_by_id || String(user.id), // Usar requested_by_id
+                  authorized_by: part.authorized_by_id || null,
+                }))
+              : [];
             setFormData((prev) => ({
               ...prev,
-              partsList: Array.isArray(orderData.parts) ? orderData.parts : [],
+              partsList: updatedParts,
+              images: Array.isArray(orderData.images) ? orderData.images : [],
             }));
           } catch (err) {
-            console.error("Error al cargar datos de la orden:", err);
-            toast.error("Error al cargar los repuestos de la orden");
+            toast.error("Error al cargar los datos de la orden");
           }
         }
       };
       fetchOrderData();
-    }, [initialData?.id]);
+    }, [initialData?.id, user.id]);
 
     useEffect(() => {
       const fetchVehicles = async () => {
@@ -153,7 +168,6 @@ const OrderForm = memo(
             data
           );
 
-          // Validar que data.vehicles sea un arreglo
           const vehiclesData = Array.isArray(data.vehicles)
             ? data.vehicles
             : [];
@@ -182,9 +196,15 @@ const OrderForm = memo(
                 diagnosis: initialData?.initial_diagnosis || prev.diagnosis,
                 tasks: initialData?.tasks || prev.tasks,
                 partsList: Array.isArray(initialData?.parts)
-                  ? initialData.parts
+                  ? initialData.parts.map((part) => ({
+                      ...part,
+                      requested_by: part.requested_by_id || String(user.id), // Usar requested_by_id
+                      authorized_by: part.authorized_by_id || null,
+                    }))
                   : prev.partsList,
-                images: initialData?.images || prev.images,
+                images: Array.isArray(initialData?.images)
+                  ? initialData.images
+                  : prev.images,
                 plate: vehicle.plate || prev.plate || "",
                 brand: vehicle.brand || prev.brand || "",
                 model: vehicle.model || prev.model || "",
@@ -204,9 +224,15 @@ const OrderForm = memo(
                 diagnosis: initialData?.initial_diagnosis || prev.diagnosis,
                 tasks: initialData?.tasks || prev.tasks,
                 partsList: Array.isArray(initialData?.parts)
-                  ? initialData.parts
+                  ? initialData.parts.map((part) => ({
+                      ...part,
+                      requested_by: part.requested_by_id || String(user.id), // Usar requested_by_id
+                      authorized_by: part.authorized_by_id || null,
+                    }))
                   : prev.partsList,
-                images: initialData?.images || prev.images,
+                images: Array.isArray(initialData?.images)
+                  ? initialData.images
+                  : prev.images,
               }));
             }
           }
@@ -220,7 +246,7 @@ const OrderForm = memo(
         }
       };
       fetchVehicles();
-    }, [initialData]);
+    }, [initialData, user.id]);
 
     useEffect(() => {
       const updateVehicleData = async () => {
@@ -254,10 +280,9 @@ const OrderForm = memo(
                 historyData
               );
 
-              // Validar que historyData.orders sea un arreglo
               if (!Array.isArray(historyData.orders)) {
                 console.error(
-                  "[TechnicianCreateOrder] Respuesta inválida de getOrders, se esperaba un arreglo en orders:",
+                  "[TechnicianCreateOrder] Respuesta inválida de getOrders:",
                   historyData
                 );
                 setHistory([]);
@@ -287,7 +312,6 @@ const OrderForm = memo(
                 partsData
               );
 
-              // Validar que partsData.parts sea un arreglo
               const partsArray = Array.isArray(partsData.parts)
                 ? partsData.parts
                 : [];
@@ -326,10 +350,37 @@ const OrderForm = memo(
 
     const handleImageUpload = (e) => {
       const files = Array.from(e.target.files);
-      setFormData((prev) => ({
-        ...prev,
-        images: [...prev.images, ...files],
-      }));
+      if (files.length + formData.images.length + newImages.length > 10) {
+        toast.error("No se pueden cargar más de 10 imágenes");
+        return;
+      }
+      setNewImages((prev) => [...prev, ...files]);
+      toast.success(`${files.length} imagen(es) seleccionada(s) para subir`);
+    };
+
+    const handleImageDelete = async (index) => {
+      try {
+        const imageToDelete = formData.images[index];
+        if (!imageToDelete.startsWith("/uploads/")) {
+          // Imagen no subida, eliminar de newImages
+          setNewImages((prev) => prev.filter((_, i) => i !== index));
+          setFormData((prev) => ({
+            ...prev,
+            images: prev.images.filter((_, i) => i !== index),
+          }));
+          toast.success("Imagen eliminada");
+        } else {
+          // Imagen existente en el servidor
+          await deleteOrderImage(initialData.id, index);
+          setFormData((prev) => ({
+            ...prev,
+            images: prev.images.filter((_, i) => i !== index),
+          }));
+          toast.success("Imagen eliminada del servidor");
+        }
+      } catch (error) {
+        toast.error(error.message || "Error al eliminar imagen");
+      }
     };
 
     const handleFormSubmit = async (e) => {
@@ -356,8 +407,26 @@ const OrderForm = memo(
         }
       }
 
+      console.log("formData.partsList antes de onSubmit:", formData.partsList);
+      console.log("newImages antes de onSubmit:", newImages);
       try {
-        await onSubmit(formData);
+        // Preparar datos para enviar
+        const orderData = {
+          ...formData,
+          images: formData.images, // Rutas relativas
+          newImages, // Archivos File
+        };
+
+        // Llamar a onSubmit y obtener la orden actualizada
+        const updatedOrder = await onSubmit(orderData);
+
+        // Actualizar formData.images con las rutas relativas devueltas
+        setFormData((prev) => ({
+          ...prev,
+          images: Array.isArray(updatedOrder.images) ? updatedOrder.images : [],
+        }));
+        setNewImages([]); // Limpiar newImages
+        toast.success("Orden guardada correctamente");
       } catch (err) {
         console.error("Error en handleFormSubmit:", err);
         setError(err.message || "Error al guardar la orden");
@@ -631,34 +700,55 @@ const OrderForm = memo(
             </ActionsContainer>
           </Form.Group>
 
-          <FormSectionTitle>Fotos de Evidencia</FormSectionTitle>
+          <FormSectionTitle>Imágenes</FormSectionTitle>
           <Form.Group className="mb-3">
-            <Form.Label>Subir Fotos</Form.Label>
-            <Form.Control
-              type="file"
-              multiple
-              onChange={handleImageUpload}
-              disabled={isReadOnly}
-              accept="image/*"
-            />
-            <Form.Text className="text-muted">
-              Puedes subir varias fotos relacionadas con la orden de servicio.
-            </Form.Text>
-            {formData.images.length > 0 && (
-              <ul>
-                {formData.images.map((image, index) => (
-                  <li key={index}>
-                    {image.name || image}
-                    {typeof image !== "string" && (
-                      <img
-                        src={URL.createObjectURL(image)}
-                        alt="Vista previa"
-                        style={{ maxWidth: "100px", marginLeft: "10px" }}
-                      />
-                    )}
-                  </li>
-                ))}
-              </ul>
+            {formData.images?.length > 0 || newImages.length > 0 ? (
+              <>
+                <Row className="mb-3">
+                  {formData.images.slice(0, 4).map((img, index) => (
+                    <Col md={3} key={index} className="mb-2">
+                      <div className="position-relative">
+                        <ImageContainer>
+                          <Image
+                            src={`${API_URL}${img}`}
+                            thumbnail
+                            style={{ maxWidth: "100px" }}
+                            onError={(e) => {
+                              e.target.src = "/placeholder.png";
+                            }}
+                          />
+                        </ImageContainer>
+                        {!isReadOnly && (
+                          <ActionButton
+                            variant="danger"
+                            size="sm"
+                            className="position-absolute top-0 end-0"
+                            onClick={() => handleImageDelete(index)}
+                          >
+                            <FontAwesomeIcon icon={faTrash} />
+                          </ActionButton>
+                        )}
+                      </div>
+                    </Col>
+                  ))}
+                </Row>
+                <ActionButton
+                  variant="primary"
+                  onClick={() => setShowImagesModal(true)}
+                >
+                  Ver/Gestionar Imágenes
+                </ActionButton>
+              </>
+            ) : (
+              <Form.Group className="mt-3">
+                <Form.Label>Añadir Nuevas Imágenes</Form.Label>
+                <Form.Control
+                  type="file"
+                  multiple
+                  accept="image/jpeg,image/jpg,image/png"
+                  onChange={handleImageUpload}
+                />
+              </Form.Group>
             )}
           </Form.Group>
 
@@ -775,6 +865,18 @@ const OrderForm = memo(
           </Modal.Footer>
         </StyledModal>
 
+        <OrderImagesModal
+          show={showImagesModal}
+          onHide={() => setShowImagesModal(false)}
+          orderId={initialData?.id}
+          images={formData.images}
+          setImages={(newImages) =>
+            setFormData((prev) => ({ ...prev, images: newImages }))
+          }
+          isReadOnly={isReadOnly}
+          isFinalized={"En Proceso"}
+        />
+
         <PartsModal
           showPartsModal={showPartsModal}
           setShowPartsModal={setShowPartsModal}
@@ -782,10 +884,16 @@ const OrderForm = memo(
           setShowPartsManagementModal={setShowPartsManagementModal}
           partsList={formData.partsList}
           setPartsList={(newPartsList) => {
+            console.log("newPartsList recibido de PartsModal:", newPartsList);
             setFormData((prev) => {
               const updatedPartsList = Array.isArray(newPartsList)
-                ? newPartsList
+                ? newPartsList.map((part) => ({
+                    ...part,
+                    requested_by: part.requested_by_id || String(user.id), // Usar requested_by_id
+                    authorized_by: part.authorized_by_id || null,
+                  }))
                 : [];
+              console.log("formData.partsList actualizado:", updatedPartsList);
               return {
                 ...prev,
                 partsList: updatedPartsList,
@@ -821,13 +929,60 @@ const TechnicianCreateOrder = ({
   const handleSaveOrder = useCallback(
     async (formData) => {
       try {
+        const requiredFields = [
+          { key: "economicNumber", label: "N° Económico" },
+          { key: "branch", label: "Sucursal" },
+          { key: "kilometraje", label: "Kilometraje" },
+          { key: "diagnosis", label: "Diagnóstico Inicial" },
+          { key: "tasks", label: "Tareas" },
+        ];
+        for (const field of requiredFields) {
+          if (!formData[field.key]) {
+            throw new Error(`${field.label} es obligatorio`);
+          }
+        }
+
+        console.log(
+          "formData.partsList en handleSaveOrder:",
+          formData.partsList
+        );
+        const normalizedParts = Array.isArray(formData.partsList)
+          ? formData.partsList.map((part) => {
+              if (
+                !part.part_id ||
+                String(part.part_id).length > 10 ||
+                !part.quantity ||
+                part.quantity < 0 ||
+                !part.price ||
+                part.price < 0 ||
+                !part.requested_by ||
+                String(part.requested_by).length > 10
+              ) {
+                throw new Error(
+                  `Datos de repuesto inválidos: ${JSON.stringify(part)}`
+                );
+              }
+              return {
+                ...part,
+                part_id: String(part.part_id),
+                quantity: parseInt(part.quantity, 10),
+                price: parseFloat(part.price),
+                status: part.status || "Solicitado",
+                requested_by: part.requested_by_id || String(user.id), // Usar requested_by_id
+                authorized_by: part.authorized_by_id || null,
+              };
+            })
+          : [];
+
+        console.log("normalizedParts enviados:", normalizedParts);
+
         let newOrder;
         if (order?.id) {
           newOrder = await updateOrder(order.id, {
             initial_diagnosis: formData.diagnosis,
             tasks: formData.tasks,
             images: formData.images || [],
-            parts: formData.partsList,
+            parts: normalizedParts,
             kilometraje: formData.kilometraje
               ? parseInt(formData.kilometraje, 10)
               : undefined,
@@ -847,7 +1002,7 @@ const TechnicianCreateOrder = ({
             brand: order.brand || formData.brand,
             model: order.model || formData.model,
             year: order.year || formData.year,
-            parts: formData.partsList,
+            parts: normalizedParts,
           };
           toast.success(
             newOrder.id
@@ -861,7 +1016,7 @@ const TechnicianCreateOrder = ({
             initial_diagnosis: formData.diagnosis,
             tasks: formData.tasks,
             images: formData.images || [],
-            parts: formData.partsList,
+            parts: normalizedParts,
             technician_id: user.id,
             vehicle_economic_number: formData.economicNumber,
             kilometraje: parseInt(formData.kilometraje, 10),

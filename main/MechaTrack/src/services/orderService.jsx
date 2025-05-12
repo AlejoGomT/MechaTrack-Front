@@ -67,9 +67,9 @@ export const createOrder = async (orderData) => {
     const formData = new FormData();
     Object.entries(orderData).forEach(([key, value]) => {
       if (key === "images" && Array.isArray(value)) {
-        value.forEach((file, index) => {
+        value.forEach((file) => {
           if (file instanceof File) {
-            formData.append(`images`, file);
+            formData.append("images", file);
           }
         });
       } else if (key === "parts" && Array.isArray(value)) {
@@ -97,13 +97,13 @@ export const updateOrder = async (orderId, orderData) => {
     const formData = new FormData();
     Object.entries(orderData).forEach(([key, value]) => {
       if (key === "images" && Array.isArray(value)) {
-        value.forEach((item, index) => {
-          if (item instanceof File) {
-            formData.append(`images`, item);
-          } else if (typeof item === "string") {
-            formData.append(`existingImages[${index}]`, item);
+        value.forEach((file) => {
+          if (file instanceof File) {
+            formData.append("images", file);
           }
         });
+      } else if (key === "existingImages" && Array.isArray(value)) {
+        formData.append("existingImages", JSON.stringify(value));
       } else if (key === "parts" && Array.isArray(value)) {
         formData.append("parts", JSON.stringify(value));
       } else {
@@ -124,6 +124,7 @@ export const updateOrder = async (orderId, orderData) => {
         },
       }
     );
+    console.log("Respuesta de updateOrder:", response.data);
     return response.data;
   } catch (error) {
     console.error("Error en updateOrder:", error.response?.data || error);

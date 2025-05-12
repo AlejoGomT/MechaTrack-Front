@@ -37,9 +37,10 @@ const PartsModal = ({
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    setLocalPartsList(partsList);
     console.log("partsList recibido en PartsModal:", partsList);
-  }, [partsList]);
+    console.log("userId recibido en PartsModal:", userId);
+    setLocalPartsList(partsList);
+  }, [partsList, userId]);
 
   const fetchOrderParts = useCallback(async () => {
     if (!orderId || (!showPartsModal && !showPartsManagementModal)) {
@@ -49,29 +50,33 @@ const PartsModal = ({
     try {
       console.log("Cargando repuestos para orderId:", orderId);
       const orderData = await getOrderById(orderId);
-      const orderParts = Array.isArray(orderData.parts) ? orderData.parts : [];
-      setLocalPartsList(orderParts);
-      if (JSON.stringify(orderParts) !== JSON.stringify(partsList)) {
+      const orderParts = Array.isArray(orderData.parts)
+        ? orderData.parts.map((part) => ({
+            ...part,
+            requested_by: part.requested_by_id || userId, // Normalizar para coincidir con partsList
+            authorized_by: part.authorized_by_id || null,
+          }))
+        : [];
+      console.log("Repuestos cargados desde la orden:", orderParts);
+
+      // Comparar datos normalizados para evitar actualizaciones innecesarias
+      const isDifferent =
+        JSON.stringify(orderParts) !== JSON.stringify(localPartsList);
+      if (isDifferent) {
+        setLocalPartsList(orderParts);
         setPartsList(orderParts);
       }
-      console.log("Repuestos cargados desde la orden:", orderParts);
     } catch (err) {
       console.error("Error al cargar repuestos de la orden:", err);
       toast.error("Error al cargar repuestos de la orden");
     } finally {
       setIsLoading(false);
     }
-  }, [
-    orderId,
-    showPartsModal,
-    showPartsManagementModal,
-    setPartsList,
-    partsList,
-  ]);
+  }, [orderId, showPartsModal, showPartsManagementModal, setPartsList, userId]);
 
   useEffect(() => {
     fetchOrderParts();
-  }, [fetchOrderParts]);
+  }, [orderId, showPartsModal, showPartsManagementModal]);
 
   const handleQuantityChange = (partId, value) => {
     setSelectedPartQuantities((prev) => ({
@@ -89,6 +94,13 @@ const PartsModal = ({
 
   const handleRequestPart = async (part) => {
     try {
+      console.log("userId en handleRequestPart:", userId);
+      if (!userId || String(userId).length > 10) {
+        throw new Error(
+          `ID de usuario inválido o excede el límite de 10 caracteres: ${userId}`
+        );
+      }
+
       const quantity = selectedPartQuantities[part.id] || 1;
       const price = selectedPartPrices[part.id] || 0;
       if (quantity < 1) {
@@ -111,12 +123,13 @@ const PartsModal = ({
         quantity,
         price,
         status: isFinalized ? "Aprobado" : "Solicitado",
-        requested_by: userId,
-        authorized_by: isFinalized ? userId : null,
+        requested_by: String(userId),
+        authorized_by: isFinalized ? String(userId) : null,
       };
       console.log("newPart a añadir:", newPart);
 
       const updatedList = [...localPartsList, newPart];
+      console.log("updatedList antes de setLocalPartsList:", updatedList);
       setLocalPartsList(updatedList);
       setPartsList(updatedList);
       console.log("partsList actualizado en handleRequestPart:", updatedList);
