@@ -2,12 +2,10 @@ import axios from "axios";
 
 export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
-// Crear una instancia de Axios
 const axiosInstance = axios.create({
   baseURL: API_URL,
 });
 
-// Interceptor para agregar el token a todas las solicitudes
 axiosInstance.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem("token");
@@ -19,12 +17,10 @@ axiosInstance.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Interceptor para manejar errores de respuesta (por ejemplo, 401)
 axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
-      // Token expirado o no válido
       localStorage.removeItem("token");
       window.location.href = "/";
     }
@@ -47,7 +43,6 @@ export const getOrders = async (filters = {}) => {
     });
     return response.data;
   } catch (error) {
-    console.error("[orderService] Error en getOrders:", error);
     throw error;
   }
 };
@@ -59,6 +54,19 @@ export const getOrderById = async (id) => {
   } catch (err) {
     console.error("Error en getOrderById:", err.response?.data || err);
     throw err.response?.data || { message: "Error al obtener la orden" };
+  }
+};
+
+export const getOrderCounts = async (filters = {}) => {
+  try {
+    const response = await axiosInstance.get("/api/orders/counts", {
+      params: filters,
+    });
+    console.log("Respuesta de getOrderCounts:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error("Error en getOrderCounts:", error.response?.data || error);
+    throw error.response?.data || { message: "Error al obtener conteos" };
   }
 };
 

@@ -380,7 +380,7 @@ const OrderDetails = ({
             variant="primary"
             onClick={() => setShowImagesModal(true)}
           >
-            Ver/Gestionar Imágenes
+            {!isReadOnly ? "Gestionar Imágenes" : "Ver"}
           </ActionButton>
         </>
       ) : (

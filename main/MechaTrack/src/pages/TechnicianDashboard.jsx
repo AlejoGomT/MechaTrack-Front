@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { Button, Modal } from "react-bootstrap";
+import { Button, Modal, Pagination, Container } from "react-bootstrap";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import StatCardsContainer from "../components/StatCardsContainer";
@@ -23,11 +23,11 @@ import {
   OrderDetailsModal,
   OrderDetailsBody,
 } from "../styles/GlobalStyles";
-import { Container } from "react-bootstrap";
 import {
   getOrders,
   getVehicles,
   updateOrderStatus,
+  getOrderCounts,
 } from "../services/orderService";
 import { toast } from "react-toastify";
 
@@ -50,27 +50,45 @@ const TechnicianDashboard = () => {
     useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showViewFinalizedModal, setShowViewFinalizedModal] = useState(false);
+  const [showViewPendingApprovalModal, setShowViewPendingApprovalModal] =
+    useState(false);
   const [economicNumberFilter, setEconomicNumberFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("Todos");
   const [orderNumberFilter, setOrderNumberFilter] = useState("");
   const [orders, setOrders] = useState([]);
   const [vehicles, setVehicles] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [modalCurrentPage, setModalCurrentPage] = useState(1);
+  const [modalTotalPages, setModalTotalPages] = useState(1);
+  const [inProcessOrdersCount, setInProcessOrdersCount] = useState(0);
+  const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
+  const [completedOrdersCount, setCompletedOrdersCount] = useState(0);
+  const pageSize = 10;
   const formRef = useRef(null);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [ordersData, vehiclesData] = await Promise.all([
-          getOrders({ technician_id: user.id, limit: 1000 }), // Añadir limit para consistencia
-          getVehicles(),
+        const [ordersData, vehiclesData, countsData] = await Promise.all([
+          getOrders({
+            technician_id: user.id,
+            page: currentPage,
+            limit: pageSize,
+          }),
+          getVehicles({ limit: 1000 }),
+          getOrderCounts({ technician_id: user.id }),
         ]);
         console.log(
           "[TechnicianDashboard] Respuesta de getOrders:",
           ordersData
         );
+        console.log(
+          "[TechnicianDashboard] Respuesta de getOrderCounts:",
+          countsData
+        );
 
-        // Validar que ordersData.orders sea un arreglo
         if (!Array.isArray(ordersData.orders)) {
           console.error(
             "[TechnicianDashboard] Respuesta inválida de getOrders, se esperaba un arreglo en orders:",
@@ -81,7 +99,29 @@ const TechnicianDashboard = () => {
           return;
         }
 
+        if (
+          !countsData ||
+          typeof countsData !== "object" ||
+          !("inProcess" in countsData)
+        ) {
+          console.error(
+            "[TechnicianDashboard] Respuesta inválida de getOrderCounts:",
+            countsData
+          );
+          setInProcessOrdersCount(0);
+          setPendingOrdersCount(0);
+          setCompletedOrdersCount(0);
+          toast.error("Respuesta inválida al cargar conteos");
+        } else {
+          setInProcessOrdersCount(countsData.inProcess || 0);
+          setPendingOrdersCount(countsData.pending || 0);
+          setCompletedOrdersCount(countsData.completed || 0);
+        }
+
         setOrders(ordersData.orders);
+        setTotalPages(
+          Math.ceil((ordersData.total || ordersData.orders.length) / pageSize)
+        );
         setVehicles(
           Array.isArray(vehiclesData.vehicles) ? vehiclesData.vehicles : []
         );
@@ -90,10 +130,49 @@ const TechnicianDashboard = () => {
         toast.error(err.message || "Error al cargar datos");
         setOrders([]);
         setVehicles([]);
+        setInProcessOrdersCount(0);
+        setPendingOrdersCount(0);
+        setCompletedOrdersCount(0);
       }
     };
     fetchData();
-  }, [user.id]);
+  }, [user.id, currentPage]);
+
+  useEffect(() => {
+    if (showModal && modalType) {
+      const fetchModalOrders = async () => {
+        try {
+          const status =
+            modalType === "in-process"
+              ? "En Proceso"
+              : modalType === "pending-approval"
+              ? "Pendiente"
+              : "Finalizado";
+          const ordersData = await getOrders({
+            technician_id: user.id,
+            status,
+            page: modalCurrentPage,
+            limit: pageSize,
+          });
+
+          if (!Array.isArray(ordersData.orders)) {
+            setOrders([]);
+            toast.error("Respuesta inválida al cargar órdenes");
+            return;
+          }
+
+          setOrders(ordersData.orders);
+          setModalTotalPages(
+            Math.ceil((ordersData.total || ordersData.orders.length) / pageSize)
+          );
+        } catch (err) {
+          toast.error(err.message || "Error al cargar órdenes");
+          setOrders([]);
+        }
+      };
+      fetchModalOrders();
+    }
+  }, [modalType, modalCurrentPage, user.id, showModal]);
 
   const technicianOrders = orders.filter(
     (order) => order.technician_id === user.id
@@ -101,12 +180,6 @@ const TechnicianDashboard = () => {
   const activeAndPendingOrders = technicianOrders.filter((order) =>
     ["En Proceso", "Pendiente"].includes(order.status)
   );
-  const pendingOrdersCount = technicianOrders.filter(
-    (order) => order.status === "En Proceso"
-  ).length;
-  const completedOrdersCount = technicianOrders.filter(
-    (order) => order.status === "Finalizado"
-  ).length;
 
   const filteredOrders = activeAndPendingOrders
     .filter((order) => {
@@ -140,11 +213,22 @@ const TechnicianDashboard = () => {
 
   const stats = [
     {
-      title: "Órdenes Pendientes",
+      title: "Órdenes En Proceso",
+      content: inProcessOrdersCount.toString(),
+      buttonText: "Ver Detalles",
+      onClick: () => {
+        setModalType("in-process");
+        setModalCurrentPage(1);
+        setShowModal(true);
+      },
+    },
+    {
+      title: "Órdenes Pendientes por Aprobación",
       content: pendingOrdersCount.toString(),
       buttonText: "Ver Detalles",
       onClick: () => {
-        setModalType("pending");
+        setModalType("pending-approval");
+        setModalCurrentPage(1);
         setShowModal(true);
       },
     },
@@ -154,6 +238,7 @@ const TechnicianDashboard = () => {
       buttonText: "Ver Detalles",
       onClick: () => {
         setModalType("completed");
+        setModalCurrentPage(1);
         setShowModal(true);
       },
     },
@@ -165,6 +250,7 @@ const TechnicianDashboard = () => {
     if (type === "main") {
       setShowModal(false);
       setModalType("");
+      setModalCurrentPage(1);
     } else if (type === "edit") {
       setShowEditModal(false);
       setSelectedOrder(null);
@@ -174,9 +260,13 @@ const TechnicianDashboard = () => {
     } else if (type === "finalized") {
       setShowViewFinalizedModal(false);
       setSelectedOrder(null);
+    } else if (type === "pending-approval") {
+      setShowViewPendingApprovalModal(false);
+      setSelectedOrder(null);
     }
     if (nextModal === "main") {
-      setModalType(nextModalType || "pending");
+      setModalType(nextModalType || "in-process");
+      setModalCurrentPage(1);
       setShowModal(true);
     }
   };
@@ -195,6 +285,12 @@ const TechnicianDashboard = () => {
   const handleViewFinalizedOrder = (order) => {
     setSelectedOrder(order);
     setShowViewFinalizedModal(true);
+    setShowModal(false);
+  };
+
+  const handleViewPendingApprovalOrder = (order) => {
+    setSelectedOrder(order);
+    setShowViewPendingApprovalModal(true);
     setShowModal(false);
   };
 
@@ -221,6 +317,11 @@ const TechnicianDashboard = () => {
       setOrders((prev) =>
         prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o))
       );
+      // Actualizar conteos después de cambiar el estado
+      const countsData = await getOrderCounts({ technician_id: user.id });
+      setInProcessOrdersCount(countsData.inProcess || 0);
+      setPendingOrdersCount(countsData.pending || 0);
+      setCompletedOrdersCount(countsData.completed || 0);
     } catch (err) {
       console.error(
         `[TechnicianDashboard] Error al enviar orden #${order.id}:`,
@@ -230,11 +331,57 @@ const TechnicianDashboard = () => {
     }
   };
 
-  const modalOrders = technicianOrders.filter((order) =>
-    modalType === "pending"
-      ? order.status === "En Proceso"
-      : order.status === "Finalizado"
-  );
+  const modalOrders = technicianOrders.filter((order) => {
+    if (modalType === "in-process") return order.status === "En Proceso";
+    if (modalType === "pending-approval") return order.status === "Pendiente";
+    if (modalType === "completed") return order.status === "Finalizado";
+    return false;
+  });
+
+  const handlePageChange = (page) => {
+    setCurrentPage(page);
+  };
+
+  const handleModalPageChange = (page) => {
+    setModalCurrentPage(page);
+  };
+
+  const renderPagination = (current, total, onPageChange) => {
+    const items = [];
+    const maxPagesToShow = 5;
+    const startPage = Math.max(1, current - Math.floor(maxPagesToShow / 2));
+    const endPage = Math.min(total, startPage + maxPagesToShow - 1);
+
+    items.push(
+      <Pagination.Prev
+        key="prev"
+        onClick={() => current > 1 && onPageChange(current - 1)}
+        disabled={current === 1}
+      />
+    );
+
+    for (let page = startPage; page <= endPage; page++) {
+      items.push(
+        <Pagination.Item
+          key={page}
+          active={page === current}
+          onClick={() => onPageChange(page)}
+        >
+          {page}
+        </Pagination.Item>
+      );
+    }
+
+    items.push(
+      <Pagination.Next
+        key="next"
+        onClick={() => current < total && onPageChange(current + 1)}
+        disabled={current === total}
+      />
+    );
+
+    return <Pagination>{items}</Pagination>;
+  };
 
   return (
     <MainContainer fluid>
@@ -268,6 +415,11 @@ const TechnicianDashboard = () => {
             setOrderNumberFilter={setOrderNumberFilter}
           />
           <OrderList orders={filteredOrders} />
+          {totalPages > 1 && (
+            <div className="d-flex justify-content-center mt-4">
+              {renderPagination(currentPage, totalPages, handlePageChange)}
+            </div>
+          )}
         </Container>
 
         <StyledModal
@@ -277,82 +429,95 @@ const TechnicianDashboard = () => {
         >
           <Modal.Header closeButton>
             <Modal.Title>
-              {modalType === "pending"
-                ? "Órdenes Pendientes"
+              {modalType === "in-process"
+                ? "Órdenes En Proceso"
+                : modalType === "pending-approval"
+                ? "Órdenes Pendientes por Aprobación"
                 : "Órdenes Finalizadas"}
             </Modal.Title>
           </Modal.Header>
           <ModalBody>
             {modalOrders.length > 0 ? (
-              <TableWrapper>
-                <StyledTableModal striped bordered hover>
-                  <thead>
-                    <tr>
-                      <th>Núm. Económico</th>
-                      <th>Orden</th>
-                      <th>Fecha Ingreso</th>
-                      <th>Diagnóstico</th>
-                      <th>
-                        {modalType === "pending" ? "Notificación" : "Acción"}
-                      </th>
-                      {modalType === "pending" && <th>Acción</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {modalOrders.map((order) => (
-                      <tr key={order.id}>
-                        <td>{order.vehicle_economic_number}</td>
-                        <td>{order.id}</td>
-                        <td>
-                          {new Date(order.created_at).toLocaleDateString(
-                            "es-ES"
-                          )}
-                        </td>
-                        <td
-                          title={order.initial_diagnosis || "Sin diagnóstico"}
-                        >
-                          {(
-                            order.initial_diagnosis || "Sin diagnóstico"
-                          ).substring(0, 50) +
-                            (order.initial_diagnosis?.length > 50 ? "..." : "")}
-                        </td>
-                        <td>
-                          {modalType === "pending" ? (
-                            order.notifications?.length > 0 ? (
-                              "🔔"
-                            ) : (
-                              "Ninguna"
-                            )
-                          ) : (
+              <>
+                <TableWrapper>
+                  <StyledTableModal striped bordered hover>
+                    <thead>
+                      <tr>
+                        <th>Núm. Económico</th>
+                        <th>Orden</th>
+                        <th>Fecha Ingreso</th>
+                        <th>Diagnóstico</th>
+                        <th>Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {modalOrders.map((order) => (
+                        <tr key={order.id}>
+                          <td>{order.vehicle_economic_number}</td>
+                          <td>{order.id}</td>
+                          <td>
+                            {new Date(order.created_at).toLocaleDateString(
+                              "es-ES"
+                            )}
+                          </td>
+                          <td
+                            title={order.initial_diagnosis || "Sin diagnóstico"}
+                            style={{
+                              maxWidth: "200px",
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            {(
+                              order.initial_diagnosis || "Sin diagnóstico"
+                            ).substring(0, 50) +
+                              (order.initial_diagnosis?.length > 50
+                                ? "..."
+                                : "")}
+                          </td>
+                          <td>
                             <Button
                               variant="info"
                               size="sm"
-                              onClick={() => handleViewFinalizedOrder(order)}
+                              onClick={() =>
+                                modalType === "pending-approval"
+                                  ? handleViewPendingApprovalOrder(order)
+                                  : modalType === "completed"
+                                  ? handleViewFinalizedOrder(order)
+                                  : handleEditOrder(order)
+                              }
                             >
                               <FontAwesomeIcon icon={faEye} />
-                            </Button>
-                          )}
-                        </td>
-                        {modalType === "pending" && (
-                          <td>
-                            <Button
-                              variant="primary"
-                              size="sm"
-                              onClick={() => handleEditOrder(order)}
-                            >
-                              Actualizar
+                              {modalType === "in-process"
+                                ? " Actualizar"
+                                : " Ver"}
                             </Button>
                           </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </StyledTableModal>
-              </TableWrapper>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </StyledTableModal>
+                </TableWrapper>
+                {modalTotalPages > 1 && (
+                  <div className="d-flex justify-content-center mt-4">
+                    {renderPagination(
+                      modalCurrentPage,
+                      modalTotalPages,
+                      handleModalPageChange
+                    )}
+                  </div>
+                )}
+              </>
             ) : (
               <p>
                 No hay órdenes{" "}
-                {modalType === "pending" ? "pendientes" : "finalizadas"}.
+                {modalType === "in-process"
+                  ? "en proceso"
+                  : modalType === "pending-approval"
+                  ? "pendientes por aprobación"
+                  : "finalizadas"}
+                .
               </p>
             )}
           </ModalBody>
@@ -405,7 +570,7 @@ const TechnicianDashboard = () => {
             {selectedOrder && (
               <TechnicianCreateOrder
                 order={selectedOrder}
-                onClose={(updatedOrder) => {
+                onClose={async (updatedOrder) => {
                   if (updatedOrder) {
                     setOrders((prev) =>
                       prev.map((o) =>
@@ -445,8 +610,15 @@ const TechnicianDashboard = () => {
                       year: updatedOrder.year || selectedOrder.year,
                       parts: updatedOrder.parts || selectedOrder.parts,
                     });
+                    // Actualizar conteos después de actualizar la orden
+                    const countsData = await getOrderCounts({
+                      technician_id: user.id,
+                    });
+                    setInProcessOrdersCount(countsData.inProcess || 0);
+                    setPendingOrdersCount(countsData.pending || 0);
+                    setCompletedOrdersCount(countsData.completed || 0);
                   }
-                  closeModal("edit", "main", "pending");
+                  closeModal("edit", "main", "in-process");
                 }}
                 isModal={true}
                 disableFields={["serviceType", "serviceDescription"]}
@@ -493,6 +665,38 @@ const TechnicianDashboard = () => {
             <Button
               variant="secondary"
               onClick={() => closeModal("finalized", "main", "completed")}
+            >
+              Cerrar
+            </Button>
+          </Modal.Footer>
+        </StyledModal>
+
+        <StyledModal
+          show={showViewPendingApprovalModal}
+          onHide={() =>
+            closeModal("pending-approval", "main", "pending-approval")
+          }
+          centered
+        >
+          <Modal.Header closeButton>
+            <Modal.Title>Detalles de la Orden #{selectedOrder?.id}</Modal.Title>
+          </Modal.Header>
+          <ModalBody>
+            {selectedOrder && (
+              <TechnicianCreateOrder
+                order={selectedOrder}
+                isReadOnly={true}
+                isModal={true}
+                hideButtons={true}
+              />
+            )}
+          </ModalBody>
+          <Modal.Footer>
+            <Button
+              variant="secondary"
+              onClick={() =>
+                closeModal("pending-approval", "main", "pending-approval")
+              }
             >
               Cerrar
             </Button>

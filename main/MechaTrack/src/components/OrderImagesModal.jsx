@@ -24,7 +24,6 @@ const OrderImagesModal = ({
   isReadOnly,
   isFinalized,
 }) => {
-  const [newImages, setNewImages] = useState([]);
   const [localImages, setLocalImages] = useState(images || []);
 
   useEffect(() => {
@@ -33,26 +32,36 @@ const OrderImagesModal = ({
 
   const handleImageUpload = async (e) => {
     const files = Array.from(e.target.files);
-    if (files.length + localImages.length + newImages.length > 10) {
+    if (files.length + localImages.length > 10) {
       toast.error("No se pueden cargar más de 10 imágenes");
       return;
     }
 
     try {
-      // Subir imágenes inmediatamente usando updateOrder
-      const updatedOrder = await updateOrder(orderId, {
-        images: files, // Archivos File
-        existingImages: localImages, // Rutas relativas
-      });
+      let updatedImages = [...localImages];
+      if (orderId) {
+        // Para órdenes existentes, subir imágenes inmediatamente
+        const updatedOrder = await updateOrder(orderId, {
+          images: files, // Archivos File
+          existingImages: localImages.filter((img) => !img.startsWith("blob:")), // Solo rutas relativas
+        });
+        updatedImages = Array.isArray(updatedOrder.images)
+          ? updatedOrder.images.map((img) =>
+              img.startsWith("/uploads/") ? img : `/uploads/${img}`
+            )
+          : [];
+        toast.success(`${files.length} imagen(es) subida(s) correctamente`);
+      } else {
+        // Para órdenes nuevas, añadir URLs blob temporales
+        const blobUrls = files.map((file) => URL.createObjectURL(file));
+        updatedImages = [...localImages, ...blobUrls];
+        toast.success(
+          `${files.length} imagen(es) seleccionada(s) para subir al guardar`
+        );
+      }
 
-      // Actualizar localImages y images con las rutas relativas devueltas
-      const updatedImages = Array.isArray(updatedOrder.images)
-        ? updatedOrder.images
-        : [];
       setLocalImages(updatedImages);
       setImages(updatedImages);
-      setNewImages([]); // Limpiar newImages
-      toast.success(`${files.length} imagen(es) subida(s) correctamente`);
     } catch (error) {
       console.error("Error al subir imágenes:", error);
       toast.error(error.message || "Error al subir imágenes");
@@ -61,13 +70,24 @@ const OrderImagesModal = ({
 
   const handleImageDelete = async (index) => {
     try {
-      // Imagen existente en el servidor
-      await deleteOrderImage(orderId, index);
-      const updatedImages = localImages.filter((_, i) => i !== index);
-      setLocalImages(updatedImages);
-      setImages(updatedImages);
-      toast.success("Imagen eliminada del servidor");
+      const imageToDelete = localImages[index];
+      if (imageToDelete.startsWith("blob:")) {
+        // Imagen no subida, eliminar localmente
+        const updatedImages = localImages.filter((_, i) => i !== index);
+        setLocalImages(updatedImages);
+        setImages(updatedImages);
+        URL.revokeObjectURL(imageToDelete); // Liberar memoria
+        toast.success("Imagen eliminada");
+      } else {
+        // Imagen existente en el servidor
+        await deleteOrderImage(orderId, index);
+        const updatedImages = localImages.filter((_, i) => i !== index);
+        setLocalImages(updatedImages);
+        setImages(updatedImages);
+        toast.success("Imagen eliminada del servidor");
+      }
     } catch (error) {
+      console.error("Error al eliminar imagen:", error);
       toast.error(error.message || "Error al eliminar imagen");
     }
   };
@@ -75,7 +95,9 @@ const OrderImagesModal = ({
   return (
     <StyledModal show={show} onHide={onHide} centered>
       <Modal.Header closeButton>
-        <Modal.Title>Gestión de Imágenes - Orden #{orderId}</Modal.Title>
+        <Modal.Title>
+          Gestión de Imágenes - Orden #{orderId || "Nueva"}
+        </Modal.Title>
       </Modal.Header>
       <ModalBody>
         {localImages.length > 0 ? (
@@ -85,7 +107,7 @@ const OrderImagesModal = ({
                 <div className="position-relative">
                   <ImageContainer>
                     <img
-                      src={`${API_URL}${img}`}
+                      src={img.startsWith("blob:") ? img : `${API_URL}${img}`}
                       alt={`Imagen ${index + 1}`}
                       style={{ maxWidth: "100px" }}
                       onError={(e) => {

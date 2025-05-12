@@ -74,6 +74,14 @@ const StatusIndicator = styled.span`
   }};
 `;
 
+const technicianMenu = [
+  { label: "Inicio", path: "../technician" },
+  { label: "Crear Orden de Servicio", path: "../technician/create-order" },
+  { label: "Historial de Órdenes", path: "../technician/history" },
+  { label: "Notificaciones", path: "../technician/notifications" },
+  { label: "Cerrar Sesión", path: "/" },
+];
+
 const OrderForm = memo(
   ({
     initialData,
@@ -110,7 +118,7 @@ const OrderForm = memo(
       diagnosis: initialData?.initial_diagnosis || "",
       tasks: initialData?.tasks || "",
       partsList: normalizedParts,
-      images: normalizedImages, // Solo rutas relativas
+      images: normalizedImages,
       plate: initialData?.plate || "",
       brand: initialData?.brand || "",
       model: initialData?.model || "",
@@ -129,7 +137,6 @@ const OrderForm = memo(
     const [showImagesModal, setShowImagesModal] = useState(false);
     const [selectedHistoryOrder, setSelectedHistoryOrder] = useState(null);
     const [history, setHistory] = useState([]);
-    const [newImages, setNewImages] = useState([]); // Archivos File
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState("");
     const branches = [...new Set(vehicles.map((v) => v.branch))];
@@ -142,14 +149,18 @@ const OrderForm = memo(
             const updatedParts = Array.isArray(orderData.parts)
               ? orderData.parts.map((part) => ({
                   ...part,
-                  requested_by: part.requested_by_id || String(user.id), // Usar requested_by_id
+                  requested_by: part.requested_by_id || String(user.id),
                   authorized_by: part.authorized_by_id || null,
                 }))
               : [];
             setFormData((prev) => ({
               ...prev,
               partsList: updatedParts,
-              images: Array.isArray(orderData.images) ? orderData.images : [],
+              images: Array.isArray(orderData.images)
+                ? orderData.images.map((img) =>
+                    img.startsWith("/uploads/") ? img : `/uploads/${img}`
+                  )
+                : [],
             }));
           } catch (err) {
             toast.error("Error al cargar los datos de la orden");
@@ -198,12 +209,14 @@ const OrderForm = memo(
                 partsList: Array.isArray(initialData?.parts)
                   ? initialData.parts.map((part) => ({
                       ...part,
-                      requested_by: part.requested_by_id || String(user.id), // Usar requested_by_id
+                      requested_by: part.requested_by_id || String(user.id),
                       authorized_by: part.authorized_by_id || null,
                     }))
                   : prev.partsList,
                 images: Array.isArray(initialData?.images)
-                  ? initialData.images
+                  ? initialData.images.map((img) =>
+                      img.startsWith("/uploads/") ? img : `/uploads/${img}`
+                    )
                   : prev.images,
                 plate: vehicle.plate || prev.plate || "",
                 brand: vehicle.brand || prev.brand || "",
@@ -226,21 +239,19 @@ const OrderForm = memo(
                 partsList: Array.isArray(initialData?.parts)
                   ? initialData.parts.map((part) => ({
                       ...part,
-                      requested_by: part.requested_by_id || String(user.id), // Usar requested_by_id
+                      requested_by: part.requested_by_id || String(user.id),
                       authorized_by: part.authorized_by_id || null,
                     }))
                   : prev.partsList,
                 images: Array.isArray(initialData?.images)
-                  ? initialData.images
+                  ? initialData.images.map((img) =>
+                      img.startsWith("/uploads/") ? img : `/uploads/${img}`
+                    )
                   : prev.images,
               }));
             }
           }
         } catch (err) {
-          console.error(
-            "[TechnicianCreateOrder] Error al cargar vehículos:",
-            err
-          );
           toast.error(err.message || "Error al cargar vehículos");
           setVehicles([]);
         }
@@ -348,26 +359,57 @@ const OrderForm = memo(
       }));
     };
 
-    const handleImageUpload = (e) => {
+    const handleImageUpload = async (e) => {
       const files = Array.from(e.target.files);
-      if (files.length + formData.images.length + newImages.length > 10) {
+      if (files.length + formData.images.length > 10) {
         toast.error("No se pueden cargar más de 10 imágenes");
         return;
       }
-      setNewImages((prev) => [...prev, ...files]);
-      toast.success(`${files.length} imagen(es) seleccionada(s) para subir`);
+
+      try {
+        let updatedImages = [...formData.images];
+        if (initialData?.id) {
+          // Para órdenes existentes, subir imágenes inmediatamente
+          const updatedOrder = await updateOrder(initialData.id, {
+            images: files, // Archivos File
+            existingImages: formData.images, // Rutas relativas
+          });
+          updatedImages = Array.isArray(updatedOrder.images)
+            ? updatedOrder.images.map((img) =>
+                img.startsWith("/uploads/") ? img : `/uploads/${img}`
+              )
+            : [];
+          toast.success(`${files.length} imagen(es) subida(s) correctamente`);
+        } else {
+          // Para órdenes nuevas, subir al crear la orden
+          // Usar URLs blob temporales para previsualización
+          const blobUrls = files.map((file) => URL.createObjectURL(file));
+          updatedImages = [...formData.images, ...blobUrls];
+          toast.success(
+            `${files.length} imagen(es) seleccionada(s) para subir al guardar`
+          );
+        }
+
+        setFormData((prev) => ({
+          ...prev,
+          images: updatedImages,
+        }));
+      } catch (error) {
+        console.error("Error al subir imágenes:", error);
+        toast.error(error.message || "Error al subir imágenes");
+      }
     };
 
     const handleImageDelete = async (index) => {
       try {
         const imageToDelete = formData.images[index];
-        if (!imageToDelete.startsWith("/uploads/")) {
-          // Imagen no subida, eliminar de newImages
-          setNewImages((prev) => prev.filter((_, i) => i !== index));
+        if (imageToDelete.startsWith("blob:")) {
+          // Imagen no subida, eliminar de formData.images
           setFormData((prev) => ({
             ...prev,
             images: prev.images.filter((_, i) => i !== index),
           }));
+          URL.revokeObjectURL(imageToDelete); // Liberar memoria
           toast.success("Imagen eliminada");
         } else {
           // Imagen existente en el servidor
@@ -407,14 +449,11 @@ const OrderForm = memo(
         }
       }
 
-      console.log("formData.partsList antes de onSubmit:", formData.partsList);
-      console.log("newImages antes de onSubmit:", newImages);
       try {
         // Preparar datos para enviar
         const orderData = {
           ...formData,
-          images: formData.images, // Rutas relativas
-          newImages, // Archivos File
+          images: formData.images, // Rutas relativas o blob URLs
         };
 
         // Llamar a onSubmit y obtener la orden actualizada
@@ -423,9 +462,12 @@ const OrderForm = memo(
         // Actualizar formData.images con las rutas relativas devueltas
         setFormData((prev) => ({
           ...prev,
-          images: Array.isArray(updatedOrder.images) ? updatedOrder.images : [],
+          images: Array.isArray(updatedOrder.images)
+            ? updatedOrder.images.map((img) =>
+                img.startsWith("/uploads/") ? img : `/uploads/${img}`
+              )
+            : [],
         }));
-        setNewImages([]); // Limpiar newImages
         toast.success("Orden guardada correctamente");
       } catch (err) {
         console.error("Error en handleFormSubmit:", err);
@@ -678,14 +720,16 @@ const OrderForm = memo(
             )}
             <ActionsContainer>
               {formData.partsList.length > 0 ? (
-                <>
-                  <CustomButton
-                    onClick={() => setShowPartsManagementModal(true)}
-                    disabled={isReadOnly}
-                  >
-                    Gestionar Repuestos
-                  </CustomButton>
-                </>
+                !isReadOnly && (
+                  <>
+                    <CustomButton
+                      onClick={() => setShowPartsManagementModal(true)}
+                      disabled={isReadOnly}
+                    >
+                      Gestionar Repuestos
+                    </CustomButton>
+                  </>
+                )
               ) : (
                 <p>No hay repuestos solicitados.</p>
               )}
@@ -701,8 +745,8 @@ const OrderForm = memo(
           </Form.Group>
 
           <FormSectionTitle>Imágenes</FormSectionTitle>
-          <Form.Group className="mb-3">
-            {formData.images?.length > 0 || newImages.length > 0 ? (
+          <Form.Group className="mb-3 text-center">
+            {formData.images.length > 0 ? (
               <>
                 <Row className="mb-3">
                   {formData.images.slice(0, 4).map((img, index) => (
@@ -710,7 +754,9 @@ const OrderForm = memo(
                       <div className="position-relative">
                         <ImageContainer>
                           <Image
-                            src={`${API_URL}${img}`}
+                            src={
+                              img.startsWith("blob:") ? img : `${API_URL}${img}`
+                            }
                             thumbnail
                             style={{ maxWidth: "100px" }}
                             onError={(e) => {
@@ -736,7 +782,7 @@ const OrderForm = memo(
                   variant="primary"
                   onClick={() => setShowImagesModal(true)}
                 >
-                  Ver/Gestionar Imágenes
+                  {!isReadOnly ? "Gestionar Imágenes" : "Ver"}
                 </ActionButton>
               </>
             ) : (
@@ -874,7 +920,7 @@ const OrderForm = memo(
             setFormData((prev) => ({ ...prev, images: newImages }))
           }
           isReadOnly={isReadOnly}
-          isFinalized={"En Proceso"}
+          isFinalized="En Proceso"
         />
 
         <PartsModal
@@ -889,7 +935,7 @@ const OrderForm = memo(
               const updatedPartsList = Array.isArray(newPartsList)
                 ? newPartsList.map((part) => ({
                     ...part,
-                    requested_by: part.requested_by_id || String(user.id), // Usar requested_by_id
+                    requested_by: part.requested_by_id || String(user.id),
                     authorized_by: part.authorized_by_id || null,
                   }))
                 : [];
@@ -942,10 +988,6 @@ const TechnicianCreateOrder = ({
           }
         }
 
-        console.log(
-          "formData.partsList en handleSaveOrder:",
-          formData.partsList
-        );
         const normalizedParts = Array.isArray(formData.partsList)
           ? formData.partsList.map((part) => {
               if (
@@ -968,20 +1010,21 @@ const TechnicianCreateOrder = ({
                 quantity: parseInt(part.quantity, 10),
                 price: parseFloat(part.price),
                 status: part.status || "Solicitado",
-                requested_by: part.requested_by_id || String(user.id), // Usar requested_by_id
+                requested_by: part.requested_by_id || String(user.id),
                 authorized_by: part.authorized_by_id || null,
               };
             })
           : [];
-
-        console.log("normalizedParts enviados:", normalizedParts);
 
         let newOrder;
         if (order?.id) {
           newOrder = await updateOrder(order.id, {
             initial_diagnosis: formData.diagnosis,
             tasks: formData.tasks,
-            images: formData.images || [],
+            existingImages: formData.images.filter(
+              (img) => !img.startsWith("blob:")
+            ), // Enviar solo rutas relativas
+            images: [], // No enviar imágenes nuevas aquí, ya se subieron
             parts: normalizedParts,
             kilometraje: formData.kilometraje
               ? parseInt(formData.kilometraje, 10)
@@ -1003,6 +1046,7 @@ const TechnicianCreateOrder = ({
             model: order.model || formData.model,
             year: order.year || formData.year,
             parts: normalizedParts,
+            images: newOrder.images || formData.images,
           };
           toast.success(
             newOrder.id
@@ -1010,12 +1054,23 @@ const TechnicianCreateOrder = ({
               : "Orden actualizada satisfactoriamente"
           );
         } else {
+          const blobImages = formData.images.filter((img) =>
+            img.startsWith("blob:")
+          );
+          const files = blobImages.map((blobUrl) => {
+            const file =
+              e.target.files[
+                formData.images.indexOf(blobUrl) - formData.images.length
+              ];
+            return file;
+          });
+
           newOrder = await createOrder({
             type: formData.serviceType,
             description: formData.serviceDescription,
             initial_diagnosis: formData.diagnosis,
             tasks: formData.tasks,
-            images: formData.images || [],
+            images: files,
             parts: normalizedParts,
             technician_id: user.id,
             vehicle_economic_number: formData.economicNumber,
