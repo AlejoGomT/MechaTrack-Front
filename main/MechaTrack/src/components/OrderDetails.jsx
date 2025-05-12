@@ -1,13 +1,4 @@
-import {
-  Form,
-  Row,
-  Col,
-  Image,
-  ListGroup,
-  Button,
-  Table,
-  InputGroup,
-} from "react-bootstrap";
+import { Form, Row, Col, Image, ListGroup, InputGroup } from "react-bootstrap";
 import styled from "@emotion/styled";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
@@ -19,12 +10,15 @@ import {
 import { toast } from "react-toastify";
 import { useState, useEffect } from "react";
 import {
-  colors,
   SectionTitle,
   ActionButton,
   StyledTable,
+  ImageContainer,
+  ActionsContainer,
 } from "../styles/GlobalStyles";
 import AddPartButton from "./AddPartButton";
+import OrderImagesModal from "./OrderImagesModal";
+import { API_URL, deleteOrderImage } from "../services/orderService";
 
 const ReadOnlyField = styled(Form.Control)`
   background-color: #f8f9fa;
@@ -60,13 +54,13 @@ const OrderDetails = ({
 }) => {
   const [rejectionNotes, setRejectionNotes] = useState({});
   const [newImages, setNewImages] = useState([]);
+  const [showImagesModal, setShowImagesModal] = useState(false);
   const [editingPartIndex, setEditingPartIndex] = useState(null);
   const [editPartData, setEditPartData] = useState({ quantity: 0, price: 0 });
   const isFinalized = order.status === "Finalizado";
   const isInProcess = order.status === "En Proceso";
 
-  // Valores posibles para el campo Tipo (ajusta según tu base de datos)
-  const orderTypes = ["Mantenimiento", "Reparación", "Inspección"];
+  const orderTypes = ["Mantenimiento", "Reparación"];
 
   useEffect(() => {
     console.log("[OrderDetails] order:", order);
@@ -132,18 +126,40 @@ const OrderDetails = ({
     setEditPartData({ quantity: 0, price: 0 });
   };
 
-  const handleImageDelete = (index) => {
-    const updatedImages = order.images.filter((_, i) => i !== index);
-    onEditPart("images", updatedImages);
-    toast.success("Imagen eliminada");
-  };
-
   const handleImageUpload = (e) => {
     const files = Array.from(e.target.files);
+    if (files.length + order.images.length + newImages.length > 10) {
+      toast.error("No se pueden cargar más de 10 imágenes");
+      return;
+    }
     setNewImages([...newImages, ...files]);
     const filePaths = files.map((file) => URL.createObjectURL(file));
     onEditPart("images", [...order.images, ...filePaths]);
     toast.success("Imágenes añadidas");
+  };
+
+  const handleImageDelete = async (index) => {
+    try {
+      if (order.images[index].startsWith("blob:")) {
+        // Imagen nueva (aún no guardada en el servidor)
+        const updatedImages = order.images.filter((_, i) => i !== index);
+        const updatedNewImages = newImages.filter(
+          (_, i) =>
+            !order.images[index].includes(URL.createObjectURL(newImages[i]))
+        );
+        setNewImages(updatedNewImages);
+        onEditPart("images", updatedImages);
+        toast.success("Imagen eliminada");
+      } else {
+        // Imagen existente en el servidor
+        await deleteOrderImage(order.id, index);
+        const updatedImages = order.images.filter((_, i) => i !== index);
+        onEditPart("images", updatedImages);
+        toast.success("Imagen eliminada del servidor");
+      }
+    } catch (error) {
+      toast.error(error.message || "Error al eliminar imagen");
+    }
   };
 
   const calculateTotal = () => {
@@ -157,7 +173,6 @@ const OrderDetails = ({
     return !isNaN(num) && num >= 0;
   };
 
-  // Filtrar repuestos por estado
   const requestedParts = editedParts.filter(
     (part) => part.status === "Solicitado"
   );
@@ -332,29 +347,46 @@ const OrderDetails = ({
 
       <SectionTitle>Imágenes</SectionTitle>
       {order.images?.length > 0 || newImages.length > 0 ? (
-        <Row className="mb-3">
-          {order.images.map((img, index) => (
-            <Col md={3} key={index} className="mb-2">
-              <div className="position-relative">
-                <Image src={img} thumbnail style={{ maxWidth: "100px" }} />
-                {isFinalized && (
-                  <ActionButton
-                    variant="danger"
-                    size="sm"
-                    className="position-absolute top-0 end-0"
-                    onClick={() => handleImageDelete(index)}
-                  >
-                    <FontAwesomeIcon icon={faTrash} />
-                  </ActionButton>
-                )}
-              </div>
-            </Col>
-          ))}
-        </Row>
+        <>
+          <Row className="mb-3">
+            {order.images.slice(0, 4).map((img, index) => (
+              <Col md={3} key={index} className="mb-2">
+                <div className="position-relative">
+                  <ImageContainer>
+                    <Image
+                      src={img.startsWith("blob:") ? img : `${API_URL}${img}`}
+                      thumbnail
+                      style={{ maxWidth: "100px" }}
+                      onError={(e) => {
+                        e.target.src = "/placeholder.png";
+                      }}
+                    />
+                  </ImageContainer>
+                  {isFinalized && !isReadOnly && (
+                    <ActionButton
+                      variant="danger"
+                      size="sm"
+                      className="position-absolute top-0 end-0"
+                      onClick={() => handleImageDelete(index)}
+                    >
+                      <FontAwesomeIcon icon={faTrash} />
+                    </ActionButton>
+                  )}
+                </div>
+              </Col>
+            ))}
+          </Row>
+          <ActionButton
+            variant="primary"
+            onClick={() => setShowImagesModal(true)}
+          >
+            Ver/Gestionar Imágenes
+          </ActionButton>
+        </>
       ) : (
         <p>Sin imágenes disponibles</p>
       )}
-      {isFinalized && (
+      {isFinalized && !isReadOnly && (
         <Form.Group className="mb-3">
           <Form.Label>Añadir Nuevas Imágenes</Form.Label>
           <Form.Control
@@ -366,9 +398,18 @@ const OrderDetails = ({
         </Form.Group>
       )}
 
+      <OrderImagesModal
+        show={showImagesModal}
+        onHide={() => setShowImagesModal(false)}
+        orderId={order.id}
+        images={order.images}
+        setImages={(newImages) => onEditPart("images", newImages)}
+        isReadOnly={isReadOnly}
+        isFinalized={isFinalized}
+      />
+
       <SectionTitle>Repuestos</SectionTitle>
 
-      {/* Sección para repuestos aprobados */}
       <h6>Repuestos Aprobados</h6>
       {isFinalized && approvedParts.length > 0 ? (
         <ListGroup.Item>
@@ -424,41 +465,43 @@ const OrderDetails = ({
                   <td>{part.requested_by}</td>
                   <td>{part.authorized_by || "-"}</td>
                   <td>Aprobado</td>
-                  <td className="d-flex">
-                    {editingPartIndex === index ? (
-                      <>
-                        <ActionButton
-                          variant="success"
-                          className="me-2"
-                          onClick={() => handleEditPartSave(index)}
-                        >
-                          <FontAwesomeIcon icon={faCheck} />
-                        </ActionButton>
-                        <ActionButton
-                          variant="secondary"
-                          onClick={handleEditPartCancel}
-                        >
-                          <FontAwesomeIcon icon={faTimes} />
-                        </ActionButton>
-                      </>
-                    ) : (
-                      <>
-                        <ActionButton
-                          variant="primary"
-                          size="sm"
-                          className="me-2"
-                          onClick={() => handleEditPartStart(index)}
-                        >
-                          <FontAwesomeIcon icon={faEdit} />
-                        </ActionButton>
-                        <ActionButton
-                          size="sm"
-                          onClick={() => onDeletePart(index)}
-                        >
-                          <FontAwesomeIcon icon={faTrash} />
-                        </ActionButton>
-                      </>
-                    )}
+                  <td className="actions">
+                    <ActionsContainer>
+                      {editingPartIndex === index ? (
+                        <>
+                          <ActionButton
+                            variant="success"
+                            className="me-2"
+                            onClick={() => handleEditPartSave(index)}
+                          >
+                            <FontAwesomeIcon icon={faCheck} />
+                          </ActionButton>
+                          <ActionButton
+                            variant="secondary"
+                            onClick={handleEditPartCancel}
+                          >
+                            <FontAwesomeIcon icon={faTimes} />
+                          </ActionButton>
+                        </>
+                      ) : (
+                        <>
+                          <ActionButton
+                            variant="primary"
+                            size="sm"
+                            className="me-2"
+                            onClick={() => handleEditPartStart(index)}
+                          >
+                            <FontAwesomeIcon icon={faEdit} />
+                          </ActionButton>
+                          <ActionButton
+                            size="sm"
+                            onClick={() => onDeletePart(index)}
+                          >
+                            <FontAwesomeIcon icon={faTrash} />
+                          </ActionButton>
+                        </>
+                      )}
+                    </ActionsContainer>
                   </td>
                 </tr>
               ))}
@@ -483,7 +526,7 @@ const OrderDetails = ({
                 <tr key={index}>
                   <td>{part.name}</td>
                   <td>{part.quantity}</td>
-                  <td>${part.price != null ? part.price.toFixed(2) : 0}</td>
+                  <td>${part.price != null ? part.price : 0}</td>
                   <td>{part.requested_by}</td>
                   <td>{part.authorized_by || "-"}</td>
                   <td>Aprobado</td>
@@ -496,7 +539,6 @@ const OrderDetails = ({
         <p>Sin repuestos aprobados</p>
       )}
 
-      {/* Sección para repuestos solicitados (solo si no está finalizado) */}
       {!isFinalized && (
         <>
           <h6>Repuestos Solicitados</h6>
@@ -552,7 +594,6 @@ const OrderDetails = ({
         </>
       )}
 
-      {/* Botón para añadir repuesto */}
       {isFinalized && (
         <AddPartButton
           orderId={order.id}

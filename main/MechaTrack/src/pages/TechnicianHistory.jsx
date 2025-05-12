@@ -78,10 +78,28 @@ const TechnicianHistory = () => {
   useEffect(() => {
     const fetchOrders = async () => {
       try {
-        const ordersData = await getOrders({ technician_id: user.id });
-        setOrders(ordersData);
+        const ordersData = await getOrders({
+          technician_id: user.id,
+          limit: 1000,
+        });
+        console.log("[TechnicianHistory] Respuesta de getOrders:", ordersData);
+
+        // Validar que ordersData.orders sea un arreglo
+        if (!Array.isArray(ordersData.orders)) {
+          console.error(
+            "[TechnicianHistory] Respuesta inválida de getOrders, se esperaba un arreglo en orders:",
+            ordersData
+          );
+          setOrders([]);
+          toast.error("Respuesta inválida al cargar órdenes");
+          return;
+        }
+
+        setOrders(ordersData.orders);
       } catch (err) {
-        console.error("Error al cargar órdenes:", err);
+        console.error("[TechnicianHistory] Error al cargar órdenes:", err);
+        toast.error(err.message || "Error al cargar órdenes");
+        setOrders([]);
       }
     };
     fetchOrders();

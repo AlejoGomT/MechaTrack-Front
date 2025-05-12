@@ -1,26 +1,34 @@
 import { useState, useEffect } from "react";
-import {
-  Container,
-  Table,
-  Form,
-  Modal,
-  Button,
-  Row,
-  Col,
-  FormControl,
-} from "react-bootstrap";
+import { Container, Form, Modal, Row, Col, Pagination } from "react-bootstrap";
 import { useAuth } from "../context/AuthContext";
-import axios from "axios";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import CustomButton from "../components/CustomButton";
 import OrderDetails from "../components/OrderDetails";
-import { StyledModal, ModalBody } from "../styles/GlobalStyles";
+import {
+  FiltersContainer,
+  FilterGroup,
+  FilterLabel,
+  FilterSelect,
+  FilterInput,
+  StyledModal,
+  ModalBody,
+  StyledTable,
+  ActionsContainer,
+} from "../styles/GlobalStyles";
 import styled from "@emotion/styled";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faCircle, faCheck, faTimes } from "@fortawesome/free-solid-svg-icons";
+import {
+  faCircle,
+  faCheck,
+  faTimes,
+  faEye,
+} from "@fortawesome/free-solid-svg-icons";
+import { library } from "@fortawesome/fontawesome-svg-core";
 import { toast } from "react-toastify";
 import {
+  getOrders,
+  getOrderById,
   updateOrderNumbers,
   updateOrderStatus,
   updateOrder,
@@ -28,6 +36,8 @@ import {
   requestPart,
   updatePartAdmin,
 } from "../services/orderService";
+
+library.add(faCircle, faCheck, faTimes, faEye);
 
 const adminMenu = [
   { label: "Inicio", path: "../admin" },
@@ -63,6 +73,8 @@ const StatusIcon = styled.span`
 const ActionSection = styled.div`
   margin-top: 20px;
   padding: 15px;
+  display: flex;
+  flex-direction: column;
   background-color: #f1f3f5;
   border-radius: 5px;
 `;
@@ -85,30 +97,56 @@ const AdminOrders = () => {
   const [orderNumber, setOrderNumber] = useState("");
   const [deliveryNoteNumber, setDeliveryNoteNumber] = useState("");
   const [isEditingNumbers, setIsEditingNumbers] = useState(false);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 15,
+    totalPages: 1,
+    total: 0,
+  });
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const response = await axios.get("/api/orders", {
-          headers: { Authorization: `Bearer ${token}` },
-          params: {
-            status: statusFilter,
-            economicNumber: economicNumberFilter,
-            orderNumber: orderNumberFilter,
-          },
+        const response = await getOrders({
+          status: statusFilter,
+          economicNumber: economicNumberFilter,
+          orderNumber: orderNumberFilter,
+          page: pagination.page,
+          limit: pagination.limit,
         });
-        setOrders(response.data);
+        console.log("[AdminOrders] Respuesta de getOrders:", response);
+        setOrders(response.orders || []);
+        setPagination({
+          ...pagination,
+          total: response.total || 0,
+          totalPages: response.totalPages || 1,
+        });
         const uniqueBranches = [
-          ...new Set(response.data.map((o) => o.branch).filter(Boolean)),
+          ...new Set(
+            (response.orders || []).map((o) => o.branch).filter(Boolean)
+          ),
         ];
         setBranches(uniqueBranches);
       } catch (error) {
-        toast.error("Error al cargar órdenes");
         console.error("[AdminOrders] Error al cargar órdenes:", error);
+        toast.error(error.message || "Error al cargar órdenes");
+        setOrders([]);
+        setBranches([]);
+        setPagination({
+          ...pagination,
+          total: 0,
+          totalPages: 1,
+        });
       }
     };
     if (token) fetchData();
-  }, [statusFilter, economicNumberFilter, orderNumberFilter, token]);
+  }, [
+    statusFilter,
+    economicNumberFilter,
+    orderNumberFilter,
+    pagination.page,
+    token,
+  ]);
 
   const activeOrdersCount = orders.filter(
     (o) => o.status === "En Proceso"
@@ -119,19 +157,14 @@ const AdminOrders = () => {
 
   const handleViewDetails = async (order) => {
     try {
-      const response = await axios.get(`/api/orders/${order.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setSelectedOrder(response.data);
-      setEditedOrder(response.data);
-      setEditedParts(response.data.parts || []);
-      setOrderNumber(response.data.order_number || "");
-      setDeliveryNoteNumber(response.data.invoice?.delivery_note_number || "");
+      const response = await getOrderById(order.id);
+      setSelectedOrder(response);
+      setEditedOrder(response);
+      setEditedParts(response.parts || []);
+      setOrderNumber(response.order_number || "");
+      setDeliveryNoteNumber(response.invoice?.delivery_note_number || "");
       setIsEditingNumbers(
-        !(
-          response.data.order_number ||
-          response.data.invoice?.delivery_note_number
-        )
+        !(response.order_number || response.invoice?.delivery_note_number)
       );
       setShowModal(true);
     } catch (error) {
@@ -144,7 +177,6 @@ const AdminOrders = () => {
     const part = editedParts[partIndex];
     try {
       const status = action === "accept" ? "Aprobado" : "Rechazado";
-      // Pasar el nombre completo del usuario como authorizedBy para aprobaciones, null para rechazos
       const authorizedBy =
         action === "accept" ? `${user.first_name} ${user.last_name}` : null;
       await updatePartAdmin(
@@ -158,11 +190,9 @@ const AdminOrders = () => {
         },
         authorizedBy
       );
-      const updatedOrder = await axios.get(`/api/orders/${selectedOrder.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setSelectedOrder(updatedOrder.data);
-      setEditedParts(updatedOrder.data.parts || []);
+      const updatedOrder = await getOrderById(selectedOrder.id);
+      setSelectedOrder(updatedOrder);
+      setEditedParts(updatedOrder.parts || []);
       toast.success(
         `Repuesto ${part.name} ${
           action === "accept" ? "aprobado" : "rechazado"
@@ -196,11 +226,9 @@ const AdminOrders = () => {
   const handleAddPart = async (part) => {
     try {
       await requestPart(selectedOrder.id, part);
-      const updatedOrder = await axios.get(`/api/orders/${selectedOrder.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setEditedParts(updatedOrder.data.parts || []);
-      setSelectedOrder(updatedOrder.data);
+      const updatedOrder = await getOrderById(selectedOrder.id);
+      setEditedParts(updatedOrder.parts || []);
+      setSelectedOrder(updatedOrder);
     } catch (error) {
       throw error;
     }
@@ -216,12 +244,10 @@ const AdminOrders = () => {
         ...editedOrder,
         parts: editedParts,
       });
-      const updatedOrder = await axios.get(`/api/orders/${selectedOrder.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setSelectedOrder(updatedOrder.data);
-      setEditedOrder(updatedOrder.data);
-      setEditedParts(updatedOrder.data.parts || []);
+      const updatedOrder = await getOrderById(selectedOrder.id);
+      setSelectedOrder(updatedOrder);
+      setEditedOrder(updatedOrder);
+      setEditedParts(updatedOrder.parts || []);
       toast.success("Orden actualizada");
     } catch (error) {
       toast.error("Error al guardar orden");
@@ -232,24 +258,22 @@ const AdminOrders = () => {
   const handleFinalizeAction = async (action) => {
     try {
       const newStatus = action === "accept" ? "Finalizado" : "En Proceso";
-      await axios.put(
-        `/api/orders/${selectedOrder.id}/finalize`,
-        { action, note: rejectionNote, status: newStatus },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      const updatedOrder = await axios.get(`/api/orders/${selectedOrder.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
+      await finalizeOrder(selectedOrder.id, {
+        action,
+        note: rejectionNote,
+        status: newStatus,
       });
-      setSelectedOrder(updatedOrder.data);
-      setEditedOrder(updatedOrder.data);
-      setEditedParts(updatedOrder.data.parts || []);
+      const updatedOrder = await getOrderById(selectedOrder.id);
+      setSelectedOrder(updatedOrder);
+      setEditedOrder(updatedOrder);
+      setEditedParts(updatedOrder.parts || []);
       toast.success(
         `Orden #${selectedOrder.id} ${
           action === "accept" ? "aprobada" : "rechazada"
         }`
       );
       setOrders((prev) =>
-        prev.map((o) => (o.id === updatedOrder.data.id ? updatedOrder.data : o))
+        prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o))
       );
       setRejectionNote("");
       if (action === "accept") {
@@ -268,13 +292,11 @@ const AdminOrders = () => {
         deliveryNoteNumber,
       });
       toast.success(`Números actualizados para orden #${selectedOrder.id}`);
-      const updatedOrder = await axios.get(`/api/orders/${selectedOrder.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setSelectedOrder(updatedOrder.data);
-      setEditedOrder(updatedOrder.data);
+      const updatedOrder = await getOrderById(selectedOrder.id);
+      setSelectedOrder(updatedOrder);
+      setEditedOrder(updatedOrder);
       setOrders((prev) =>
-        prev.map((o) => (o.id === updatedOrder.data.id ? updatedOrder.data : o))
+        prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o))
       );
     } catch (error) {
       toast.error(error.message || "Error al actualizar números");
@@ -286,18 +308,11 @@ const AdminOrders = () => {
     setConfirmAction(() => async () => {
       try {
         await updateOrderStatus(selectedOrder.id, "Pendiente de Facturación");
-        const updatedOrder = await axios.get(
-          `/api/orders/${selectedOrder.id}`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-        setSelectedOrder(updatedOrder.data);
-        setEditedOrder(updatedOrder.data);
+        const updatedOrder = await getOrderById(selectedOrder.id);
+        setSelectedOrder(updatedOrder);
+        setEditedOrder(updatedOrder);
         setOrders((prev) =>
-          prev.map((o) =>
-            o.id === updatedOrder.data.id ? updatedOrder.data : o
-          )
+          prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o))
         );
         toast.success(`Orden #${selectedOrder.id} enviada a facturación`);
         setShowModal(false);
@@ -313,18 +328,11 @@ const AdminOrders = () => {
     setConfirmAction(() => async () => {
       try {
         await updateOrderStatus(selectedOrder.id, "Finalizado");
-        const updatedOrder = await axios.get(
-          `/api/orders/${selectedOrder.id}`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-        setSelectedOrder(updatedOrder.data);
-        setEditedOrder(updatedOrder.data);
+        const updatedOrder = await getOrderById(selectedOrder.id);
+        setSelectedOrder(updatedOrder);
+        setEditedOrder(updatedOrder);
         setOrders((prev) =>
-          prev.map((o) =>
-            o.id === updatedOrder.data.id ? updatedOrder.data : o
-          )
+          prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o))
         );
         toast.success(`Orden #${selectedOrder.id} devuelta a Finalizado`);
         setShowModal(false);
@@ -357,6 +365,12 @@ const AdminOrders = () => {
     toast.success("Informe descargado");
   };
 
+  const handlePageChange = (newPage) => {
+    if (newPage >= 1 && newPage <= pagination.totalPages) {
+      setPagination({ ...pagination, page: newPage });
+    }
+  };
+
   const userData = {
     userId: user?.id,
     userName: `${user?.first_name} ${user?.last_name}`,
@@ -376,14 +390,13 @@ const AdminOrders = () => {
       <Sidebar menuItems={adminMenu} title="Menú Administrador" />
       <div className="content" style={{ marginLeft: "270px", padding: "20px" }}>
         <DashboardHeader title="Órdenes de Servicio" {...userData} />
-        <Container className="mt-4">
-          <div className="d-flex flex-wrap gap-3 mb-3">
-            <Form.Group>
-              <Form.Label>Sucursal</Form.Label>
-              <Form.Select
+        <Container className="mt-4 d-flex flex-column align-items-center gap-3">
+          <FiltersContainer>
+            <FilterGroup>
+              <FilterLabel>Sucursal</FilterLabel>
+              <FilterSelect
                 value={branchFilter}
                 onChange={(e) => setBranchFilter(e.target.value)}
-                style={{ width: "200px" }}
               >
                 <option value="">Todas</option>
                 {branches.map((branch) => (
@@ -391,14 +404,13 @@ const AdminOrders = () => {
                     {branch}
                   </option>
                 ))}
-              </Form.Select>
-            </Form.Group>
-            <Form.Group>
-              <Form.Label>Estado</Form.Label>
-              <Form.Select
+              </FilterSelect>
+            </FilterGroup>
+            <FilterGroup>
+              <FilterLabel>Estado</FilterLabel>
+              <FilterSelect
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                style={{ width: "200px" }}
               >
                 <option value="">Todos</option>
                 <option value="En Proceso">En Proceso</option>
@@ -408,30 +420,28 @@ const AdminOrders = () => {
                   Pendiente de Facturación
                 </option>
                 <option value="Facturado">Facturado</option>
-              </Form.Select>
-            </Form.Group>
-            <Form.Group>
-              <Form.Label>Número Económico</Form.Label>
-              <Form.Control
+              </FilterSelect>
+            </FilterGroup>
+            <FilterGroup>
+              <FilterLabel>Número Económico</FilterLabel>
+              <FilterInput
                 type="text"
                 value={economicNumberFilter}
                 onChange={(e) => setEconomicNumberFilter(e.target.value)}
                 placeholder="Filtrar por N° Económico"
-                style={{ width: "200px" }}
               />
-            </Form.Group>
-            <Form.Group>
-              <Form.Label>Número de Orden</Form.Label>
-              <Form.Control
+            </FilterGroup>
+            <FilterGroup>
+              <FilterLabel>Número de Orden</FilterLabel>
+              <FilterInput
                 type="text"
                 value={orderNumberFilter}
                 onChange={(e) => setOrderNumberFilter(e.target.value)}
                 placeholder="Filtrar por N° Orden"
-                style={{ width: "200px" }}
               />
-            </Form.Group>
-          </div>
-          <Table striped bordered hover>
+            </FilterGroup>
+          </FiltersContainer>
+          <StyledTable>
             <thead>
               <tr>
                 <th>Número Económico</th>
@@ -457,15 +467,39 @@ const AdminOrders = () => {
                       </StatusIcon>
                       {order.status}
                     </td>
-                    <td>
-                      <CustomButton onClick={() => handleViewDetails(order)}>
-                        Ver Detalles
-                      </CustomButton>
+                    <td className="actions">
+                      <ActionsContainer>
+                        <CustomButton
+                          onClick={() => handleViewDetails(order)}
+                          title="Ver Detalles"
+                        >
+                          <FontAwesomeIcon icon={faEye} />
+                        </CustomButton>
+                      </ActionsContainer>
                     </td>
                   </tr>
                 ))}
             </tbody>
-          </Table>
+          </StyledTable>
+          <Pagination>
+            <Pagination.Prev
+              onClick={() => handlePageChange(pagination.page - 1)}
+              disabled={pagination.page === 1}
+            />
+            {[...Array(pagination.totalPages).keys()].map((i) => (
+              <Pagination.Item
+                key={i + 1}
+                active={i + 1 === pagination.page}
+                onClick={() => handlePageChange(i + 1)}
+              >
+                {i + 1}
+              </Pagination.Item>
+            ))}
+            <Pagination.Next
+              onClick={() => handlePageChange(pagination.page + 1)}
+              disabled={pagination.page === pagination.totalPages}
+            />
+          </Pagination>
         </Container>
       </div>
 
@@ -486,8 +520,8 @@ const AdminOrders = () => {
                 <Row>
                   <Col md={6}>
                     <Form.Group className="mb-3">
-                      <Form.Label>Número de Pedido</Form.Label>
-                      <Form.Control
+                      <FilterLabel>Número de Pedido</FilterLabel>
+                      <FilterInput
                         type="text"
                         value={orderNumber}
                         onChange={(e) => setOrderNumber(e.target.value)}
@@ -502,8 +536,8 @@ const AdminOrders = () => {
                   </Col>
                   <Col md={6}>
                     <Form.Group className="mb-3">
-                      <Form.Label>Número de Solicitud de Albarán</Form.Label>
-                      <Form.Control
+                      <FilterLabel>Número de Solicitud de Albarán</FilterLabel>
+                      <FilterInput
                         type="text"
                         value={deliveryNoteNumber}
                         onChange={(e) => setDeliveryNoteNumber(e.target.value)}
@@ -519,7 +553,7 @@ const AdminOrders = () => {
                 </Row>
                 <div className="d-flex justify-content-center align-items-center">
                   {(orderNumber || deliveryNoteNumber) && !isEditingNumbers ? (
-                    <Button
+                    <CustomButton
                       variant="secondary"
                       onClick={() => setIsEditingNumbers(true)}
                       disabled={
@@ -528,9 +562,9 @@ const AdminOrders = () => {
                       }
                     >
                       Editar
-                    </Button>
+                    </CustomButton>
                   ) : (
-                    <Button
+                    <CustomButton
                       variant="primary"
                       onClick={async () => {
                         await handleSaveNumbers();
@@ -543,7 +577,7 @@ const AdminOrders = () => {
                       }
                     >
                       Guardar Números
-                    </Button>
+                    </CustomButton>
                   )}
                 </div>
               </ActionSection>
@@ -566,13 +600,13 @@ const AdminOrders = () => {
                   <h6>Revisión de Finalización</h6>
                   <Row className="mt-3">
                     <Col>
-                      <Button
+                      <CustomButton
                         variant="success"
                         onClick={() => handleFinalizeAction("accept")}
                       >
                         <FontAwesomeIcon icon={faCheck} /> Aceptar Finalización
-                      </Button>{" "}
-                      <Button
+                      </CustomButton>{" "}
+                      <CustomButton
                         variant="danger"
                         onClick={() =>
                           rejectionNote && handleFinalizeAction("reject")
@@ -580,14 +614,14 @@ const AdminOrders = () => {
                         disabled={!rejectionNote}
                       >
                         <FontAwesomeIcon icon={faTimes} /> Rechazar Finalización
-                      </Button>
+                      </CustomButton>
                     </Col>
                   </Row>
                   <Form.Group className="mt-2">
-                    <Form.Label>
+                    <FilterLabel>
                       Observaciones (obligatorio para rechazar)
-                    </Form.Label>
-                    <FormControl
+                    </FilterLabel>
+                    <FilterInput
                       as="textarea"
                       rows={2}
                       value={rejectionNote}
@@ -601,34 +635,42 @@ const AdminOrders = () => {
               {selectedOrder.status === "Finalizado" && (
                 <ActionSection>
                   <h6>Acciones</h6>
-                  <Button
-                    variant="primary"
-                    onClick={saveEditedOrder}
-                    className="me-2"
-                  >
-                    Guardar Cambios
-                  </Button>
-                  <Button variant="success" onClick={handleSendToBilling}>
-                    Enviar a Facturación
-                  </Button>
+                  <ActionsContainer>
+                    <CustomButton
+                      variant="primary"
+                      onClick={saveEditedOrder}
+                      className="me-2"
+                    >
+                      Guardar Cambios
+                    </CustomButton>
+                    <CustomButton
+                      variant="success"
+                      onClick={handleSendToBilling}
+                    >
+                      Enviar a Facturación
+                    </CustomButton>
+                  </ActionsContainer>
                 </ActionSection>
               )}
 
               {selectedOrder.status === "Pendiente de Facturación" && (
                 <ActionSection>
                   <h6>Acciones</h6>
-                  <Button variant="danger" onClick={handleCancelBilling}>
+                  <CustomButton variant="danger" onClick={handleCancelBilling}>
                     Cancelar Solicitud de Facturación
-                  </Button>
+                  </CustomButton>
                 </ActionSection>
               )}
 
               {selectedOrder.status === "Facturado" && (
                 <ActionSection>
                   <h6>Acciones</h6>
-                  <Button variant="primary" onClick={handleDownloadReport}>
+                  <CustomButton
+                    variant="primary"
+                    onClick={handleDownloadReport}
+                  >
                     Descargar Informe
-                  </Button>
+                  </CustomButton>
                 </ActionSection>
               )}
             </>
@@ -654,13 +696,13 @@ const AdminOrders = () => {
           <p>¿Está seguro de realizar esta acción?</p>
         </ModalBody>
         <Modal.Footer>
-          <Button
+          <CustomButton
             variant="secondary"
             onClick={() => setShowConfirmModal(false)}
           >
             Cancelar
-          </Button>
-          <Button
+          </CustomButton>
+          <CustomButton
             variant="primary"
             onClick={async () => {
               await confirmAction();
@@ -668,7 +710,7 @@ const AdminOrders = () => {
             }}
           >
             Confirmar
-          </Button>
+          </CustomButton>
         </Modal.Footer>
       </StyledModal>
     </>

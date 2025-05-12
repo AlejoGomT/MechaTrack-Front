@@ -43,10 +43,9 @@ const DashboardHeader = ({ title }) => {
       try {
         const ordersData = await getOrders({ id: user.id });
         const notificationsData = await getNotifications(user.id);
-        const activeOrders = ordersData.filter((order) =>
+        const activeOrders = ordersData.orders.filter((order) =>
           ["En Proceso", "Pendiente"].includes(order.status)
         );
-        //console.log("Órdenes activas:", activeOrders);
         setActiveOrdersCount(activeOrders.length);
         setNotificationsCount(notificationsData.length);
       } catch (err) {
@@ -73,7 +72,9 @@ const DashboardHeader = ({ title }) => {
             |{" "}
           </span>
           <span>
-            Órdenes Activas: {activeOrdersCount} |{" "}
+            {user?.role !== "secretary" && user?.role !== "client" && (
+              <>Órdenes Activas: {activeOrdersCount} | </>
+            )}
             <Badge bg="danger">{notificationsCount} Notificaciones</Badge>
           </span>
         </UserInfo>

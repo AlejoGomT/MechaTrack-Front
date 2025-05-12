@@ -41,10 +41,15 @@ export const login = async (id, password) => {
 };
 
 export const getOrders = async (filters = {}) => {
-  const response = await axiosInstance.get("/api/orders", {
-    params: filters,
-  });
-  return response.data;
+  try {
+    const response = await axiosInstance.get("/api/orders", {
+      params: filters,
+    });
+    return response.data;
+  } catch (error) {
+    console.error("[orderService] Error en getOrders:", error);
+    throw error;
+  }
 };
 
 export const getOrderById = async (id) => {
@@ -123,6 +128,19 @@ export const updateOrder = async (orderId, orderData) => {
   } catch (error) {
     console.error("Error en updateOrder:", error.response?.data || error);
     throw error.response?.data || { message: "Error al actualizar la orden" };
+  }
+};
+
+export const deleteOrderImage = async (orderId, imageIndex) => {
+  try {
+    const response = await axiosInstance.delete(
+      `/api/orders/${orderId}/images/${imageIndex}`
+    );
+    console.log("Respuesta de deleteOrderImage:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error("Error en deleteOrderImage:", error.response?.data || error);
+    throw error.response?.data || { message: "Error al eliminar imagen" };
   }
 };
 

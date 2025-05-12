@@ -1,14 +1,6 @@
 import { useState, useCallback, memo, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
-import {
-  Container,
-  Form,
-  Row,
-  Col,
-  Button,
-  Modal,
-  Alert,
-} from "react-bootstrap";
+import { Form, Row, Col, Button, Modal, Alert } from "react-bootstrap";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import CustomButton from "../components/CustomButton";
@@ -30,18 +22,14 @@ import {
   FormSectionTitle,
   FormActions,
   HistoryButtonWrapper,
+  StyledTable,
+  ActionsContainer,
 } from "../styles/GlobalStyles";
 import styled from "@emotion/styled";
 import { toast } from "react-toastify";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faEye, faCircle } from "@fortawesome/free-solid-svg-icons";
 import { useNavigate } from "react-router-dom";
-
-const ScrollableFormWrapper = styled.div`
-  max-height: 80vh;
-  overflow-y: auto;
-  padding: 10px;
-`;
 
 const HistoryStatusIcon = styled.span`
   margin-right: 5px;
@@ -65,6 +53,20 @@ const HistoryEmptyMessage = styled.div`
   background-color: #f8f9fa;
   border-radius: 8px;
   color: #6c757d;
+`;
+
+const StatusIndicator = styled.span`
+  margin-right: 5px;
+  color: ${({ status }) => {
+    switch (status) {
+      case "Aprobado":
+        return "#28a745"; // Verde
+      case "Solicitado":
+        return "#ffc107"; // Amarillo
+      default:
+        return "#6c757d"; // Gris por defecto
+    }
+  }};
 `;
 
 const technicianMenu = [
@@ -124,17 +126,6 @@ const OrderForm = memo(
     const [error, setError] = useState("");
     const branches = [...new Set(vehicles.map((v) => v.branch))];
 
-    // Depurar inicialización y cambios en partsList
-    /*useEffect(() => {
-      console.log("initialData recibido:", initialData);
-      console.log("initialData.parts:", initialData?.parts);
-      console.log("formData.partsList inicial:", formData.partsList);
-    }, [initialData]);*/
-
-    useEffect(() => {
-      //console.log("formData.partsList actualizado:", formData.partsList);
-    }, [formData.partsList]);
-
     useEffect(() => {
       const fetchOrderData = async () => {
         if (initialData?.id) {
@@ -156,10 +147,20 @@ const OrderForm = memo(
     useEffect(() => {
       const fetchVehicles = async () => {
         try {
-          const data = await getVehicles();
-          setVehicles(data);
+          const data = await getVehicles({ limit: 1000 });
+          console.log(
+            "[TechnicianCreateOrder] Respuesta de getVehicles:",
+            data
+          );
+
+          // Validar que data.vehicles sea un arreglo
+          const vehiclesData = Array.isArray(data.vehicles)
+            ? data.vehicles
+            : [];
+          setVehicles(vehiclesData);
+
           if (initialData?.vehicle_economic_number && initialData?.branch) {
-            const vehicle = data.find(
+            const vehicle = vehiclesData.find(
               (v) =>
                 v.economic_number === initialData.vehicle_economic_number &&
                 v.branch === initialData.branch
@@ -210,8 +211,12 @@ const OrderForm = memo(
             }
           }
         } catch (err) {
-          console.error("Error al cargar vehículos:", err);
+          console.error(
+            "[TechnicianCreateOrder] Error al cargar vehículos:",
+            err
+          );
           toast.error(err.message || "Error al cargar vehículos");
+          setVehicles([]);
         }
       };
       fetchVehicles();
@@ -242,8 +247,25 @@ const OrderForm = memo(
               const historyData = await getOrders({
                 vehicle_economic_number: vehicle.economic_number,
                 branch: vehicle.branch,
+                limit: 1000,
               });
-              const filteredHistory = historyData.filter(
+              console.log(
+                "[TechnicianCreateOrder] Respuesta de getOrders para historial:",
+                historyData
+              );
+
+              // Validar que historyData.orders sea un arreglo
+              if (!Array.isArray(historyData.orders)) {
+                console.error(
+                  "[TechnicianCreateOrder] Respuesta inválida de getOrders, se esperaba un arreglo en orders:",
+                  historyData
+                );
+                setHistory([]);
+                toast.error("Respuesta inválida al cargar historial");
+                return;
+              }
+
+              const filteredHistory = historyData.orders.filter(
                 (order) =>
                   order.id !== initialData?.id &&
                   order.vehicle_economic_number === vehicle.economic_number &&
@@ -251,14 +273,32 @@ const OrderForm = memo(
               );
               setHistory(filteredHistory);
             } catch (err) {
-              console.error("Error al cargar historial:", err);
+              console.error(
+                "[TechnicianCreateOrder] Error al cargar historial:",
+                err
+              );
+              toast.error(err.message || "Error al cargar historial");
               setHistory([]);
             }
             try {
-              const partsData = await getParts(vehicle.model);
-              setParts(partsData);
+              const partsData = await getParts(vehicle.model, 1, 1000);
+              console.log(
+                "[TechnicianCreateOrder] Respuesta de getParts:",
+                partsData
+              );
+
+              // Validar que partsData.parts sea un arreglo
+              const partsArray = Array.isArray(partsData.parts)
+                ? partsData.parts
+                : [];
+              setParts(partsArray);
             } catch (err) {
-              toast.error("Error al cargar repuestos");
+              console.error(
+                "[TechnicianCreateOrder] Error al cargar repuestos:",
+                err
+              );
+              toast.error(err.message || "Error al cargar repuestos");
+              setParts([]);
             }
           } else {
             setHistory([]);
@@ -317,7 +357,6 @@ const OrderForm = memo(
       }
 
       try {
-        //console.log("formData enviado a onSubmit:", formData);
         await onSubmit(formData);
       } catch (err) {
         console.error("Error en handleFormSubmit:", err);
@@ -347,195 +386,228 @@ const OrderForm = memo(
     const filteredVehicles = vehicles.filter(
       (v) => v.branch === formData.branch
     );
+    const requestedParts = formData.partsList.filter(
+      (part) => part.status === "Aprobado" || part.status === "Solicitado"
+    );
 
     return (
       <FormContainer fluid>
         {error && <Alert variant="danger">{error}</Alert>}
         <FormSectionTitle>Datos del Vehículo</FormSectionTitle>
-        <ScrollableFormWrapper>
-          <Form onSubmit={handleFormSubmit} ref={formRef}>
-            <Row>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Número de Orden</Form.Label>
-                  <Form.Control
-                    type="text"
-                    value={initialData?.id || "Auto-generado"}
-                    disabled
-                  />
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Sucursal</Form.Label>
-                  <Form.Select
-                    name="branch"
-                    value={formData.branch}
-                    onChange={handleInputChange}
-                    disabled={isReadOnly || !!initialData}
-                  >
-                    <option value="">Seleccione una Sucursal</option>
-                    {branches.map((branch) => (
-                      <option key={branch} value={branch}>
-                        {branch}
-                      </option>
+
+        <Form onSubmit={handleFormSubmit} ref={formRef}>
+          <Row>
+            <Col md={6}>
+              <Form.Group className="mb-3">
+                <Form.Label>Número de Orden</Form.Label>
+                <Form.Control
+                  type="text"
+                  value={initialData?.id || "Auto-generado"}
+                  disabled
+                />
+              </Form.Group>
+            </Col>
+            <Col md={6}>
+              <Form.Group className="mb-3">
+                <Form.Label>Sucursal</Form.Label>
+                <Form.Select
+                  name="branch"
+                  value={formData.branch}
+                  onChange={handleInputChange}
+                  disabled={isReadOnly || !!initialData}
+                >
+                  <option value="">Seleccione una Sucursal</option>
+                  {branches.map((branch) => (
+                    <option key={branch} value={branch}>
+                      {branch}
+                    </option>
+                  ))}
+                </Form.Select>
+              </Form.Group>
+            </Col>
+          </Row>
+          <Row>
+            <Col md={6}>
+              <Form.Group className="mb-3">
+                <Form.Label>N° Económico</Form.Label>
+                <Form.Select
+                  name="economicNumber"
+                  value={formData.economicNumber}
+                  onChange={handleInputChange}
+                  disabled={isReadOnly || !!initialData || !formData.branch}
+                >
+                  <option value="">Seleccione un N° Económico</option>
+                  {filteredVehicles.map((v) => (
+                    <option key={v.economic_number} value={v.economic_number}>
+                      {v.economic_number}
+                    </option>
+                  ))}
+                </Form.Select>
+              </Form.Group>
+            </Col>
+            <Col md={6}>
+              <Form.Group className="mb-3">
+                <Form.Label>Placa del Vehículo</Form.Label>
+                <Form.Control
+                  type="text"
+                  value={vehicleData?.plate || formData.plate || ""}
+                  disabled
+                  placeholder="Autocompletado"
+                />
+              </Form.Group>
+            </Col>
+          </Row>
+          <Row>
+            <Col md={6}>
+              <Form.Group className="mb-3">
+                <Form.Label>Marca y Modelo</Form.Label>
+                <Form.Control
+                  type="text"
+                  value={
+                    vehicleData
+                      ? `${vehicleData.brand} ${vehicleData.model}`
+                      : formData.brand && formData.model
+                      ? `${formData.brand} ${formData.model}`
+                      : ""
+                  }
+                  disabled
+                  placeholder="Autocompletado"
+                />
+              </Form.Group>
+            </Col>
+            <Col md={6}>
+              <Form.Group className="mb-3">
+                <Form.Label>Año del Vehículo</Form.Label>
+                <Form.Control
+                  type="number"
+                  value={vehicleData?.year || formData.year || ""}
+                  disabled
+                  placeholder="Autocompletado"
+                />
+              </Form.Group>
+            </Col>
+          </Row>
+          <Row>
+            <Col md={6}>
+              <Form.Group className="mb-3">
+                <Form.Label>Kilometraje</Form.Label>
+                <Form.Control
+                  type="number"
+                  name="kilometraje"
+                  value={formData.kilometraje}
+                  onChange={handleInputChange}
+                  placeholder="Kilometraje Actual"
+                  disabled={isReadOnly}
+                />
+              </Form.Group>
+            </Col>
+            <Col md={6}>
+              <Form.Group className="mb-3">
+                <Form.Label>Número de Serie (VIN)</Form.Label>
+                <Form.Control
+                  type="text"
+                  value={formData.vin}
+                  disabled
+                  placeholder="Autocompletado"
+                />
+              </Form.Group>
+            </Col>
+          </Row>
+          {hasHistory && (
+            <HistoryButtonWrapper md={6}>
+              <CustomButton onClick={() => setShowHistoryModal(true)}>
+                Ver Historial
+              </CustomButton>
+            </HistoryButtonWrapper>
+          )}
+
+          <FormSectionTitle>Descripción del Servicio</FormSectionTitle>
+          <Form.Group className="mb-3">
+            <Form.Label>Tipo de Servicio</Form.Label>
+            <Form.Select
+              name="serviceType"
+              value={formData.serviceType}
+              onChange={handleInputChange}
+              disabled={isReadOnly || disableFields.includes("serviceType")}
+            >
+              <option>Reparación</option>
+              <option>Mantenimiento</option>
+            </Form.Select>
+          </Form.Group>
+          <Form.Group className="mb-3">
+            <Form.Label>Descripción del Servicio</Form.Label>
+            <Form.Control
+              as="textarea"
+              rows={4}
+              name="serviceDescription"
+              value={formData.serviceDescription}
+              onChange={handleInputChange}
+              placeholder="Detalles del servicio solicitado"
+              disabled={
+                isReadOnly || disableFields.includes("serviceDescription")
+              }
+            />
+          </Form.Group>
+
+          <FormSectionTitle>Diagnóstico y Tareas</FormSectionTitle>
+          <Form.Group className="mb-3">
+            <Form.Label>Diagnóstico Inicial</Form.Label>
+            <Form.Control
+              as="textarea"
+              rows={4}
+              name="diagnosis"
+              value={formData.diagnosis}
+              onChange={handleInputChange}
+              placeholder="Observaciones del mecánico"
+              disabled={isReadOnly}
+            />
+          </Form.Group>
+          <Form.Group className="mb-3">
+            <Form.Label>Tareas a Realizar</Form.Label>
+            <Form.Control
+              as="textarea"
+              rows={4}
+              name="tasks"
+              value={formData.tasks}
+              onChange={handleInputChange}
+              placeholder="Listado de tareas"
+              disabled={isReadOnly}
+            />
+          </Form.Group>
+
+          <FormSectionTitle>Repuestos Necesarios</FormSectionTitle>
+          <Form.Group className="mb-3">
+            {requestedParts.length > 0 && (
+              <>
+                <h6>Repuestos Solicitados</h6>
+                <StyledTable className="mb-3" striped bordered hover>
+                  <thead>
+                    <tr>
+                      <th>Código</th>
+                      <th>Nombre</th>
+                      <th>Cantidad</th>
+                      <th>Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {requestedParts.map((part, index) => (
+                      <tr key={part.id || index}>
+                        <td>{part.part_id || "-"}</td>
+                        <td>{part.name || "-"}</td>
+                        <td>{part.quantity || 0}</td>
+                        <td>
+                          <StatusIndicator status={part.status}>
+                            <FontAwesomeIcon icon={faCircle} />
+                          </StatusIndicator>
+                          {part.status}
+                        </td>
+                      </tr>
                     ))}
-                  </Form.Select>
-                </Form.Group>
-              </Col>
-            </Row>
-            <Row>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>N° Económico</Form.Label>
-                  <Form.Select
-                    name="economicNumber"
-                    value={formData.economicNumber}
-                    onChange={handleInputChange}
-                    disabled={isReadOnly || !!initialData || !formData.branch}
-                  >
-                    <option value="">Seleccione un N° Económico</option>
-                    {filteredVehicles.map((v) => (
-                      <option key={v.economic_number} value={v.economic_number}>
-                        {v.economic_number}
-                      </option>
-                    ))}
-                  </Form.Select>
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Placa del Vehículo</Form.Label>
-                  <Form.Control
-                    type="text"
-                    value={vehicleData?.plate || formData.plate || ""}
-                    disabled
-                    placeholder="Autocompletado"
-                  />
-                </Form.Group>
-              </Col>
-            </Row>
-            <Row>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Marca y Modelo</Form.Label>
-                  <Form.Control
-                    type="text"
-                    value={
-                      vehicleData
-                        ? `${vehicleData.brand} ${vehicleData.model}`
-                        : formData.brand && formData.model
-                        ? `${formData.brand} ${formData.model}`
-                        : ""
-                    }
-                    disabled
-                    placeholder="Autocompletado"
-                  />
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Año del Vehículo</Form.Label>
-                  <Form.Control
-                    type="number"
-                    value={vehicleData?.year || formData.year || ""}
-                    disabled
-                    placeholder="Autocompletado"
-                  />
-                </Form.Group>
-              </Col>
-            </Row>
-            <Row>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Kilometraje</Form.Label>
-                  <Form.Control
-                    type="number"
-                    name="kilometraje"
-                    value={formData.kilometraje}
-                    onChange={handleInputChange}
-                    placeholder="Kilometraje Actual"
-                    disabled={isReadOnly}
-                  />
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Número de Serie (VIN)</Form.Label>
-                  <Form.Control
-                    type="text"
-                    value={formData.vin}
-                    disabled
-                    placeholder="Autocompletado"
-                  />
-                </Form.Group>
-              </Col>
-            </Row>
-            {hasHistory && (
-              <HistoryButtonWrapper md={6}>
-                <CustomButton onClick={() => setShowHistoryModal(true)}>
-                  Ver Historial
-                </CustomButton>
-              </HistoryButtonWrapper>
+                  </tbody>
+                </StyledTable>
+              </>
             )}
-
-            <FormSectionTitle>Descripción del Servicio</FormSectionTitle>
-            <Form.Group className="mb-3">
-              <Form.Label>Tipo de Servicio</Form.Label>
-              <Form.Select
-                name="serviceType"
-                value={formData.serviceType}
-                onChange={handleInputChange}
-                disabled={isReadOnly || disableFields.includes("serviceType")}
-              >
-                <option>Reparación</option>
-                <option>Mantenimiento</option>
-              </Form.Select>
-            </Form.Group>
-            <Form.Group className="mb-3">
-              <Form.Label>Descripción del Servicio</Form.Label>
-              <Form.Control
-                as="textarea"
-                rows={4}
-                name="serviceDescription"
-                value={formData.serviceDescription}
-                onChange={handleInputChange}
-                placeholder="Detalles del servicio solicitado"
-                disabled={
-                  isReadOnly || disableFields.includes("serviceDescription")
-                }
-              />
-            </Form.Group>
-
-            <FormSectionTitle>Diagnóstico y Tareas</FormSectionTitle>
-            <Form.Group className="mb-3">
-              <Form.Label>Diagnóstico Inicial</Form.Label>
-              <Form.Control
-                as="textarea"
-                rows={4}
-                name="diagnosis"
-                value={formData.diagnosis}
-                onChange={handleInputChange}
-                placeholder="Observaciones del mecánico"
-                disabled={isReadOnly}
-              />
-            </Form.Group>
-            <Form.Group className="mb-3">
-              <Form.Label>Tareas a Realizar</Form.Label>
-              <Form.Control
-                as="textarea"
-                rows={4}
-                name="tasks"
-                value={formData.tasks}
-                onChange={handleInputChange}
-                placeholder="Listado de tareas"
-                disabled={isReadOnly}
-              />
-            </Form.Group>
-
-            <FormSectionTitle>Repuestos Necesarios</FormSectionTitle>
-            <Form.Group className="mb-3">
-              <p>Repuestos solicitados: {formData.partsList.length}</p>
+            <ActionsContainer>
               {formData.partsList.length > 0 ? (
                 <>
                   <CustomButton
@@ -556,53 +628,53 @@ const OrderForm = memo(
                   Solicitar Nuevo Repuesto
                 </CustomButton>
               )}
-            </Form.Group>
+            </ActionsContainer>
+          </Form.Group>
 
-            <FormSectionTitle>Fotos de Evidencia</FormSectionTitle>
-            <Form.Group className="mb-3">
-              <Form.Label>Subir Fotos</Form.Label>
-              <Form.Control
-                type="file"
-                multiple
-                onChange={handleImageUpload}
-                disabled={isReadOnly}
-                accept="image/*"
-              />
-              <Form.Text className="text-muted">
-                Puedes subir varias fotos relacionadas con la orden de servicio.
-              </Form.Text>
-              {formData.images.length > 0 && (
-                <ul>
-                  {formData.images.map((image, index) => (
-                    <li key={index}>
-                      {image.name || image}
-                      {typeof image !== "string" && (
-                        <img
-                          src={URL.createObjectURL(image)}
-                          alt="Vista previa"
-                          style={{ maxWidth: "100px", marginLeft: "10px" }}
-                        />
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Form.Group>
-
-            {!isReadOnly && !hideButtons && (
-              <FormActions>
-                <CustomButton type="submit" disabled={isSubmitting}>
-                  {initialData?.id ? "Actualizar" : "Crear Orden"}
-                </CustomButton>
-                {onCancel && (
-                  <CustomButton type="button" onClick={onCancel}>
-                    Cerrar
-                  </CustomButton>
-                )}
-              </FormActions>
+          <FormSectionTitle>Fotos de Evidencia</FormSectionTitle>
+          <Form.Group className="mb-3">
+            <Form.Label>Subir Fotos</Form.Label>
+            <Form.Control
+              type="file"
+              multiple
+              onChange={handleImageUpload}
+              disabled={isReadOnly}
+              accept="image/*"
+            />
+            <Form.Text className="text-muted">
+              Puedes subir varias fotos relacionadas con la orden de servicio.
+            </Form.Text>
+            {formData.images.length > 0 && (
+              <ul>
+                {formData.images.map((image, index) => (
+                  <li key={index}>
+                    {image.name || image}
+                    {typeof image !== "string" && (
+                      <img
+                        src={URL.createObjectURL(image)}
+                        alt="Vista previa"
+                        style={{ maxWidth: "100px", marginLeft: "10px" }}
+                      />
+                    )}
+                  </li>
+                ))}
+              </ul>
             )}
-          </Form>
-        </ScrollableFormWrapper>
+          </Form.Group>
+
+          {!isReadOnly && !hideButtons && (
+            <FormActions>
+              <CustomButton type="submit" disabled={isSubmitting}>
+                {initialData?.id ? "Actualizar" : "Crear Orden"}
+              </CustomButton>
+              {onCancel && (
+                <CustomButton type="button" onClick={onCancel}>
+                  Cerrar
+                </CustomButton>
+              )}
+            </FormActions>
+          )}
+        </Form>
 
         <StyledModal
           show={showHistoryModal}
@@ -710,12 +782,10 @@ const OrderForm = memo(
           setShowPartsManagementModal={setShowPartsManagementModal}
           partsList={formData.partsList}
           setPartsList={(newPartsList) => {
-            //console.log("setPartsList llamado con:", newPartsList);
             setFormData((prev) => {
               const updatedPartsList = Array.isArray(newPartsList)
                 ? newPartsList
                 : [];
-              //console.log("Actualizando formData.partsList:", updatedPartsList);
               return {
                 ...prev,
                 partsList: updatedPartsList,
@@ -751,7 +821,6 @@ const TechnicianCreateOrder = ({
   const handleSaveOrder = useCallback(
     async (formData) => {
       try {
-        //console.log("Guardando orden con datos:", formData);
         let newOrder;
         if (order?.id) {
           newOrder = await updateOrder(order.id, {

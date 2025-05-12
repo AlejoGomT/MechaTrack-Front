@@ -38,6 +38,7 @@ const AdminDashboard = () => {
           await Promise.all([
             axios.get("/api/orders", {
               headers: { Authorization: `Bearer ${token}` },
+              params: { limit: 1000 }, // Añadir límite para consistencia
             }),
             axios.get("/api/notifications", {
               headers: { Authorization: `Bearer ${token}` },
@@ -49,24 +50,41 @@ const AdminDashboard = () => {
             }),
           ]);
 
-        const orders = ordersResponse.data;
+        const ordersData = ordersResponse.data;
         const notifications = notificationsResponse.data;
         let vehiclesData = vehiclesResponse.data;
 
-        // Depuración: Imprimir la respuesta de /api/vehicles
+        // Depuración: Imprimir la respuesta de /api/orders y /api/vehicles
+        console.log("[AdminDashboard] Respuesta de /api/orders:", ordersData);
         console.log(
           "[AdminDashboard] Respuesta de /api/vehicles:",
           vehiclesData
         );
 
-        // Normalizar vehiclesData para asegurarnos de que sea un objeto con vehicles
+        // Validar ordersData.orders
+        let orders = [];
+        if (
+          ordersData &&
+          typeof ordersData === "object" &&
+          Array.isArray(ordersData.orders)
+        ) {
+          orders = ordersData.orders;
+        } else {
+          console.error(
+            "[AdminDashboard] Respuesta inválida de /api/orders, se esperaba un objeto con orders:",
+            ordersData
+          );
+          toast.error("Respuesta inválida al cargar órdenes");
+        }
+
+        // Normalizar vehiclesData
         let vehicles = [];
-        let total = 0;
+        let totalVehicles = 0;
         if (vehiclesData && typeof vehiclesData === "object") {
           vehicles = Array.isArray(vehiclesData.vehicles)
             ? vehiclesData.vehicles
             : [];
-          total = vehiclesData.total || vehicles.length;
+          totalVehicles = vehiclesData.total || vehicles.length;
         } else {
           console.warn(
             "[AdminDashboard] vehiclesData no es válido, usando valores por defecto"
@@ -78,6 +96,7 @@ const AdminDashboard = () => {
           ...new Set(vehicles.map((vehicle) => vehicle.branch)),
         ];
 
+        // Calcular estadísticas de órdenes
         setStats({
           activeOrdersCount: orders.filter((o) => o.status === "En Proceso")
             .length,
@@ -87,11 +106,19 @@ const AdminDashboard = () => {
             .length,
           notificationsCount: notifications.length,
           branchesCount: uniqueBranches.length,
-          vehiclesCount: total,
+          vehiclesCount: totalVehicles,
         });
       } catch (error) {
         console.error("[AdminDashboard] Error al cargar datos:", error);
-        toast.error("Error al cargar estadísticas");
+        toast.error(error.message || "Error al cargar estadísticas");
+        setStats({
+          activeOrdersCount: 0,
+          pendingOrdersCount: 0,
+          closedOrdersCount: 0,
+          notificationsCount: 0,
+          branchesCount: 0,
+          vehiclesCount: 0,
+        });
       }
     };
     if (token) fetchData();

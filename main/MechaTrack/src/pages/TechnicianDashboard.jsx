@@ -62,14 +62,34 @@ const TechnicianDashboard = () => {
     const fetchData = async () => {
       try {
         const [ordersData, vehiclesData] = await Promise.all([
-          getOrders({ technician_id: user.id }),
+          getOrders({ technician_id: user.id, limit: 1000 }), // Añadir limit para consistencia
           getVehicles(),
         ]);
-        setOrders(ordersData);
-        setVehicles(vehiclesData);
+        console.log(
+          "[TechnicianDashboard] Respuesta de getOrders:",
+          ordersData
+        );
+
+        // Validar que ordersData.orders sea un arreglo
+        if (!Array.isArray(ordersData.orders)) {
+          console.error(
+            "[TechnicianDashboard] Respuesta inválida de getOrders, se esperaba un arreglo en orders:",
+            ordersData
+          );
+          setOrders([]);
+          toast.error("Respuesta inválida al cargar órdenes");
+          return;
+        }
+
+        setOrders(ordersData.orders);
+        setVehicles(
+          Array.isArray(vehiclesData.vehicles) ? vehiclesData.vehicles : []
+        );
       } catch (err) {
-        console.error("Error al cargar datos:", err);
+        console.error("[TechnicianDashboard] Error al cargar datos:", err);
         toast.error(err.message || "Error al cargar datos");
+        setOrders([]);
+        setVehicles([]);
       }
     };
     fetchData();
@@ -381,7 +401,7 @@ const TechnicianDashboard = () => {
           <Modal.Header closeButton>
             <Modal.Title>Actualizar Orden #{selectedOrder?.id}</Modal.Title>
           </Modal.Header>
-          <ModalBody>
+          <ModalBody variant="updateOrderModal">
             {selectedOrder && (
               <TechnicianCreateOrder
                 order={selectedOrder}

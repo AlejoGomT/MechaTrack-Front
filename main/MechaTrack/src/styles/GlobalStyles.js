@@ -488,7 +488,8 @@ export const StyledModal = styled(Modal)`
 export const ModalBody = styled(Modal.Body)`
   max-height: 60vh;
   overflow-y: auto;
-  padding: 1.5rem;
+  ${(props) =>
+    props.variant === "updateOrderModal" ? null : { padding: "1.5rem" }};
 `;
 
 export const TableWrapper = styled.div`
