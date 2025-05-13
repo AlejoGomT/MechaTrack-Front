@@ -10,8 +10,9 @@ import OrderList from "../components/OrderList";
 import CustomButton from "../components/CustomButton";
 import TechnicianCreateOrder from "./TechnicianCreateOrder";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faEye } from "@fortawesome/free-solid-svg-icons";
+import { faEye, faCircle, faEdit } from "@fortawesome/free-solid-svg-icons";
 import {
+  StatusDiv,
   MainContainer,
   Content,
   ContentBtn,
@@ -19,7 +20,9 @@ import {
   StyledModal,
   ModalBody,
   TableWrapper,
-  StyledTableModal,
+  StyledTable,
+  ActionsContainer,
+  StatusIcon,
   OrderDetailsModal,
   OrderDetailsBody,
 } from "../styles/GlobalStyles";
@@ -55,6 +58,8 @@ const TechnicianDashboard = () => {
   const [economicNumberFilter, setEconomicNumberFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("Todos");
   const [orderNumberFilter, setOrderNumberFilter] = useState("");
+  const [startDateFilter, setStartDateFilter] = useState("");
+  const [endDateFilter, setEndDateFilter] = useState("");
   const [orders, setOrders] = useState([]);
   const [vehicles, setVehicles] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -65,7 +70,7 @@ const TechnicianDashboard = () => {
   const [inProcessOrdersCount, setInProcessOrdersCount] = useState(0);
   const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
   const [completedOrdersCount, setCompletedOrdersCount] = useState(0);
-  const pageSize = 10;
+  const pageSize = 5;
   const formRef = useRef(null);
 
   useEffect(() => {
@@ -76,6 +81,11 @@ const TechnicianDashboard = () => {
             technician_id: user.id,
             page: currentPage,
             limit: pageSize,
+            economicNumber: economicNumberFilter,
+            status: statusFilter === "Todos" ? undefined : statusFilter,
+            orderNumber: orderNumberFilter,
+            startDate: startDateFilter,
+            endDate: endDateFilter,
           }),
           getVehicles({ limit: 1000 }),
           getOrderCounts({ technician_id: user.id }),
@@ -136,7 +146,15 @@ const TechnicianDashboard = () => {
       }
     };
     fetchData();
-  }, [user.id, currentPage]);
+  }, [
+    user.id,
+    currentPage,
+    economicNumberFilter,
+    statusFilter,
+    orderNumberFilter,
+    startDateFilter,
+    endDateFilter,
+  ]);
 
   useEffect(() => {
     if (showModal && modalType) {
@@ -153,6 +171,8 @@ const TechnicianDashboard = () => {
             status,
             page: modalCurrentPage,
             limit: pageSize,
+            startDate: startDateFilter,
+            endDate: endDateFilter,
           });
 
           if (!Array.isArray(ordersData.orders)) {
@@ -172,7 +192,14 @@ const TechnicianDashboard = () => {
       };
       fetchModalOrders();
     }
-  }, [modalType, modalCurrentPage, user.id, showModal]);
+  }, [
+    modalType,
+    modalCurrentPage,
+    user.id,
+    showModal,
+    startDateFilter,
+    endDateFilter,
+  ]);
 
   const technicianOrders = orders.filter(
     (order) => order.technician_id === user.id
@@ -191,7 +218,17 @@ const TechnicianDashboard = () => {
       const matchesEconomicNumber = economicNumberFilter
         ? order.vehicle_economic_number.includes(economicNumberFilter)
         : true;
-      return matchesStatus && matchesOrderNumber && matchesEconomicNumber;
+      const matchesDateRange =
+        startDateFilter && endDateFilter
+          ? new Date(order.created_at) >= new Date(startDateFilter) &&
+            new Date(order.created_at) <= new Date(endDateFilter)
+          : true;
+      return (
+        matchesStatus &&
+        matchesOrderNumber &&
+        matchesEconomicNumber &&
+        matchesDateRange
+      );
     })
     .map((order) => ({
       id: order.id,
@@ -317,7 +354,6 @@ const TechnicianDashboard = () => {
       setOrders((prev) =>
         prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o))
       );
-      // Actualizar conteos después de cambiar el estado
       const countsData = await getOrderCounts({ technician_id: user.id });
       setInProcessOrdersCount(countsData.inProcess || 0);
       setPendingOrdersCount(countsData.pending || 0);
@@ -413,6 +449,10 @@ const TechnicianDashboard = () => {
             setStatusFilter={setStatusFilter}
             orderNumberFilter={orderNumberFilter}
             setOrderNumberFilter={setOrderNumberFilter}
+            startDateFilter={startDateFilter}
+            setStartDateFilter={setStartDateFilter}
+            endDateFilter={endDateFilter}
+            setEndDateFilter={setEndDateFilter}
           />
           <OrderList orders={filteredOrders} />
           {totalPages > 1 && (
@@ -440,14 +480,14 @@ const TechnicianDashboard = () => {
             {modalOrders.length > 0 ? (
               <>
                 <TableWrapper>
-                  <StyledTableModal striped bordered hover>
+                  <StyledTable>
                     <thead>
                       <tr>
-                        <th>Núm. Económico</th>
+                        <th>Número Económico</th>
                         <th>Orden</th>
                         <th>Fecha Ingreso</th>
-                        <th>Diagnóstico</th>
-                        <th>Acción</th>
+                        <th>Estado</th>
+                        <th>Acciones</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -460,44 +500,47 @@ const TechnicianDashboard = () => {
                               "es-ES"
                             )}
                           </td>
-                          <td
-                            title={order.initial_diagnosis || "Sin diagnóstico"}
-                            style={{
-                              maxWidth: "200px",
-                              whiteSpace: "nowrap",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                            }}
-                          >
-                            {(
-                              order.initial_diagnosis || "Sin diagnóstico"
-                            ).substring(0, 50) +
-                              (order.initial_diagnosis?.length > 50
-                                ? "..."
-                                : "")}
-                          </td>
                           <td>
-                            <Button
-                              variant="info"
-                              size="sm"
-                              onClick={() =>
-                                modalType === "pending-approval"
-                                  ? handleViewPendingApprovalOrder(order)
-                                  : modalType === "completed"
-                                  ? handleViewFinalizedOrder(order)
-                                  : handleEditOrder(order)
+                            <StatusDiv
+                              variant={
+                                modalType === "in-process"
+                                  ? "inProcess"
+                                  : modalType === "pending-approval"
+                                  ? "pending"
+                                  : "completed"
                               }
                             >
-                              <FontAwesomeIcon icon={faEye} />
-                              {modalType === "in-process"
-                                ? " Actualizar"
-                                : " Ver"}
-                            </Button>
+                              {order.status}
+                            </StatusDiv>
+                          </td>
+                          <td className="actions">
+                            <ActionsContainer>
+                              <CustomButton
+                                onClick={() =>
+                                  modalType === "pending-approval"
+                                    ? handleViewPendingApprovalOrder(order)
+                                    : modalType === "completed"
+                                    ? handleViewFinalizedOrder(order)
+                                    : handleEditOrder(order)
+                                }
+                                title={
+                                  modalType === "in-process"
+                                    ? "Actualizar"
+                                    : "Ver"
+                                }
+                              >
+                                <FontAwesomeIcon
+                                  icon={
+                                    modalType === "in-process" ? faEdit : faEye
+                                  }
+                                />
+                              </CustomButton>
+                            </ActionsContainer>
                           </td>
                         </tr>
                       ))}
                     </tbody>
-                  </StyledTableModal>
+                  </StyledTable>
                 </TableWrapper>
                 {modalTotalPages > 1 && (
                   <div className="d-flex justify-content-center mt-4">
@@ -610,7 +653,6 @@ const TechnicianDashboard = () => {
                       year: updatedOrder.year || selectedOrder.year,
                       parts: updatedOrder.parts || selectedOrder.parts,
                     });
-                    // Actualizar conteos después de actualizar la orden
                     const countsData = await getOrderCounts({
                       technician_id: user.id,
                     });

@@ -225,6 +225,30 @@ export const StyledTable = styled.table`
   }
 `;
 
+export const StatusDiv = styled.div`
+  padding: 0.1rem;
+  border-radius: 15px;
+  font-family: "Arial, sans-serif";
+  font-weight: 550;
+  text-align: center;
+  background-color: ${({ variant }) =>
+    variant === "inProcess"
+      ? "#fae79c"
+      : variant === "pending"
+      ? "#B0E0E6"
+      : variant === "completed"
+      ? "#90EE90"
+      : "#DCDCDC"};
+  color: ${({ variant }) =>
+    variant === "inProcess"
+      ? "#B8860B"
+      : variant === "pending"
+      ? "#104E8B"
+      : variant === "completed"
+      ? "#228B22"
+      : "#696969"};
+`;
+
 export const ActionButton = styled(Button)(({ variant }) => ({
   backgroundColor:
     variant === "secondary"
@@ -546,6 +570,8 @@ export const OrderDetailsModal = styled(Modal)`
 
 export const OrderDetailsBody = styled(Modal.Body)`
   padding: 1.5rem;
+  max-height: 70vh;
+  overflow-y: auto;
 `;
 
 export const FormContainer = styled(Container)`
@@ -695,4 +721,36 @@ export const ConditionalInputContainer = styled.div`
   align-items: center;
   gap: 0.5rem;
   margin-top: 0.5rem;
+`;
+
+export const NotificationList = styled.div`
+  background-color: #f8f9fa;
+  border-right: 1px solid #ddd;
+`;
+
+export const NotificationItem = styled.div`
+  padding: 1rem;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  &:hover {
+    background-color: #f1f1f1;
+  }
+  &.new {
+    background-color: #e7f3ff;
+  }
+`;
+
+export const MessageBubble = styled.div`
+  max-width: 70%;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  margin-bottom: 0.5rem;
+  background-color: ${(props) =>
+    props.sender === "user" ? "#d74a49" : "#e9ecef"};
+  color: ${(props) => (props.sender === "user" ? "white" : "#333")};
+`;
+
+export const MessageInputWrapper = styled.div`
+  border-top: 1px solid #ddd;
+  padding: 1rem;
 `;

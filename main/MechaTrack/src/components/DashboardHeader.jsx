@@ -3,7 +3,7 @@ import { toast } from "react-toastify";
 import { Navbar, Nav, Container, Badge } from "react-bootstrap";
 import styled from "@emotion/styled";
 import { useAuth } from "../context/AuthContext";
-import { getOrders, getNotifications } from "../services/orderService";
+import { getOrderCounts, getNotifications } from "../services/orderService";
 import logo from "../assets/images/logo.jpeg";
 
 const HeaderContainer = styled(Navbar)`
@@ -41,12 +41,13 @@ const DashboardHeader = ({ title }) => {
   useEffect(() => {
     const fetchCounts = async () => {
       try {
-        const ordersData = await getOrders({ id: user.id });
-        const notificationsData = await getNotifications(user.id);
-        const activeOrders = ordersData.orders.filter((order) =>
-          ["En Proceso", "Pendiente"].includes(order.status)
-        );
-        setActiveOrdersCount(activeOrders.length);
+        const [countsData, notificationsData] = await Promise.all([
+          getOrderCounts({ id: user.id }),
+          getNotifications(user.id),
+        ]);
+        const activeOrders =
+          (countsData.inProcess || 0) + (countsData.pending || 0);
+        setActiveOrdersCount(activeOrders);
         setNotificationsCount(notificationsData.length);
       } catch (err) {
         console.error("Error al cargar contadores:", err);

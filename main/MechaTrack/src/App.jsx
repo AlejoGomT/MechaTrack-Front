@@ -22,6 +22,7 @@ import ClientDashboard from "./pages/ClientDashboard";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import AdminVehicles from "./pages/AdminVehicles";
+import TechnicianNotifications from "./pages/TechnicianNotifications";
 
 // Componente para proteger rutas
 const PrivateRoute = ({ children, allowedRoles }) => {
@@ -139,6 +140,14 @@ function App() {
             element={
               <PrivateRoute allowedRoles={["technician"]}>
                 <TechnicianHistory />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/technician/notifications"
+            element={
+              <PrivateRoute allowedRoles={["technician"]}>
+                <TechnicianNotifications />
               </PrivateRoute>
             }
           />
