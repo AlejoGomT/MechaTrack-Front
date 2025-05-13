@@ -443,6 +443,59 @@ export const getNotifications = async (userId) => {
   }
 };
 
+export const getConversations = async (userId) => {
+  try {
+    const response = await axiosInstance.get(
+      "/api/notifications/conversations",
+      {
+        params: { user_id: userId },
+      }
+    );
+    return response.data;
+  } catch (err) {
+    console.error("Error en getConversations:", err.response?.data || err);
+    throw err.response?.data || { message: "Error al obtener conversaciones" };
+  }
+};
+
+export const getMessagesByOrderId = async (orderId, userId) => {
+  try {
+    const response = await axiosInstance.get(`/api/notifications`, {
+      params: { order_id: orderId, user_id: userId },
+    });
+    return response.data;
+  } catch (err) {
+    console.error("Error en getMessagesByOrderId:", err.response?.data || err);
+    throw err.response?.data || { message: "Error al obtener mensajes" };
+  }
+};
+
+export const createNotification = async (notificationData, files = []) => {
+  try {
+    const formData = new FormData();
+    Object.entries(notificationData).forEach(([key, value]) => {
+      formData.append(key, value);
+    });
+    files.forEach((file) => {
+      formData.append("attachments", file);
+    });
+
+    const response = await axiosInstance.post("/api/notifications", formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    });
+    console.log("Respuesta de createNotification:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error(
+      "Error en createNotification:",
+      error.response?.data || error
+    );
+    throw error.response?.data || { message: "Error al crear notificación" };
+  }
+};
+
 export const finalizeOrder = async (orderId, data) => {
   try {
     const response = await axiosInstance.put(

@@ -739,6 +739,7 @@ export const MessageInputWrapper = styled.div`
 `;
 
 export const MessageContainer = styled.div`
+  margin-top: 1rem;
   display: flex;
   flex-direction: row;
   height: calc(100vh - 150px);
