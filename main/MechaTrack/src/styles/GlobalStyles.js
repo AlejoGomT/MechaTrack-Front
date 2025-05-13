@@ -723,23 +723,6 @@ export const ConditionalInputContainer = styled.div`
   margin-top: 0.5rem;
 `;
 
-export const NotificationList = styled.div`
-  background-color: #f8f9fa;
-  border-right: 1px solid #ddd;
-`;
-
-export const NotificationItem = styled.div`
-  padding: 1rem;
-  cursor: pointer;
-  transition: background-color 0.3s;
-  &:hover {
-    background-color: #f1f1f1;
-  }
-  &.new {
-    background-color: #e7f3ff;
-  }
-`;
-
 export const MessageBubble = styled.div`
   max-width: 70%;
   padding: 0.75rem;
@@ -753,4 +736,62 @@ export const MessageBubble = styled.div`
 export const MessageInputWrapper = styled.div`
   border-top: 1px solid #ddd;
   padding: 1rem;
+`;
+
+export const MessageContainer = styled.div`
+  display: flex;
+  flex-direction: row;
+  height: calc(100vh - 150px);
+  gap: 0.5rem;
+  @media (max-width: 768px) {
+    flex-direction: column;
+    height: auto;
+  }
+`;
+
+export const NotificationList = styled.div`
+  width: 33%;
+  border-radius: 8px 0 0 8px;
+  background-color: #f8f9fa;
+  border-right: 1px solid #ddd;
+  overflow-y: auto;
+  @media (max-width: 768px) {
+    width: 100%;
+    max-height: 50vh;
+  }
+`;
+
+export const NotificationHeader = styled.div`
+  padding: 1rem;
+  border-bottom: 1px solid #ddd;
+  background-color: ${colors.backgroundLight};
+  color: white;
+  font-size: 1.25rem;
+  font-weight: bold;
+`;
+
+export const NotificationItem = styled.div`
+  padding: 1rem;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  border-bottom: 1px solid #ddd;
+  &:hover {
+    background-color: #f1f1f1;
+  }
+  &.new {
+    background-color: #e7f3ff;
+  }
+`;
+
+export const MessageDetailContainer = styled.div`
+  width: 67%;
+  border-radius: 0 8px 8px 0;
+  background-color: white;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  @media (max-width: 768px) {
+    width: 100%;
+    min-height: 50vh;
+  }
 `;
