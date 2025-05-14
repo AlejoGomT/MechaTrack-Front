@@ -1,3 +1,4 @@
+// TechnicianNotifications.jsx
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import { Container, Form, Image, Button } from "react-bootstrap";
@@ -50,6 +51,10 @@ const TechnicianNotifications = () => {
     const fetchConversations = async () => {
       try {
         const data = await getConversations(user.id);
+        console.log(
+          "[TechnicianNotifications] Conversaciones recibidas:",
+          data
+        );
         setConversations(data);
         // Preseleccionar conversación desde URL
         const params = new URLSearchParams(location.search);
@@ -65,18 +70,35 @@ const TechnicianNotifications = () => {
       }
     };
     fetchConversations();
-    // Polling para actualizar conversaciones cada 10 segundos
     const interval = setInterval(fetchConversations, 10000);
     return () => clearInterval(interval);
   }, [location.search, user.id]);
 
   // Cargar mensajes al seleccionar una conversación
   const handleSelectConversation = async (conversation) => {
+    console.log(
+      "[TechnicianNotifications] Seleccionando conversación:",
+      conversation
+    );
     setSelectedConversation(conversation);
+    setMessages([]); // Reiniciar mensajes para evitar mensajes antiguos
     try {
       const messagesData = await getMessagesByOrderId(
         conversation.order_id,
         user.id
+      );
+      console.log(
+        "[TechnicianNotifications] Mensajes recibidos para order_id",
+        conversation.order_id,
+        ":",
+        messagesData.map((m) => ({
+          id: m.id,
+          message: m.message,
+          type: m.type,
+          from_user_id: m.from_user_id,
+          to_user_id: m.to_user_id,
+          created_at: m.created_at,
+        }))
       );
       setMessages(messagesData);
       const order = await getOrderById(conversation.order_id);
@@ -92,7 +114,6 @@ const TechnicianNotifications = () => {
           body: JSON.stringify({ status: "Leída" }),
         });
       }
-      // Actualizar estado local
       setMessages((prev) =>
         prev.map((m) =>
           unreadMessages.some((um) => um.id === m.id)
@@ -122,7 +143,7 @@ const TechnicianNotifications = () => {
         order_id: selectedConversation.order_id,
         to_user_id:
           messages.find((m) => m.from_user_id !== user.id)?.from_user_id ||
-          "admin", // Enviar al último remitente o admin por defecto
+          "admin",
         message: newMessage || "Adjunto enviado",
         type: "message",
         status: "Pendiente",

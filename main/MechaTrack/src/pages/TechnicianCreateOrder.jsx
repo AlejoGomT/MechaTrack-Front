@@ -1057,11 +1057,8 @@ const TechnicianCreateOrder = ({
           const blobImages = formData.images.filter((img) =>
             img.startsWith("blob:")
           );
-          const files = blobImages.map((blobUrl) => {
-            const file =
-              e.target.files[
-                formData.images.indexOf(blobUrl) - formData.images.length
-              ];
+          const files = blobImages.map((blobUrl, index) => {
+            const file = formData.images[index]; // Replace with the correct logic to retrieve the file
             return file;
           });
 
