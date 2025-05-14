@@ -37,8 +37,6 @@ const PartsModal = ({
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    console.log("partsList recibido en PartsModal:", partsList);
-    console.log("userId recibido en PartsModal:", userId);
     setLocalPartsList(partsList);
   }, [partsList, userId]);
 
@@ -48,18 +46,15 @@ const PartsModal = ({
     }
     setIsLoading(true);
     try {
-      console.log("Cargando repuestos para orderId:", orderId);
       const orderData = await getOrderById(orderId);
       const orderParts = Array.isArray(orderData.parts)
         ? orderData.parts.map((part) => ({
             ...part,
-            requested_by: part.requested_by_id || userId, // Normalizar para coincidir con partsList
+            requested_by: part.requested_by_id || userId,
             authorized_by: part.authorized_by_id || null,
           }))
         : [];
-      console.log("Repuestos cargados desde la orden:", orderParts);
 
-      // Comparar datos normalizados para evitar actualizaciones innecesarias
       const isDifferent =
         JSON.stringify(orderParts) !== JSON.stringify(localPartsList);
       if (isDifferent) {
@@ -67,7 +62,6 @@ const PartsModal = ({
         setPartsList(orderParts);
       }
     } catch (err) {
-      console.error("Error al cargar repuestos de la orden:", err);
       toast.error("Error al cargar repuestos de la orden");
     } finally {
       setIsLoading(false);
@@ -76,7 +70,7 @@ const PartsModal = ({
 
   useEffect(() => {
     fetchOrderParts();
-  }, [orderId, showPartsModal, showPartsManagementModal]);
+  }, [fetchOrderParts]);
 
   const handleQuantityChange = (partId, value) => {
     setSelectedPartQuantities((prev) => ({
@@ -94,7 +88,6 @@ const PartsModal = ({
 
   const handleRequestPart = async (part) => {
     try {
-      console.log("userId en handleRequestPart:", userId);
       if (!userId || String(userId).length > 10) {
         throw new Error(
           `ID de usuario inválido o excede el límite de 10 caracteres: ${userId}`
@@ -117,31 +110,46 @@ const PartsModal = ({
         );
         return;
       }
-      const newPart = {
-        part_id: part.id,
-        name: part.name,
-        quantity,
-        price,
-        status: isFinalized ? "Aprobado" : "Solicitado",
-        requested_by: String(userId),
-        authorized_by: isFinalized ? String(userId) : null,
-      };
-      console.log("newPart a añadir:", newPart);
 
-      const updatedList = [...localPartsList, newPart];
-      console.log("updatedList antes de setLocalPartsList:", updatedList);
+      let updatedList;
+      const existingPartIndex = localPartsList.findIndex(
+        (p) => p.part_id === part.id
+      );
+      if (existingPartIndex !== -1) {
+        updatedList = localPartsList.map((p, i) =>
+          i === existingPartIndex
+            ? { ...p, quantity: p.quantity + quantity }
+            : p
+        );
+        if (orderId) {
+          await updatePartQuantity(
+            orderId,
+            part.id,
+            updatedList[existingPartIndex].quantity
+          );
+        }
+      } else {
+        const newPart = {
+          part_id: part.id,
+          name: part.name,
+          quantity,
+          price,
+          status: isFinalized ? "Aprobado" : "Solicitado",
+          requested_by: String(userId),
+          authorized_by: isFinalized ? String(userId) : null,
+        };
+        updatedList = [...localPartsList, newPart];
+        if (orderId) {
+          await requestPart(orderId, newPart);
+        }
+      }
+
       setLocalPartsList(updatedList);
       setPartsList(updatedList);
-      console.log("partsList actualizado en handleRequestPart:", updatedList);
 
-      if (orderId) {
-        await requestPart(orderId, newPart);
-        toast.success(
-          `Repuesto ${part.name} ${isFinalized ? "añadido" : "solicitado"}`
-        );
-      } else {
-        toast.success(`Repuesto ${part.name} añadido a la orden`);
-      }
+      toast.success(
+        `Repuesto ${part.name} ${isFinalized ? "añadido" : "solicitado"}`
+      );
 
       setShowPartsModal(false);
       setSelectedPartQuantities((prev) => ({ ...prev, [part.id]: 1 }));
@@ -223,6 +231,10 @@ const PartsModal = ({
     }
   };
 
+  const filteredAvailableParts = availableParts.filter(
+    (part) => !localPartsList.some((lp) => lp.part_id === part.id)
+  );
+
   return (
     <>
       <StyledModal
@@ -236,7 +248,7 @@ const PartsModal = ({
         <ModalBody>
           {isLoading ? (
             <p>Cargando repuestos...</p>
-          ) : availableParts.length === 0 ? (
+          ) : filteredAvailableParts.length === 0 ? (
             <p>No hay repuestos disponibles para este vehículo.</p>
           ) : (
             <TableWrapper>
@@ -253,7 +265,7 @@ const PartsModal = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {availableParts.map((part) => (
+                  {filteredAvailableParts.map((part) => (
                     <tr key={part.id}>
                       <td>{part.id}</td>
                       <td>{part.name}</td>

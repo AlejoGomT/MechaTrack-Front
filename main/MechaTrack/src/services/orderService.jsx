@@ -509,3 +509,19 @@ export const finalizeOrder = async (orderId, data) => {
     throw error.response?.data || { message: "Error al finalizar orden" };
   }
 };
+
+export const updatePartInventory = async (partId, quantityChange) => {
+  try {
+    const response = await axiosInstance.put(`/api/parts/${partId}/inventory`, {
+      quantityChange,
+    });
+    console.log("Respuesta de updatePartInventory:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error(
+      "Error en updatePartInventory:",
+      error.response?.data || error
+    );
+    throw error.response?.data || { message: "Error al actualizar inventario" };
+  }
+};
