@@ -119,6 +119,7 @@ const OrderForm = memo(
       tasks: initialData?.tasks || "",
       partsList: normalizedParts,
       images: normalizedImages,
+      imageFiles: [],
       plate: initialData?.plate || "",
       brand: initialData?.brand || "",
       model: initialData?.model || "",
@@ -368,23 +369,24 @@ const OrderForm = memo(
 
       try {
         let updatedImages = [...formData.images];
+        let updatedImageFiles = [...formData.imageFiles];
+
         if (initialData?.id) {
-          // Para órdenes existentes, subir imágenes inmediatamente
           const updatedOrder = await updateOrder(initialData.id, {
-            images: files, // Archivos File
-            existingImages: formData.images, // Rutas relativas
+            images: files,
+            existingImages: formData.images,
           });
           updatedImages = Array.isArray(updatedOrder.images)
             ? updatedOrder.images.map((img) =>
                 img.startsWith("/uploads/") ? img : `/uploads/${img}`
               )
             : [];
+          updatedImageFiles = [];
           toast.success(`${files.length} imagen(es) subida(s) correctamente`);
         } else {
-          // Para órdenes nuevas, subir al crear la orden
-          // Usar URLs blob temporales para previsualización
           const blobUrls = files.map((file) => URL.createObjectURL(file));
           updatedImages = [...formData.images, ...blobUrls];
+          updatedImageFiles = [...formData.imageFiles, ...files];
           toast.success(
             `${files.length} imagen(es) seleccionada(s) para subir al guardar`
           );
@@ -393,6 +395,7 @@ const OrderForm = memo(
         setFormData((prev) => ({
           ...prev,
           images: updatedImages,
+          imageFiles: updatedImageFiles,
         }));
       } catch (error) {
         console.error("Error al subir imágenes:", error);
@@ -404,10 +407,15 @@ const OrderForm = memo(
       try {
         const imageToDelete = formData.images[index];
         if (imageToDelete.startsWith("blob:")) {
-          // Imagen no subida, eliminar de formData.images
+          const updatedImages = formData.images.filter((_, i) => i !== index);
+          const updatedImageFiles = formData.imageFiles.filter(
+            (_, i) =>
+              i !== index - formData.images.length + formData.imageFiles.length
+          );
           setFormData((prev) => ({
             ...prev,
-            images: prev.images.filter((_, i) => i !== index),
+            images: updatedImages,
+            imageFiles: updatedImageFiles,
           }));
           URL.revokeObjectURL(imageToDelete); // Liberar memoria
           toast.success("Imagen eliminada");
@@ -417,6 +425,7 @@ const OrderForm = memo(
           setFormData((prev) => ({
             ...prev,
             images: prev.images.filter((_, i) => i !== index),
+            imageFiles: [],
           }));
           toast.success("Imagen eliminada del servidor");
         }
@@ -450,16 +459,13 @@ const OrderForm = memo(
       }
 
       try {
-        // Preparar datos para enviar
         const orderData = {
           ...formData,
-          images: formData.images, // Rutas relativas o blob URLs
+          images: formData.imageFiles,
         };
 
-        // Llamar a onSubmit y obtener la orden actualizada
         const updatedOrder = await onSubmit(orderData);
 
-        // Actualizar formData.images con las rutas relativas devueltas
         setFormData((prev) => ({
           ...prev,
           images: Array.isArray(updatedOrder.images)
@@ -467,6 +473,7 @@ const OrderForm = memo(
                 img.startsWith("/uploads/") ? img : `/uploads/${img}`
               )
             : [],
+          imageFiles: [],
         }));
         toast.success("Orden guardada correctamente");
       } catch (err) {
@@ -995,8 +1002,6 @@ const TechnicianCreateOrder = ({
                 String(part.part_id).length > 10 ||
                 !part.quantity ||
                 part.quantity < 0 ||
-                !part.price ||
-                part.price < 0 ||
                 !part.requested_by ||
                 String(part.requested_by).length > 10
               ) {
@@ -1005,10 +1010,8 @@ const TechnicianCreateOrder = ({
                 );
               }
               return {
-                ...part,
                 part_id: String(part.part_id),
                 quantity: parseInt(part.quantity, 10),
-                price: parseFloat(part.price),
                 status: part.status || "Solicitado",
                 requested_by: part.requested_by_id || String(user.id),
                 authorized_by: part.authorized_by_id || null,
@@ -1023,8 +1026,8 @@ const TechnicianCreateOrder = ({
             tasks: formData.tasks,
             existingImages: formData.images.filter(
               (img) => !img.startsWith("blob:")
-            ), // Enviar solo rutas relativas
-            images: [], // No enviar imágenes nuevas aquí, ya se subieron
+            ),
+            images: formData.imageFiles,
             parts: normalizedParts,
             kilometraje: formData.kilometraje
               ? parseInt(formData.kilometraje, 10)
@@ -1054,20 +1057,12 @@ const TechnicianCreateOrder = ({
               : "Orden actualizada satisfactoriamente"
           );
         } else {
-          const blobImages = formData.images.filter((img) =>
-            img.startsWith("blob:")
-          );
-          const files = blobImages.map((blobUrl, index) => {
-            const file = formData.images[index]; // Replace with the correct logic to retrieve the file
-            return file;
-          });
-
           newOrder = await createOrder({
             type: formData.serviceType,
             description: formData.serviceDescription,
             initial_diagnosis: formData.diagnosis,
             tasks: formData.tasks,
-            images: files,
+            images: formData.imageFiles,
             parts: normalizedParts,
             technician_id: user.id,
             vehicle_economic_number: formData.economicNumber,

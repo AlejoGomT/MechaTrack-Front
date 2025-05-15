@@ -81,7 +81,18 @@ export const createOrder = async (orderData) => {
           }
         });
       } else if (key === "parts" && Array.isArray(value)) {
-        formData.append("parts", JSON.stringify(value));
+        formData.append(
+          "parts",
+          JSON.stringify(
+            value.map((part) => ({
+              part_id: part.part_id,
+              quantity: part.quantity,
+              status: part.status || "Solicitado",
+              requested_by: part.requested_by,
+              authorized_by: part.authorized_by || null,
+            }))
+          )
+        );
       } else {
         formData.append(key, value);
       }
@@ -113,7 +124,18 @@ export const updateOrder = async (orderId, orderData) => {
       } else if (key === "existingImages" && Array.isArray(value)) {
         formData.append("existingImages", JSON.stringify(value));
       } else if (key === "parts" && Array.isArray(value)) {
-        formData.append("parts", JSON.stringify(value));
+        formData.append(
+          "parts",
+          JSON.stringify(
+            value.map((part) => ({
+              part_id: part.part_id,
+              quantity: part.quantity,
+              status: part.status || "Solicitado",
+              requested_by: part.requested_by,
+              authorized_by: part.authorized_by || null,
+            }))
+          )
+        );
       } else {
         formData.append(key, value);
       }
@@ -193,16 +215,13 @@ export const updateOrderNumbers = async (orderId, numbers) => {
 
 export const requestPart = async (orderId, part) => {
   try {
-    if (!part.price || part.price <= 0) {
-      throw new Error("El precio del repuesto debe ser mayor que 0");
-    }
     const response = await axiosInstance.post(`/api/orders/${orderId}/parts`, {
       part_id: part.part_id,
       name: part.name,
       quantity: part.quantity,
-      price: parseFloat(part.price),
       requested_by: part.requested_by,
       status: part.status || "Solicitado",
+      authorized_by: part.authorized_by || null,
     });
     console.log("Respuesta de requestPart:", response.data);
     return response.data;
@@ -224,7 +243,7 @@ export const updatePartAdmin = async (
       {
         quantity: partData.quantity,
         status: partData.status,
-        price: partData.price || null,
+        price: partData.price ? parseFloat(partData.price) : null,
         note: partData.note || "",
         authorized_by: partData.status === "Aprobado" ? authorizedBy : null,
       }

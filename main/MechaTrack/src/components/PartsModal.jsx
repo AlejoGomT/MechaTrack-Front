@@ -33,7 +33,6 @@ const PartsModal = ({
 }) => {
   const [localPartsList, setLocalPartsList] = useState(partsList);
   const [selectedPartQuantities, setSelectedPartQuantities] = useState({});
-  const [selectedPartPrices, setSelectedPartPrices] = useState({});
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -79,13 +78,6 @@ const PartsModal = ({
     }));
   };
 
-  const handlePriceChange = (partId, value) => {
-    setSelectedPartPrices((prev) => ({
-      ...prev,
-      [partId]: parseFloat(value) || 0,
-    }));
-  };
-
   const handleRequestPart = async (part) => {
     try {
       if (!userId || String(userId).length > 10) {
@@ -95,13 +87,8 @@ const PartsModal = ({
       }
 
       const quantity = selectedPartQuantities[part.id] || 1;
-      const price = selectedPartPrices[part.id] || 0;
       if (quantity < 1) {
         toast.error("La cantidad debe ser al menos 1");
-        return;
-      }
-      if (price < 0) {
-        toast.error("El precio no puede ser negativo");
         return;
       }
       if (quantity > part.quantity) {
@@ -133,7 +120,6 @@ const PartsModal = ({
           part_id: part.id,
           name: part.name,
           quantity,
-          price,
           status: isFinalized ? "Aprobado" : "Solicitado",
           requested_by: String(userId),
           authorized_by: isFinalized ? String(userId) : null,
@@ -153,7 +139,6 @@ const PartsModal = ({
 
       setShowPartsModal(false);
       setSelectedPartQuantities((prev) => ({ ...prev, [part.id]: 1 }));
-      setSelectedPartPrices((prev) => ({ ...prev, [part.id]: 0 }));
     } catch (err) {
       console.error("Error en handleRequestPart:", err);
       toast.error(err.message || "Error al solicitar repuesto");
@@ -260,7 +245,6 @@ const PartsModal = ({
                     <th>Modelo Compatible</th>
                     <th>Inventario</th>
                     <th>Cantidad</th>
-                    {isFinalized && <th>Precio</th>}
                     <th>Acción</th>
                   </tr>
                 </thead>
@@ -285,21 +269,6 @@ const PartsModal = ({
                           />
                         </InputGroup>
                       </td>
-                      {isFinalized && (
-                        <td>
-                          <InputGroup style={{ maxWidth: "120px" }}>
-                            <Form.Control
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={selectedPartPrices[part.id] || 0}
-                              onChange={(e) =>
-                                handlePriceChange(part.id, e.target.value)
-                              }
-                            />
-                          </InputGroup>
-                        </td>
-                      )}
                       <td>
                         <ActionsContainer>
                           <ActionButton
