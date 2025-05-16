@@ -258,21 +258,33 @@ export const updatePartAdmin = async (
 
 export const updatePartQuantity = async (orderId, partId, quantity) => {
   try {
+    console.log("[orderService.jsx] Enviando updatePartQuantity:", {
+      orderId,
+      partId,
+      quantity,
+    });
     const response = await axiosInstance.put(
       `/api/orders/${orderId}/parts/${partId}`,
       {
         quantity,
       }
     );
+    console.log(
+      "[orderService.jsx] Respuesta de updatePartQuantity:",
+      response.data
+    );
     return response.data;
   } catch (error) {
     console.error(
-      "Error en updatePartQuantity:",
+      "[orderService.jsx] Error en updatePartQuantity:",
       error.response?.data || error
     );
     throw (
       error.response?.data || {
-        message: "Error al actualizar cantidad de repuesto",
+        message:
+          quantity === 0
+            ? "Error al eliminar repuesto"
+            : "Error al actualizar cantidad de repuesto",
       }
     );
   }

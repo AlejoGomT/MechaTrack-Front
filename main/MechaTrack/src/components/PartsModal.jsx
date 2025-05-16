@@ -33,10 +33,16 @@ const PartsModal = ({
 }) => {
   const [localPartsList, setLocalPartsList] = useState(partsList);
   const [selectedPartQuantities, setSelectedPartQuantities] = useState({});
+  const [inputQuantities, setInputQuantities] = useState({});
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     setLocalPartsList(partsList);
+    const initialQuantities = {};
+    partsList.forEach((part) => {
+      initialQuantities[part.part_id] = part.quantity;
+    });
+    setInputQuantities(initialQuantities);
   }, [partsList, userId]);
 
   const fetchOrderParts = useCallback(async () => {
@@ -145,9 +151,17 @@ const PartsModal = ({
     }
   };
 
+  const handleInputQuantityChange = (partId, value) => {
+    setInputQuantities((prev) => ({
+      ...prev,
+      [partId]: parseInt(value, 10) || 0,
+    }));
+  };
+
   const handleUpdatePartQuantity = async (partIndex, newQuantity) => {
     try {
       const part = localPartsList[partIndex];
+      console.log("[PartsModal] Actualizando cantidad:", { part, newQuantity });
       if (part.status !== "Solicitado") {
         toast.error("Solo se pueden editar repuestos en estado Solicitado");
         return;
@@ -164,26 +178,41 @@ const PartsModal = ({
       let updatedPartsList;
       if (newQuantity === 0) {
         if (orderId) {
-          await updatePartQuantity(orderId, part.part_id, 0);
+          const response = await updatePartQuantity(orderId, part.part_id, 0);
+          if (!response.deleted) {
+            throw new Error(
+              "El backend no confirmó la eliminación del repuesto"
+            );
+          }
+          const updatedOrder = await getOrderById(orderId);
+          updatedPartsList = updatedOrder.parts || [];
+        } else {
+          updatedPartsList = localPartsList.filter((_, i) => i !== partIndex);
         }
-        updatedPartsList = localPartsList.filter((_, i) => i !== partIndex);
       } else {
         if (orderId) {
           await updatePartQuantity(orderId, part.part_id, newQuantity);
+          const updatedOrder = await getOrderById(orderId);
+          updatedPartsList = updatedOrder.parts || [];
+        } else {
+          updatedPartsList = localPartsList.map((p, i) =>
+            i === partIndex ? { ...p, quantity: newQuantity } : p
+          );
         }
-        updatedPartsList = localPartsList.map((p, i) =>
-          i === partIndex ? { ...p, quantity: newQuantity } : p
-        );
       }
       setLocalPartsList(updatedPartsList);
       setPartsList(updatedPartsList);
       console.log(
-        "partsList después de actualizar cantidad:",
+        "[PartsModal] partsList después de actualizar:",
         updatedPartsList
       );
-      toast.success(`Cantidad actualizada para ${part.name}`);
+      toast.success(
+        newQuantity === 0
+          ? `Repuesto ${part.name} eliminado`
+          : `Cantidad actualizada para ${part.name}`
+      );
     } catch (err) {
-      console.error("Error en handleUpdatePartQuantity:", err);
+      console.error("[PartsModal] Error en handleUpdatePartQuantity:", err);
       toast.error(err.message || "Error al actualizar cantidad");
     }
   };
@@ -336,11 +365,21 @@ const PartsModal = ({
                               <InputGroup style={{ maxWidth: "120px" }}>
                                 <Form.Control
                                   type="number"
-                                  value={part.quantity}
+                                  value={
+                                    inputQuantities[part.part_id] ||
+                                    part.quantity
+                                  }
                                   onChange={(e) =>
+                                    handleInputQuantityChange(
+                                      part.part_id,
+                                      e.target.value
+                                    )
+                                  }
+                                  onBlur={() =>
                                     handleUpdatePartQuantity(
                                       index,
-                                      parseInt(e.target.value, 10) || 0
+                                      inputQuantities[part.part_id] ||
+                                        part.quantity
                                     )
                                   }
                                   min="0"
