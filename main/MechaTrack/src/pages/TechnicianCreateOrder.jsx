@@ -475,7 +475,6 @@ const OrderForm = memo(
             : [],
           imageFiles: [],
         }));
-        toast.success("Orden guardada correctamente");
       } catch (err) {
         console.error("Error en handleFormSubmit:", err);
         setError(err.message || "Error al guardar la orden");
