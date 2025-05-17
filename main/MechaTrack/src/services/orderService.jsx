@@ -1,30 +1,73 @@
 import axios from "axios";
 
-const API_URL = "http://localhost:5000/api";
+export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
-const getAuthHeaders = () => {
-  const token = localStorage.getItem("token");
-  return { Authorization: `Bearer ${token}` };
-};
+const axiosInstance = axios.create({
+  baseURL: API_URL,
+});
+
+axiosInstance.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem("token");
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+axiosInstance.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 401) {
+      localStorage.removeItem("token");
+      window.location.href = "/";
+    }
+    return Promise.reject(error);
+  }
+);
 
 export const login = async (id, password) => {
-  const response = await axios.post(`${API_URL}/auth/login`, { id, password });
+  const response = await axiosInstance.post("/api/auth/login", {
+    id,
+    password,
+  });
   return response.data;
 };
 
 export const getOrders = async (filters = {}) => {
-  const response = await axios.get(`${API_URL}/orders`, {
-    headers: getAuthHeaders(),
-    params: filters,
-  });
-  return response.data;
+  try {
+    const response = await axiosInstance.get("/api/orders", {
+      params: filters,
+    });
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
 };
 
 export const getOrderById = async (id) => {
-  const response = await axios.get(`${API_URL}/orders/${id}`, {
-    headers: getAuthHeaders(),
-  });
-  return response.data;
+  try {
+    const response = await axiosInstance.get(`/api/orders/${id}`);
+    return response.data;
+  } catch (err) {
+    console.error("Error en getOrderById:", err.response?.data || err);
+    throw err.response?.data || { message: "Error al obtener la orden" };
+  }
+};
+
+export const getOrderCounts = async (filters = {}) => {
+  try {
+    const response = await axiosInstance.get("/api/orders/counts", {
+      params: filters,
+    });
+    console.log("Respuesta de getOrderCounts:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error("Error en getOrderCounts:", error.response?.data || error);
+    throw error.response?.data || { message: "Error al obtener conteos" };
+  }
 };
 
 export const createOrder = async (orderData) => {
@@ -32,25 +75,39 @@ export const createOrder = async (orderData) => {
     const formData = new FormData();
     Object.entries(orderData).forEach(([key, value]) => {
       if (key === "images" && Array.isArray(value)) {
-        value.forEach((file, index) => {
+        value.forEach((file) => {
           if (file instanceof File) {
-            formData.append(`images`, file);
+            formData.append("images", file);
           }
         });
+      } else if (key === "parts" && Array.isArray(value)) {
+        formData.append(
+          "parts",
+          JSON.stringify(
+            value.map((part) => ({
+              part_id: part.part_id,
+              quantity: part.quantity,
+              status: part.status || "Solicitado",
+              requested_by: part.requested_by,
+              authorized_by: part.authorized_by || null,
+            }))
+          )
+        );
       } else {
         formData.append(key, value);
       }
     });
-    const response = await axios.post(`${API_URL}/orders`, formData, {
+
+    const response = await axiosInstance.post("/api/orders", formData, {
       headers: {
         "Content-Type": "multipart/form-data",
-        ...getAuthHeaders(),
       },
     });
+    console.log("Respuesta de createOrder:", response.data);
     return response.data;
   } catch (error) {
     console.error("Error en createOrder:", error.response?.data || error);
-    throw error.response?.data || error;
+    throw error.response?.data || { message: "Error al crear la orden" };
   }
 };
 
@@ -59,34 +116,216 @@ export const updateOrder = async (orderId, orderData) => {
     const formData = new FormData();
     Object.entries(orderData).forEach(([key, value]) => {
       if (key === "images" && Array.isArray(value)) {
-        value.forEach((item, index) => {
-          if (item instanceof File) {
-            formData.append(`images`, item);
-          } else if (typeof item === "string") {
-            formData.append(`existingImages[${index}]`, item);
+        value.forEach((file) => {
+          if (file instanceof File) {
+            formData.append("images", file);
           }
         });
+      } else if (key === "existingImages" && Array.isArray(value)) {
+        formData.append("existingImages", JSON.stringify(value));
+      } else if (key === "parts" && Array.isArray(value)) {
+        formData.append(
+          "parts",
+          JSON.stringify(
+            value.map((part) => ({
+              part_id: part.part_id,
+              quantity: part.quantity,
+              status: part.status || "Solicitado",
+              requested_by: part.requested_by,
+              authorized_by: part.authorized_by || null,
+            }))
+          )
+        );
       } else {
         formData.append(key, value);
       }
     });
-    const response = await axios.put(`${API_URL}/orders/${orderId}`, formData, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-        ...getAuthHeaders(),
-      },
-    });
+
+    for (let [key, value] of formData.entries()) {
+      console.log(`FormData updateOrder: ${key} =`, value);
+    }
+
+    const response = await axiosInstance.put(
+      `/api/orders/${orderId}`,
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      }
+    );
+    console.log("Respuesta de updateOrder:", response.data);
     return response.data;
   } catch (error) {
     console.error("Error en updateOrder:", error.response?.data || error);
-    throw error.response?.data || error;
+    throw error.response?.data || { message: "Error al actualizar la orden" };
+  }
+};
+
+export const deleteOrderImage = async (orderId, imageIndex) => {
+  try {
+    const response = await axiosInstance.delete(
+      `/api/orders/${orderId}/images/${imageIndex}`
+    );
+    console.log("Respuesta de deleteOrderImage:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error("Error en deleteOrderImage:", error.response?.data || error);
+    throw error.response?.data || { message: "Error al eliminar imagen" };
+  }
+};
+
+export const updateOrderStatus = async (orderId, status) => {
+  try {
+    const response = await axiosInstance.put(`/api/orders/${orderId}/status`, {
+      status,
+    });
+    console.log("Respuesta de updateOrderStatus:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error("Error en updateOrderStatus:", error.response?.data || error);
+    throw (
+      error.response?.data || {
+        message: "Error al actualizar estado de la orden",
+      }
+    );
+  }
+};
+
+export const updateOrderNumbers = async (orderId, numbers) => {
+  try {
+    const response = await axiosInstance.put(
+      `/api/orders/${orderId}/numbers`,
+      numbers
+    );
+    console.log("Respuesta de updateOrderNumbers:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error(
+      "Error en updateOrderNumbers:",
+      error.response?.data || error
+    );
+    throw (
+      error.response?.data || {
+        message: "Error al actualizar números de orden/factura",
+      }
+    );
+  }
+};
+
+export const requestPart = async (orderId, part) => {
+  try {
+    const response = await axiosInstance.post(`/api/orders/${orderId}/parts`, {
+      part_id: part.part_id,
+      name: part.name,
+      quantity: part.quantity,
+      requested_by: part.requested_by,
+      status: part.status || "Solicitado",
+      authorized_by: part.authorized_by || null,
+    });
+    console.log("Respuesta de requestPart:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error("Error en requestPart:", error.response?.data || error);
+    throw error.response?.data || { message: "Error al solicitar repuesto" };
+  }
+};
+
+export const updatePartAdmin = async (
+  orderId,
+  partId,
+  partData,
+  authorizedBy
+) => {
+  try {
+    const response = await axiosInstance.put(
+      `/api/orders/${orderId}/parts/${partId}`,
+      {
+        quantity: partData.quantity,
+        status: partData.status,
+        price: partData.price ? parseFloat(partData.price) : null,
+        note: partData.note || "",
+        authorized_by: partData.status === "Aprobado" ? authorizedBy : null,
+      }
+    );
+    console.log("Respuesta de updatePart:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error("Error en updatePart:", error.response?.data || error);
+    throw error.response?.data || { message: "Error al actualizar repuesto" };
+  }
+};
+
+export const approvePartReturn = async (orderId, partId, status) => {
+  try {
+    const response = await axiosInstance.post(
+      `/api/orders/${orderId}/parts/${partId}/approve-return`,
+      { status }
+    );
+    console.log("Respuesta de approvePartReturn:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error("Error en approvePartReturn:", error.response?.data || error);
+    throw error.response?.data || { message: "Error al procesar devolución" };
+  }
+};
+
+export const updatePartQuantity = async (orderId, partId, quantity) => {
+  try {
+    console.log("[orderService.jsx] Enviando updatePartQuantity:", {
+      orderId,
+      partId,
+      quantity,
+    });
+    const response = await axiosInstance.put(
+      `/api/orders/${orderId}/parts/${partId}`,
+      {
+        quantity,
+      }
+    );
+    console.log(
+      "[orderService.jsx] Respuesta de updatePartQuantity:",
+      response.data
+    );
+    return response.data;
+  } catch (error) {
+    console.error(
+      "[orderService.jsx] Error en updatePartQuantity:",
+      error.response?.data || error
+    );
+    throw (
+      error.response?.data || {
+        message:
+          quantity === 0
+            ? "Error al eliminar repuesto"
+            : "Error al actualizar cantidad de repuesto",
+      }
+    );
+  }
+};
+
+export const requestPartReturn = async (orderId, partId, quantity) => {
+  try {
+    const response = await axiosInstance.post(
+      `/api/orders/${orderId}/parts/${partId}/return`,
+      {
+        quantity,
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error("Error en requestPartReturn:", error.response?.data || error);
+    throw (
+      error.response?.data || {
+        message: "Error al solicitar devolución de repuesto",
+      }
+    );
   }
 };
 
 export const getVehicles = async (filters = {}) => {
   try {
-    const response = await axios.get(`${API_URL}/vehicles`, {
-      headers: getAuthHeaders(),
+    const response = await axiosInstance.get("/api/vehicles", {
       params: filters,
     });
     return response.data;
@@ -96,22 +335,238 @@ export const getVehicles = async (filters = {}) => {
   }
 };
 
-export const getParts = async (model) => {
-  const response = await axios.get(`${API_URL}/parts`, {
-    headers: getAuthHeaders(),
-    params: { model },
-  });
-  return response.data;
+export const createVehicle = async (vehicleData) => {
+  try {
+    const response = await axiosInstance.post("/api/vehicles", vehicleData);
+    return response.data;
+  } catch (err) {
+    console.error("Error en createVehicle:", err.response?.data || err);
+    throw err.response?.data || { message: "Error al crear vehículo" };
+  }
+};
+
+export const updateVehicle = async (economicNumber, vehicleData) => {
+  try {
+    const response = await axiosInstance.put(
+      `/api/vehicles/${economicNumber}`,
+      vehicleData
+    );
+    return response.data;
+  } catch (err) {
+    console.error("Error en updateVehicle:", err.response?.data || err);
+    throw err.response?.data || { message: "Error al actualizar vehículo" };
+  }
+};
+
+export const deleteVehicle = async (economicNumber) => {
+  try {
+    const response = await axiosInstance.delete(
+      `/api/vehicles/${economicNumber}`
+    );
+    return response.data;
+  } catch (err) {
+    console.error("Error en deleteVehicle:", err.response?.data || err);
+    throw err.response?.data || { message: "Error al eliminar vehículo" };
+  }
+};
+
+export const getBranches = async () => {
+  try {
+    const response = await axiosInstance.get("/api/vehicles/branches");
+    return response.data;
+  } catch (err) {
+    console.error("Error en getBranches:", err.response?.data || err);
+    throw err.response?.data || { message: "Error al obtener sucursales" };
+  }
+};
+
+export const getVehicleBrands = async () => {
+  try {
+    const response = await axiosInstance.get("/api/vehicles/brands");
+    return response.data;
+  } catch (err) {
+    console.error("Error en getVehicleBrands:", err.response?.data || err);
+    throw (
+      err.response?.data || { message: "Error al obtener marcas de vehículos" }
+    );
+  }
+};
+
+export const getParts = async (model, page = 1, limit = 10) => {
+  try {
+    const response = await axiosInstance.get("/api/parts", {
+      params: { model, page, limit },
+    });
+    return response.data;
+  } catch (err) {
+    console.error("Error en getParts:", err.response?.data || err);
+    throw err.response?.data || { message: "Error al obtener repuestos" };
+  }
+};
+
+export const createPart = async (partData) => {
+  try {
+    const formData = new FormData();
+    Object.entries(partData).forEach(([key, value]) => {
+      if (key === "image" && value instanceof File) {
+        formData.append("image", value);
+      } else if (key === "compatible_models" && Array.isArray(value)) {
+        formData.append("compatible_models", JSON.stringify(value));
+      } else {
+        formData.append(key, value);
+      }
+    });
+
+    const response = await axiosInstance.post("/api/parts", formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error en createPart:", error.response?.data || error);
+    throw error.response?.data || { message: "Error al crear repuesto" };
+  }
+};
+
+export const updatePart = async (partId, partData) => {
+  try {
+    const formData = new FormData();
+    Object.entries(partData).forEach(([key, value]) => {
+      if (key === "image" && value instanceof File) {
+        formData.append("image", value);
+      } else if (key === "compatible_models" && Array.isArray(value)) {
+        formData.append("compatible_models", JSON.stringify(value));
+      } else {
+        formData.append(key, value);
+      }
+    });
+
+    const response = await axiosInstance.put(`/api/parts/${partId}`, formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error en updatePart:", error.response?.data || error);
+    throw error.response?.data || { message: "Error al actualizar repuesto" };
+  }
+};
+
+export const deletePart = async (partId) => {
+  try {
+    const response = await axiosInstance.delete(`/api/parts/${partId}`);
+    return response.data;
+  } catch (error) {
+    console.error("Error en deletePart:", error.response?.data || error);
+    throw error.response?.data || { message: "Error al eliminar repuesto" };
+  }
+};
+
+export const getVehicleModels = async () => {
+  try {
+    const response = await axiosInstance.get("/api/vehicles/models");
+    return response.data;
+  } catch (err) {
+    console.error("Error en getVehicleModels:", err.response?.data || err);
+    throw (
+      err.response?.data || { message: "Error al obtener modelos de vehículos" }
+    );
+  }
 };
 
 export const getNotifications = async (userId) => {
   try {
-    const response = await axios.get(`${API_URL}/notifications`, {
-      headers: getAuthHeaders(),
+    const response = await axiosInstance.get("/api/notifications", {
       params: { to_user_id: userId },
     });
     return response.data;
   } catch (err) {
+    console.error("Error en getNotifications:", err.response?.data || err);
     throw err.response?.data || { message: "Error al obtener notificaciones" };
+  }
+};
+
+export const getConversations = async (userId) => {
+  try {
+    const response = await axiosInstance.get(
+      "/api/notifications/conversations",
+      {
+        params: { user_id: userId },
+      }
+    );
+    return response.data;
+  } catch (err) {
+    console.error("Error en getConversations:", err.response?.data || err);
+    throw err.response?.data || { message: "Error al obtener conversaciones" };
+  }
+};
+
+export const getMessagesByOrderId = async (orderId, userId) => {
+  try {
+    const response = await axiosInstance.get(`/api/notifications`, {
+      params: { order_id: orderId, user_id: userId },
+    });
+    return response.data;
+  } catch (err) {
+    console.error("Error en getMessagesByOrderId:", err.response?.data || err);
+    throw err.response?.data || { message: "Error al obtener mensajes" };
+  }
+};
+
+export const createNotification = async (notificationData, files = []) => {
+  try {
+    const formData = new FormData();
+    Object.entries(notificationData).forEach(([key, value]) => {
+      formData.append(key, value);
+    });
+    files.forEach((file) => {
+      formData.append("attachments", file);
+    });
+
+    const response = await axiosInstance.post("/api/notifications", formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    });
+    console.log("Respuesta de createNotification:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error(
+      "Error en createNotification:",
+      error.response?.data || error
+    );
+    throw error.response?.data || { message: "Error al crear notificación" };
+  }
+};
+
+export const finalizeOrder = async (orderId, data) => {
+  try {
+    const response = await axiosInstance.put(
+      `/api/orders/${orderId}/finalize`,
+      data
+    );
+    console.log("Respuesta de finalizeOrder:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error("Error en finalizeOrder:", error.response?.data || error);
+    throw error.response?.data || { message: "Error al finalizar orden" };
+  }
+};
+
+export const updatePartInventory = async (partId, quantityChange) => {
+  try {
+    const response = await axiosInstance.put(`/api/parts/${partId}/inventory`, {
+      quantityChange,
+    });
+    console.log("Respuesta de updatePartInventory:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error(
+      "Error en updatePartInventory:",
+      error.response?.data || error
+    );
+    throw error.response?.data || { message: "Error al actualizar inventario" };
   }
 };

@@ -3,12 +3,13 @@ import { toast } from "react-toastify";
 import { Navbar, Nav, Container, Badge } from "react-bootstrap";
 import styled from "@emotion/styled";
 import { useAuth } from "../context/AuthContext";
-import { getOrders, getNotifications } from "../services/orderService";
+import { getOrderCounts, getNotifications } from "../services/orderService";
 import logo from "../assets/images/logo.jpeg";
 
 const HeaderContainer = styled(Navbar)`
-  background-color: #343a40;
+  background-color: rgb(18, 41, 48);
   padding: 10px 20px;
+  border-radius: 10px;
 `;
 
 const Logo = styled.img`
@@ -40,9 +41,13 @@ const DashboardHeader = ({ title }) => {
   useEffect(() => {
     const fetchCounts = async () => {
       try {
-        const ordersData = await getOrders({ technician_id: user.id });
-        const notificationsData = await getNotifications(user.id);
-        setActiveOrdersCount(ordersData.length);
+        const [countsData, notificationsData] = await Promise.all([
+          getOrderCounts({ id: user.id }),
+          getNotifications(user.id),
+        ]);
+        const activeOrders =
+          (countsData.inProcess || 0) + (countsData.pending || 0);
+        setActiveOrdersCount(activeOrders);
         setNotificationsCount(notificationsData.length);
       } catch (err) {
         console.error("Error al cargar contadores:", err);
@@ -68,7 +73,9 @@ const DashboardHeader = ({ title }) => {
             |{" "}
           </span>
           <span>
-            Órdenes Activas: {activeOrdersCount} |{" "}
+            {user?.role !== "secretary" && user?.role !== "client" && (
+              <>Órdenes Activas: {activeOrdersCount} | </>
+            )}
             <Badge bg="danger">{notificationsCount} Notificaciones</Badge>
           </span>
         </UserInfo>

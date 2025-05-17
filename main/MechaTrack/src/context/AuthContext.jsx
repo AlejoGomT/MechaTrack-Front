@@ -1,48 +1,47 @@
 import { createContext, useContext, useState, useEffect } from "react";
-import axios from "axios";
+import { useNavigate } from "react-router-dom";
+import { login } from "../services/orderService";
 
 const AuthContext = createContext();
 
-const API_URL = "http://localhost:5000/api"; // Constante para la URL base
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem("token"));
-  const [loading, setLoading] = useState(true); // Nuevo estado para carga inicial
+  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
-  // Verificar token al cargar la app
   useEffect(() => {
     const verifyToken = async () => {
       if (token) {
         try {
-          const response = await axios.get(`${API_URL}/auth/verify`, {
+          const response = await fetch(`${API_URL}/auth/verify`, {
             headers: { Authorization: `Bearer ${token}` },
           });
-          setUser(response.data.user);
+          if (!response.ok) throw new Error("Token inválido");
+          const data = await response.json();
+          setUser(data.user);
         } catch (error) {
-          console.error("Token inválido:", error);
-          setToken(null);
-          setUser(null);
-          localStorage.removeItem("token");
+          logout();
         }
+      } else {
+        setUser(null);
       }
       setLoading(false);
     };
     verifyToken();
   }, [token]);
 
-  const login = async (id, password) => {
+  const loginUser = async (id, password) => {
     try {
-      const response = await axios.post(`${API_URL}/auth/login`, {
-        id,
-        password,
-      });
-      setUser(response.data.user);
-      setToken(response.data.token);
-      localStorage.setItem("token", response.data.token);
+      const response = await login(id, password);
+      setUser(response.user);
+      setToken(response.token);
+      localStorage.setItem("token", response.token);
+      navigate("/admin");
       return true;
     } catch (error) {
-      console.error("Error en login:", error);
       const message =
         error.response?.data?.message || "Usuario o contraseña incorrectos";
       throw new Error(message);
@@ -53,13 +52,22 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
     setToken(null);
     localStorage.removeItem("token");
+    navigate("/");
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, loading }}>
+    <AuthContext.Provider
+      value={{ user, token, login: loginUser, logout, loading }}
+    >
       {children}
     </AuthContext.Provider>
   );
 };
 
-export const useAuth = () => useContext(AuthContext);
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+  return context;
+};
