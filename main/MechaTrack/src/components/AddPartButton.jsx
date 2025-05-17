@@ -4,7 +4,8 @@ import { faPlus } from "@fortawesome/free-solid-svg-icons";
 import { toast } from "react-toastify";
 import PartsModal from "./PartsModal";
 import { CustomButton } from "../styles/GlobalStyles";
-import { getOrderById, getParts } from "../services/orderService";
+import { getParts } from "../services/partService";
+import { getOrderById } from "../services/orderService";
 
 const AddPartButton = ({
   orderId,

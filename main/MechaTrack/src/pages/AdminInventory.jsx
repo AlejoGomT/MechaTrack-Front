@@ -16,14 +16,14 @@ import {
   StyledTable,
   ActionsContainer,
 } from "../styles/GlobalStyles";
+import { API_URL } from "../services/apiConfig";
+import { getVehicleModels } from "../services/vehicleService";
 import {
   getParts,
   createPart,
   updatePart,
   deletePart,
-  getVehicleModels,
-  API_URL,
-} from "../services/orderService";
+} from "../services/partService";
 import { toast } from "react-toastify";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faEye, faPencil, faTrashCan } from "@fortawesome/free-solid-svg-icons";

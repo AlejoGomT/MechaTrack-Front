@@ -6,15 +6,15 @@ import DashboardHeader from "../components/DashboardHeader";
 import CustomButton from "../components/CustomButton";
 import PartsModal from "../components/PartsModal";
 import OrderImagesModal from "../components/OrderImagesModal";
+import { API_URL } from "../services/apiConfig";
+import { getVehicles } from "../services/vehicleService";
+import { getParts } from "../services/partService";
 import {
   createOrder,
-  getVehicles,
-  getParts,
   updateOrder,
   getOrders,
   getOrderById,
   deleteOrderImage,
-  API_URL,
 } from "../services/orderService";
 import {
   MainContainer,

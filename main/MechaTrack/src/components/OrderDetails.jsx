@@ -18,7 +18,8 @@ import {
 } from "../styles/GlobalStyles";
 import AddPartButton from "./AddPartButton";
 import OrderImagesModal from "./OrderImagesModal";
-import { API_URL, deleteOrderImage } from "../services/orderService";
+import { API_URL } from "../services/apiConfig";
+import { deleteOrderImage } from "../services/orderService";
 
 const ReadOnlyField = styled(Form.Control)`
   background-color: #f8f9fa;

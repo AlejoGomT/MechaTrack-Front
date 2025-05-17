@@ -3,12 +3,12 @@ import { Button, Modal, Table, InputGroup, Form } from "react-bootstrap";
 import { toast } from "react-toastify";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faTrash } from "@fortawesome/free-solid-svg-icons";
+import { getOrderById } from "../services/orderService";
 import {
-  getOrderById,
   requestPart,
   updatePartQuantity,
   requestPartReturn,
-} from "../services/orderService";
+} from "../services/partService";
 import {
   TableWrapper,
   StyledTableModal,

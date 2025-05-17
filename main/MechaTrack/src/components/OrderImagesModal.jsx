@@ -9,11 +9,8 @@ import {
   ActionButton,
   ImageContainer,
 } from "../styles/GlobalStyles";
-import {
-  API_URL,
-  deleteOrderImage,
-  updateOrder,
-} from "../services/orderService";
+import { API_URL } from "../services/apiConfig";
+import { deleteOrderImage, updateOrder } from "../services/orderService";
 
 const OrderImagesModal = ({
   show,

@@ -26,9 +26,9 @@ import {
   OrderDetailsModal,
   OrderDetailsBody,
 } from "../styles/GlobalStyles";
+import { getVehicles } from "../services/vehicleService";
 import {
   getOrders,
-  getVehicles,
   updateOrderStatus,
   getOrderCounts,
 } from "../services/orderService";

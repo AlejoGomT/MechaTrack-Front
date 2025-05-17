@@ -24,7 +24,7 @@ import {
   updateVehicle,
   deleteVehicle,
   getBranches,
-} from "../services/orderService";
+} from "../services/vehicleService";
 import { toast } from "react-toastify";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faEye, faPencil, faTrashCan } from "@fortawesome/free-solid-svg-icons";

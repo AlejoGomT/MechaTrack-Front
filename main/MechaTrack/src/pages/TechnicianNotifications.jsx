@@ -19,12 +19,12 @@ import {
   FormInput,
   PartRequestBanner,
 } from "../styles/GlobalStyles";
+import { getOrderById } from "../services/orderService";
 import {
   getConversations,
   getMessagesByOrderId,
-  getOrderById,
   createNotification,
-} from "../services/orderService";
+} from "../services/notificationService";
 import { toast } from "react-toastify";
 
 const technicianMenu = [

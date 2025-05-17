@@ -3,7 +3,8 @@ import { toast } from "react-toastify";
 import { Navbar, Nav, Container, Badge } from "react-bootstrap";
 import styled from "@emotion/styled";
 import { useAuth } from "../context/AuthContext";
-import { getOrderCounts, getNotifications } from "../services/orderService";
+import { getOrderCounts } from "../services/orderService";
+import { getNotifications } from "../services/notificationService";
 import logo from "../assets/images/logo.jpeg";
 
 const HeaderContainer = styled(Navbar)`

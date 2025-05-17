@@ -27,14 +27,16 @@ import {
 import { library } from "@fortawesome/fontawesome-svg-core";
 import { toast } from "react-toastify";
 import {
+  updatePartQuantity,
+  requestPart,
+  updatePartAdmin,
+} from "../services/partService";
+import {
   getOrders,
   getOrderById,
   updateOrderNumbers,
   updateOrderStatus,
   updateOrder,
-  updatePartQuantity,
-  requestPart,
-  updatePartAdmin,
 } from "../services/orderService";
 
 library.add(faCircle, faCheck, faTimes, faEye);
