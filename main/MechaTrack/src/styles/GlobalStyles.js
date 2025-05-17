@@ -223,6 +223,26 @@ export const StyledTable = styled.table`
     white-space: nowrap;
     min-width: 150px;
   }
+  th:nth-of-type(1),
+  td:nth-of-type(1) {
+    min-width: 100px;
+  }
+  th:nth-of-type(2),
+  td:nth-of-type(2) {
+    min-width: 150px;
+  }
+  th:nth-of-type(3),
+  td:nth-of-type(3) {
+    min-width: 150px;
+  }
+  th:nth-of-type(4),
+  td:nth-of-type(4) {
+    min-width: 200px;
+  }
+  th:nth-of-type(5),
+  td:nth-of-type(5) {
+    min-width: 120px;
+  }
 `;
 
 export const StatusDiv = styled.div`
