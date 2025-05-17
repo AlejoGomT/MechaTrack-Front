@@ -723,6 +723,17 @@ export const ConditionalInputContainer = styled.div`
   margin-top: 0.5rem;
 `;
 
+export const ButtonDetails = styled(Button)(({ variant }) => ({
+  backgroundColor: "#17a2b8",
+  border: "none",
+  padding: "8px 16px",
+  transition: "background-color 0.3s",
+  "&:hover": {
+    backgroundColor:
+      variant === "secondary" ? colors.secondaryHover : colors.primaryHover,
+  },
+}));
+
 export const MessageBubble = styled.div`
   max-width: 70%;
   padding: 0.75rem;
@@ -731,11 +742,26 @@ export const MessageBubble = styled.div`
   background-color: ${(props) =>
     props.sender === "user" ? "#d74a49" : "#e9ecef"};
   color: ${(props) => (props.sender === "user" ? "white" : "#333")};
+  align-self: ${(props) =>
+    props.sender === "user" ? "flex-end" : "flex-start"};
 `;
 
 export const MessageInputWrapper = styled.div`
   border-top: 1px solid #ddd;
   padding: 1rem;
+`;
+
+export const PartRequestBanner = styled.div`
+  width: 50%;
+  color: #333;
+  padding: 1rem;
+  border-radius: 8px;
+  margin: 1rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 `;
 
 export const MessageContainer = styled.div`

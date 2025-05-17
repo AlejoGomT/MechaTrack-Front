@@ -1,11 +1,11 @@
-// TechnicianNotifications.jsx
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useAuth } from "../context/AuthContext";
 import { Container, Form, Image, Button } from "react-bootstrap";
 import { useLocation, useNavigate } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import CustomButton from "../components/CustomButton";
+import PartsModal from "../components/PartsModal";
 import {
   MainContainer,
   Content,
@@ -17,6 +17,7 @@ import {
   MessageBubble,
   MessageInputWrapper,
   FormInput,
+  PartRequestBanner,
 } from "../styles/GlobalStyles";
 import {
   getConversations,
@@ -24,6 +25,7 @@ import {
   getOrderById,
   createNotification,
 } from "../services/orderService";
+import { toast } from "react-toastify";
 
 const technicianMenu = [
   { label: "Inicio", path: "../technician" },
@@ -43,6 +45,10 @@ const TechnicianNotifications = () => {
   const [newMessage, setNewMessage] = useState("");
   const [orderStatus, setOrderStatus] = useState(null);
   const [files, setFiles] = useState([]);
+  const [showPartsManagementModal, setShowPartsManagementModal] =
+    useState(false);
+  const [partsList, setPartsList] = useState([]);
+  const [availableParts, setAvailableParts] = useState([]);
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
 
@@ -56,7 +62,6 @@ const TechnicianNotifications = () => {
           data
         );
         setConversations(data);
-        // Preseleccionar conversación desde URL
         const params = new URLSearchParams(location.search);
         const orderId = params.get("orderId");
         if (orderId) {
@@ -67,6 +72,7 @@ const TechnicianNotifications = () => {
         }
       } catch (error) {
         console.error("Error al cargar conversaciones:", error);
+        toast.error("Error al cargar conversaciones");
       }
     };
     fetchConversations();
@@ -81,7 +87,7 @@ const TechnicianNotifications = () => {
       conversation
     );
     setSelectedConversation(conversation);
-    setMessages([]); // Reiniciar mensajes para evitar mensajes antiguos
+    setMessages([]);
     try {
       const messagesData = await getMessagesByOrderId(
         conversation.order_id,
@@ -100,9 +106,24 @@ const TechnicianNotifications = () => {
           created_at: m.created_at,
         }))
       );
+      // Log adicional para verificar tipos de mensajes
+      console.log(
+        "[TechnicianNotifications] Tipos de mensajes:",
+        messagesData.map((m) => m.type)
+      );
       setMessages(messagesData);
       const order = await getOrderById(conversation.order_id);
       setOrderStatus(order.status);
+      setPartsList(order.parts || []);
+      setAvailableParts([]); // Nota: getParts no está en orderService.jsx
+      // Log para verificar partRequestNotifications
+      const partRequests = messagesData.filter(
+        (m) => m.type === "part_request"
+      );
+      console.log(
+        "[TechnicianNotifications] Notificaciones de part_request:",
+        partRequests
+      );
       // Marcar mensajes como leídos
       const unreadMessages = messagesData.filter(
         (m) => m.status === "Pendiente" && m.to_user_id === user.id
@@ -128,8 +149,10 @@ const TechnicianNotifications = () => {
             : c
         )
       );
+      navigate(`?orderId=${conversation.order_id}`, { replace: true });
     } catch (error) {
       console.error("Error al cargar mensajes o marcar como leídos:", error);
+      toast.error("Error al cargar mensajes");
     }
   };
 
@@ -166,6 +189,7 @@ const TechnicianNotifications = () => {
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (error) {
       console.error("Error al enviar mensaje:", error);
+      toast.error("Error al enviar mensaje");
     }
   };
 
@@ -180,6 +204,18 @@ const TechnicianNotifications = () => {
   // Auto-scroll al final de los mensajes
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // Filtrar notificaciones de part_request
+  const partRequestNotifications = useMemo(() => {
+    return messages.filter((m) => m.type === "part_request");
+  }, [messages]);
+
+  // Filtrar mensajes para el chat (excluir part_request y order_creation)
+  const chatMessages = useMemo(() => {
+    return messages.filter(
+      (m) => m.type !== "part_request" && m.type !== "order_creation"
+    );
   }, [messages]);
 
   const isChatDisabled = ["Facturado", "Finalizado"].includes(orderStatus);
@@ -257,32 +293,56 @@ const TechnicianNotifications = () => {
                   <div
                     style={{ padding: "1.5rem", flex: "1", overflowY: "auto" }}
                   >
-                    <div style={{ marginBottom: "1.5rem" }}>
-                      <h2
-                        style={{
-                          fontSize: "1.5rem",
-                          fontWeight: "bold",
-                          color: "#1b4552",
-                        }}
-                      >
-                        Orden #{selectedConversation.order_id} (
-                        {selectedConversation.vehicle_economic_number})
-                      </h2>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          color: "#6c757d",
-                          fontSize: "0.875rem",
-                        }}
-                      >
-                        <span>Estado: {orderStatus}</span>
-                        <span style={{ margin: "0 0.5rem" }}>•</span>
-                        <span>
-                          {selectedConversation.total_messages} mensaje
-                          {selectedConversation.total_messages !== 1 ? "s" : ""}
-                        </span>
+                    <div className="d-flex justify-content-between align-items-center">
+                      <div style={{ marginBottom: "1.5rem" }}>
+                        <h2
+                          style={{
+                            fontSize: "1.5rem",
+                            fontWeight: "bold",
+                            color: "#1b4552",
+                          }}
+                        >
+                          Orden #{selectedConversation.order_id} (
+                          {selectedConversation.vehicle_economic_number})
+                        </h2>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            color: "#6c757d",
+                            fontSize: "0.875rem",
+                          }}
+                        >
+                          <span>Estado: {orderStatus}</span>
+                          <span style={{ margin: "0 0.5rem" }}>•</span>
+                          <span>
+                            {chatMessages.length} mensaje
+                            {chatMessages.length !== 1 ? "s" : ""}
+                          </span>
+                        </div>
                       </div>
+                      {/* Banner de solicitudes de repuestos */}
+                      {partRequestNotifications.length > 0 && (
+                        <PartRequestBanner role="alert">
+                          <span
+                            style={{
+                              fontWeight: "bold",
+                              color: "#1b4552",
+                              marginBottom: "0.5rem",
+                            }}
+                          >
+                            solicitud de repuestos para la orden #
+                            {selectedConversation.order_id}
+                          </span>
+                          <Button
+                            variant="primary"
+                            onClick={() => setShowPartsManagementModal(true)}
+                            aria-label="Ver repuestos solicitados"
+                          >
+                            Ver repuestos
+                          </Button>
+                        </PartRequestBanner>
+                      )}
                     </div>
                     <div
                       style={{
@@ -290,19 +350,14 @@ const TechnicianNotifications = () => {
                         flexDirection: "column",
                         gap: "0.5rem",
                       }}
+                      aria-live="polite"
                     >
-                      {messages.map((message) => (
+                      {chatMessages.map((message) => (
                         <MessageBubble
                           key={message.id}
                           sender={
                             message.from_user_id === user.id ? "user" : "other"
                           }
-                          style={{
-                            alignSelf:
-                              message.from_user_id === user.id
-                                ? "flex-end"
-                                : "flex-start",
-                          }}
                         >
                           <p>{message.message}</p>
                           {message.details && (
@@ -455,6 +510,22 @@ const TechnicianNotifications = () => {
             </MessageDetailContainer>
           </MessageContainer>
         </Container>
+        {/* Modal para gestionar repuestos */}
+        {selectedConversation && (
+          <PartsModal
+            showPartsModal={false}
+            setShowPartsModal={() => {}}
+            showPartsManagementModal={showPartsManagementModal}
+            setShowPartsManagementModal={setShowPartsManagementModal}
+            partsList={partsList}
+            setPartsList={setPartsList}
+            availableParts={availableParts}
+            orderId={selectedConversation.order_id}
+            isReadOnly={isChatDisabled}
+            userId={user.id}
+            isFinalized={isChatDisabled}
+          />
+        )}
       </Content>
     </MainContainer>
   );

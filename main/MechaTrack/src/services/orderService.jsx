@@ -256,6 +256,20 @@ export const updatePartAdmin = async (
   }
 };
 
+export const approvePartReturn = async (orderId, partId, status) => {
+  try {
+    const response = await axiosInstance.post(
+      `/api/orders/${orderId}/parts/${partId}/approve-return`,
+      { status }
+    );
+    console.log("Respuesta de approvePartReturn:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error("Error en approvePartReturn:", error.response?.data || error);
+    throw error.response?.data || { message: "Error al procesar devolución" };
+  }
+};
+
 export const updatePartQuantity = async (orderId, partId, quantity) => {
   try {
     console.log("[orderService.jsx] Enviando updatePartQuantity:", {

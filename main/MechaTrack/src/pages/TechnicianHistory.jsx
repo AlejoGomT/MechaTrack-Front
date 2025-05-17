@@ -288,21 +288,19 @@ const TechnicianHistory = () => {
                             {order.status}
                           </StatusDiv>
                         </td>
-                        <td>
-                          {order.notifications?.length > 0 ? (
-                            <NavLink
-                              href={`/technician/notifications?orderId=${order.id}`}
-                            >
-                              <NotificationIcon>
-                                <FontAwesomeIcon icon={faBell} />
+                        <td className="text-center">
+                          <NavLink
+                            href={`/technician/notifications?orderId=${order.id}`}
+                          >
+                            <NotificationIcon>
+                              <FontAwesomeIcon icon={faBell} />
+                              {order.notifications?.length > 0 && (
                                 <NotificationCount>
                                   {order.notifications.length}
                                 </NotificationCount>
-                              </NotificationIcon>
-                            </NavLink>
-                          ) : (
-                            "-"
-                          )}
+                              )}
+                            </NotificationIcon>
+                          </NavLink>
                         </td>
                         <td className="actions">
                           <ActionsContainer>

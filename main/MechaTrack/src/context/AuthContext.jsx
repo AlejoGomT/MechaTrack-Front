@@ -12,7 +12,6 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  // Verificar token al cargar la app
   useEffect(() => {
     const verifyToken = async () => {
       if (token) {
@@ -24,7 +23,6 @@ export const AuthProvider = ({ children }) => {
           const data = await response.json();
           setUser(data.user);
         } catch (error) {
-          console.error("Token inválido:", error);
           logout();
         }
       } else {

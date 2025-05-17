@@ -60,9 +60,7 @@ const PartsModal = ({
           }))
         : [];
 
-      const isDifferent =
-        JSON.stringify(orderParts) !== JSON.stringify(localPartsList);
-      if (isDifferent) {
+      if (JSON.stringify(orderParts) !== JSON.stringify(localPartsList)) {
         setLocalPartsList(orderParts);
         setPartsList(orderParts);
       }
@@ -71,7 +69,14 @@ const PartsModal = ({
     } finally {
       setIsLoading(false);
     }
-  }, [orderId, showPartsModal, showPartsManagementModal, setPartsList, userId]);
+  }, [
+    orderId,
+    showPartsModal,
+    showPartsManagementModal,
+    localPartsList,
+    setPartsList,
+    userId,
+  ]);
 
   useEffect(() => {
     fetchOrderParts();
@@ -389,7 +394,11 @@ const PartsModal = ({
                               part.quantity
                             )}
                           </td>
-                          <td>{part.status}</td>
+                          <td>
+                            {part.status === "Devolución Aprobada"
+                              ? "Eliminado (Devolución Aprobada)"
+                              : part.status}
+                          </td>
                           <td>
                             <ActionsContainer>
                               {part.status === "Solicitado" && !isReadOnly && (

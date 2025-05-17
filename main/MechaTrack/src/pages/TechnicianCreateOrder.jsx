@@ -716,7 +716,9 @@ const OrderForm = memo(
                           <StatusIndicator status={part.status}>
                             <FontAwesomeIcon icon={faCircle} />
                           </StatusIndicator>
-                          {part.status}
+                          {part.status === "Devolución Aprobada"
+                            ? "Eliminado (Devolución Aprobada)"
+                            : part.status}
                         </td>
                       </tr>
                     ))}
