@@ -200,18 +200,22 @@ export const StyledTable = styled.table`
   margin-top: 20px;
   th,
   td {
-    padding: 12px;
+    padding: 10px;
     border: 1px solid #ddd;
     text-align: left;
     vertical-align: middle;
+    font-size: 0.9rem;
   }
   th {
     background-color: ${colors.backgroundLight};
     color: white;
     font-weight: bold;
+    white-space: wrap;
+    text-align: center;
   }
   td {
     line-height: 1.5;
+    white-space: nowrap;
   }
   tr:nth-of-type(even) {
     background-color: #f9f9f9;
@@ -221,27 +225,43 @@ export const StyledTable = styled.table`
   }
   td.actions {
     white-space: nowrap;
-    min-width: 150px;
+    min-width: 120px;
   }
   th:nth-of-type(1),
   td:nth-of-type(1) {
-    min-width: 100px;
+    min-width: 80px;
   }
   th:nth-of-type(2),
   td:nth-of-type(2) {
-    min-width: 150px;
+    min-width: 100px;
   }
   th:nth-of-type(3),
   td:nth-of-type(3) {
-    min-width: 150px;
+    min-width: 100px;
   }
   th:nth-of-type(4),
   td:nth-of-type(4) {
-    min-width: 200px;
+    min-width: 100px;
   }
   th:nth-of-type(5),
   td:nth-of-type(5) {
+    min-width: 100px;
+  }
+  th:nth-of-type(6),
+  td:nth-of-type(6) {
     min-width: 120px;
+  }
+  th:nth-of-type(7),
+  td:nth-of-type(7) {
+    min-width: 80px;
+  }
+  th:nth-of-type(8),
+  td:nth-of-type(8) {
+    min-width: 100px;
+  }
+  th:nth-of-type(9),
+  td:nth-of-type(9) {
+    min-width: 100px;
   }
 `;
 
@@ -538,6 +558,8 @@ export const ModalBody = styled(Modal.Body)`
 
 export const TableWrapper = styled.div`
   overflow-x: auto;
+  width: 100%;
+  max-width: 100%;
 `;
 
 export const StyledTableModal = styled(Table)`
@@ -670,6 +692,22 @@ export const DetailValue = styled.p`
   font-weight: 500;
   color: ${colors.backgroundDark};
   margin-bottom: 1rem;
+  border-radius: ${({ variant }) =>
+    variant === "pending"
+      ? "10px solid #ffc107"
+      : variant === "approved"
+      ? "10px solid #28a745"
+      : variant === "inProcess"
+      ? "10px solid #fae79c"
+      : ""};
+  background-color: ${({ variant }) =>
+    variant === "pending"
+      ? "#fffbe6"
+      : variant === "approved"
+      ? "#e6ffed"
+      : variant === "inProcess"
+      ? "#fffbe6"
+      : "transparent"};
 
   &.price {
     color: ${colors.success};
