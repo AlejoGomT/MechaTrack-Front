@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Container, Row, Col } from "react-bootstrap";
+import { Container, Row, Col, Pagination } from "react-bootstrap";
 import { useAuth } from "../context/AuthContext";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
@@ -10,15 +10,21 @@ import {
   getOrderReport,
   downloadBranchReportsExcel,
 } from "../services/reportService";
+import { getOrders } from "../services/orderService";
 import { toast } from "react-toastify";
 import {
+  colors,
   StyledTable,
+  FiltersContainer,
   FilterGroup,
   FilterLabel,
   FilterInput,
   FilterSelect,
   TableWrapper,
+  ActionsContainer,
 } from "../styles/GlobalStyles";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faEye } from "@fortawesome/free-solid-svg-icons";
 
 const adminMenu = [
   { label: "Inicio", path: "../admin" },
@@ -32,17 +38,24 @@ const adminMenu = [
 ];
 
 const AdminReports = () => {
-  const { user } = useAuth();
-  const [reportType, setReportType] = useState("branch");
+  const { user, token } = useAuth();
+  const [reportType, setReportType] = useState("order");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [branchFilter, setBranchFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [orderId, setOrderId] = useState("");
+  const [orderNumberFilter, setOrderNumberFilter] = useState("");
   const [branches, setBranches] = useState([]);
   const [reports, setReports] = useState([]);
+  const [orders, setOrders] = useState([]);
   const [orderReport, setOrderReport] = useState(null);
   const [showOrderModal, setShowOrderModal] = useState(false);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 15,
+    totalPages: 1,
+    total: 0,
+  });
 
   useEffect(() => {
     const fetchBranches = async () => {
@@ -56,6 +69,38 @@ const AdminReports = () => {
     };
     fetchBranches();
   }, []);
+
+  useEffect(() => {
+    if (reportType === "order" && token) {
+      const fetchOrders = async () => {
+        try {
+          const response = await getOrders({
+            status: statusFilter,
+            orderNumber: orderNumberFilter,
+            page: pagination.page,
+            limit: pagination.limit,
+          });
+          console.log("[AdminReports] Respuesta de getOrders:", response);
+          setOrders(response.orders || []);
+          setPagination({
+            ...pagination,
+            total: response.total || 0,
+            totalPages: response.totalPages || 1,
+          });
+        } catch (error) {
+          console.error("[AdminReports] Error al cargar órdenes:", error);
+          toast.error(error.message || "Error al cargar órdenes");
+          setOrders([]);
+          setPagination({
+            ...pagination,
+            total: 0,
+            totalPages: 1,
+          });
+        }
+      };
+      fetchOrders();
+    }
+  }, [reportType, statusFilter, orderNumberFilter, pagination.page, token]);
 
   const fetchBranchReports = async () => {
     try {
@@ -72,13 +117,18 @@ const AdminReports = () => {
     }
   };
 
-  const fetchOrderReport = async () => {
+  const fetchOrderReport = async (orderId) => {
+    console.log("Fetching order report for orderId:", orderId);
     try {
+      if (!orderId) {
+        throw new Error("ID de orden no proporcionado");
+      }
       const data = await getOrderReport(orderId);
       setOrderReport(data);
       setShowOrderModal(true);
     } catch (error) {
-      toast.error(error.message);
+      toast.error(error.message || "Error al generar informe");
+      console.error("[AdminReports] Error en fetchOrderReport:", error);
     }
   };
 
@@ -97,11 +147,17 @@ const AdminReports = () => {
     }
   };
 
+  const handlePageChange = (newPage) => {
+    if (newPage >= 1 && newPage <= pagination.totalPages) {
+      setPagination({ ...pagination, page: newPage });
+    }
+  };
+
   const userData = {
     userId: user?.id,
     userName: user?.name,
     activeOrdersCount: reports.reduce((acc, r) => acc + r.in_process, 0),
-    notificationsCount: 0, // Puede integrarse con notificationService.jsx si es necesario
+    notificationsCount: 0,
   };
 
   return (
@@ -118,8 +174,8 @@ const AdminReports = () => {
                   value={reportType}
                   onChange={(e) => setReportType(e.target.value)}
                 >
-                  <option value="branch">Por Sucursal</option>
                   <option value="order">Por Orden</option>
+                  <option value="branch">Por Sucursal</option>
                 </FilterSelect>
               </FilterGroup>
             </Col>
@@ -192,6 +248,7 @@ const AdminReports = () => {
                   </CustomButton>
                 </Col>
               </Row>
+
               <TableWrapper>
                 <StyledTable>
                   <thead>
@@ -227,24 +284,105 @@ const AdminReports = () => {
             </>
           ) : (
             <>
-              <Row className="mb-3">
-                <Col md={6}>
-                  <FilterGroup>
-                    <FilterLabel>ID de la Orden</FilterLabel>
-                    <FilterInput
-                      type="text"
-                      value={orderId}
-                      onChange={(e) => setOrderId(e.target.value)}
-                      placeholder="Ingrese ID de la orden"
-                    />
-                  </FilterGroup>
-                </Col>
-                <Col md={6} className="d-flex align-items-end">
-                  <CustomButton onClick={fetchOrderReport}>
-                    Generar Informe
-                  </CustomButton>
-                </Col>
-              </Row>
+              <FiltersContainer>
+                <FilterGroup>
+                  <FilterLabel>Sucursal</FilterLabel>
+                  <FilterSelect
+                    value={branchFilter}
+                    onChange={(e) => setBranchFilter(e.target.value)}
+                  >
+                    <option value="">Todas</option>
+                    {branches.map((branch) => (
+                      <option key={branch} value={branch}>
+                        {branch}
+                      </option>
+                    ))}
+                  </FilterSelect>
+                </FilterGroup>
+                <FilterGroup>
+                  <FilterLabel>Estado</FilterLabel>
+                  <FilterSelect
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                  >
+                    <option value="">Todos</option>
+                    <option value="En Proceso">En Proceso</option>
+                    <option value="Pendiente">Pendiente</option>
+                    <option value="Finalizado">Finalizado</option>
+                    <option value="Pendiente de Facturación">
+                      Pendiente de Facturación
+                    </option>
+                    <option value="Facturado">Facturado</option>
+                  </FilterSelect>
+                </FilterGroup>
+                <FilterGroup>
+                  <FilterLabel>Número de Orden</FilterLabel>
+                  <FilterInput
+                    type="text"
+                    value={orderNumberFilter}
+                    onChange={(e) => setOrderNumberFilter(e.target.value)}
+                    placeholder="Filtrar por N° Orden"
+                  />
+                </FilterGroup>
+              </FiltersContainer>
+              <TableWrapper>
+                <StyledTable>
+                  <thead>
+                    <tr>
+                      <th>Número Económico</th>
+                      <th>Número de Orden</th>
+                      <th>Sucursal</th>
+                      <th>Estado</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {orders
+                      .filter((order) =>
+                        branchFilter ? order.branch === branchFilter : true
+                      )
+                      .map((order) => (
+                        <tr key={order.id}>
+                          <td>{order.vehicle_economic_number}</td>
+                          <td>{order.id}</td>
+                          <td>{order.branch || "-"}</td>
+                          <td>{order.status}</td>
+                          <td className="actions">
+                            <ActionsContainer>
+                              <CustomButton
+                                onClick={() => fetchOrderReport(order.id)}
+                                title="Generar Informe"
+                              >
+                                <FontAwesomeIcon icon={faEye} />
+                              </CustomButton>
+                            </ActionsContainer>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </StyledTable>
+              </TableWrapper>
+              <div className="pt-3 d-flex justify-content-center">
+                <Pagination>
+                  <Pagination.Prev
+                    onClick={() => handlePageChange(pagination.page - 1)}
+                    disabled={pagination.page === 1}
+                  />
+                  {[...Array(pagination.totalPages).keys()].map((i) => (
+                    <Pagination.Item
+                      key={i + 1}
+                      active={i + 1 === pagination.page}
+                      onClick={() => handlePageChange(i + 1)}
+                    >
+                      {i + 1}
+                    </Pagination.Item>
+                  ))}
+                  <Pagination.Next
+                    onClick={() => handlePageChange(pagination.page + 1)}
+                    disabled={pagination.page === pagination.totalPages}
+                  />
+                </Pagination>
+              </div>
             </>
           )}
           {orderReport && (

@@ -1,140 +1,617 @@
-import { useState, useEffect } from "react";
-import { Container, Table, Button } from "react-bootstrap";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useAuth } from "../context/AuthContext";
-import { useNavigate } from "react-router-dom";
+import { useSocket } from "../context/SocketContext";
+import { Container, Form, Image, Button } from "react-bootstrap";
+import { useLocation, useNavigate } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
-import axios from "axios";
+import CustomButton from "../components/CustomButton";
+import PartsModal from "../components/PartsModal";
+import {
+  MainContainer,
+  Content,
+  MessageContainer,
+  NotificationList,
+  NotificationHeader,
+  NotificationItem,
+  MessageDetailContainer,
+  MessageBubble,
+  MessageInputWrapper,
+  FormInput,
+  PartRequestBanner,
+} from "../styles/GlobalStyles";
+import { getOrderById } from "../services/orderService";
+import {
+  getConversations,
+  getMessagesByOrderId,
+} from "../services/notificationService";
 import { toast } from "react-toastify";
 
 const adminMenu = [
-  { label: "Inicio", path: "../admin" },
-  { label: "Órdenes de Servicio", path: "../admin/orders" },
-  { label: "Inventario", path: "../admin/inventory" },
-  { label: "Vehiculos", path: "../admin/vehicles" },
-  { label: "Gestión de Usuarios", path: "../admin/users" },
-  { label: "Notificaciones", path: "../admin/notifications" },
-  { label: "Informes", path: "../admin/reports" },
+  { label: "Inicio", path: "/admin" },
+  { label: "Órdenes de Servicio", path: "/admin/orders" },
+  { label: "Inventario", path: "/admin/inventory" },
+  { label: "Vehículos", path: "/admin/vehicles" },
+  { label: "Gestión de Usuarios", path: "/admin/users" },
+  { label: "Notificaciones", path: "/admin/notifications" },
+  { label: "Informes", path: "/admin/reports" },
   { label: "Cerrar Sesión", path: "/" },
 ];
 
 const AdminNotifications = () => {
   const { user, token } = useAuth();
+  const { notifications, sendMessage, isConnected } = useSocket();
+  const location = useLocation();
   const navigate = useNavigate();
-  const [notifications, setNotifications] = useState([]);
+  const [conversations, setConversations] = useState([]);
+  const [selectedConversation, setSelectedConversation] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState("");
+  const [orderStatus, setOrderStatus] = useState(null);
+  const [files, setFiles] = useState([]);
+  const [showPartsManagementModal, setShowPartsManagementModal] =
+    useState(false);
+  const [partsList, setPartsList] = useState([]);
+  const [availableParts, setAvailableParts] = useState([]);
+  const fileInputRef = useRef(null);
+  const messagesEndRef = useRef(null);
 
+  // Cargar conversaciones al montar
   useEffect(() => {
-    const fetchNotifications = async () => {
+    const fetchConversations = async () => {
       try {
-        const response = await axios.get("/api/notifications", {
-          headers: { Authorization: `Bearer ${token}` },
-          params: { to_user_id: user.id, status: "Pendiente" },
-        });
-        setNotifications(response.data);
+        const data = await getConversations(user.id);
+        console.log("[AdminNotifications] Conversaciones recibidas:", data);
+        setConversations(data);
+        const params = new URLSearchParams(location.search);
+        const orderId = params.get("orderId");
+        if (orderId) {
+          const conversation = data.find((c) => c.order_id === orderId);
+          if (conversation) {
+            handleSelectConversation(conversation);
+          }
+        }
       } catch (error) {
-        toast.error("Error al cargar notificaciones");
-        console.error(
-          "[AdminNotifications] Error al cargar notificaciones:",
-          error
-        );
+        console.error("Error al cargar conversaciones:", error);
+        toast.error("Error al cargar conversaciones");
       }
     };
-    if (token) fetchNotifications();
-  }, [token, user.id]);
+    if (token) fetchConversations();
+  }, [location.search, user.id, token]);
 
-  const handleMarkAsRead = async (notificationId) => {
+  // Respaldo: Polling si WebSocket está desconectado
+  useEffect(() => {
+    if (isConnected) return;
+    const fetchConversations = async () => {
+      try {
+        const data = await getConversations(user.id);
+        setConversations(data);
+      } catch (error) {
+        console.error("Error al cargar conversaciones (polling):", error);
+      }
+    };
+    const interval = setInterval(fetchConversations, 10000);
+    return () => clearInterval(interval);
+  }, [isConnected, user.id]);
+
+  // Cargar mensajes al seleccionar una conversación
+  const handleSelectConversation = async (conversation) => {
+    console.log(
+      "[AdminNotifications] Seleccionando conversación:",
+      conversation
+    );
+    setSelectedConversation(conversation);
+    setMessages([]);
     try {
-      await axios.put(
-        `/api/notifications/${notificationId}`,
-        { status: "Leída" },
-        { headers: { Authorization: `Bearer ${token}` } }
+      const messagesData = await getMessagesByOrderId(
+        conversation.order_id,
+        user.id
       );
-      setNotifications((prev) => prev.filter((n) => n.id !== notificationId));
-      toast.success("Notificación marcada como leída");
+      console.log(
+        "[AdminNotifications] Mensajes recibidos para order_id",
+        conversation.order_id,
+        ":",
+        messagesData.map((m) => ({
+          id: m.id,
+          message: m.message,
+          type: m.type,
+          from_user_id: m.from_user_id,
+          to_user_id: m.to_user_id,
+          created_at: m.created_at,
+        }))
+      );
+      console.log(
+        "[AdminNotifications] Tipos de mensajes:",
+        messagesData.map((m) => m.type)
+      );
+      setMessages(messagesData);
+      const order = await getOrderById(conversation.order_id);
+      setOrderStatus(order.status);
+      setPartsList(order.parts || []);
+      setAvailableParts([]); // Nota: getParts no está en orderService.jsx
+      const partRequests = messagesData.filter(
+        (m) => m.type === "part_request"
+      );
+      console.log(
+        "[AdminNotifications] Notificaciones de part_request:",
+        partRequests
+      );
+      // Marcar mensajes como leídos
+      const unreadMessages = messagesData.filter(
+        (m) => m.status === "Pendiente" && m.to_user_id === user.id
+      );
+      for (const message of unreadMessages) {
+        await fetch(`/api/notifications/${message.id}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ status: "Leída" }),
+        });
+      }
+      setMessages((prev) =>
+        prev.map((m) =>
+          unreadMessages.some((um) => um.id === m.id)
+            ? { ...m, status: "Leída" }
+            : m
+        )
+      );
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.order_id === conversation.order_id
+            ? { ...c, unread_messages: 0 }
+            : c
+        )
+      );
+      navigate(`?orderId=${conversation.order_id}`, { replace: true });
     } catch (error) {
-      toast.error("Error al marcar notificación");
-      console.error(
-        "[AdminNotifications] Error al marcar notificación:",
-        error
-      );
+      console.error("Error al cargar mensajes o marcar como leídos:", error);
+      toast.error("Error al cargar mensajes");
     }
   };
 
-  const userData = {
-    userId: user?.id,
-    userName: `${user?.first_name} ${user?.last_name}`,
-    activeOrdersCount: 0,
-    notificationsCount: notifications.length,
+  // Actualizar mensajes y conversaciones con notificaciones en tiempo real
+  useEffect(() => {
+    if (!selectedConversation) return;
+    const newMessages = notifications.filter(
+      (notif) => notif.orderId === selectedConversation.order_id
+    );
+    if (newMessages.length > 0) {
+      setMessages((prev) => {
+        const updatedMessages = [...prev];
+        newMessages.forEach((notif) => {
+          if (!prev.some((m) => m.id === notif.id)) {
+            updatedMessages.push({
+              id: notif.id,
+              order_id: notif.orderId,
+              from_user_id: notif.fromUserId,
+              to_user_id: notif.toUserId,
+              message: notif.message,
+              type: notif.type,
+              status: notif.status,
+              created_at: new Date(notif.timestamp),
+              attachments: notif.attachments || [],
+            });
+          }
+        });
+        return updatedMessages;
+      });
+      // Actualizar conversaciones
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.order_id === selectedConversation.order_id
+            ? {
+                ...c,
+                last_message_at: new Date(
+                  newMessages[newMessages.length - 1].timestamp
+                ),
+                total_messages: c.total_messages + newMessages.length,
+                unread_messages:
+                  c.unread_messages +
+                  newMessages.filter(
+                    (n) => n.toUserId === user.id && n.status === "Pendiente"
+                  ).length,
+              }
+            : c
+        )
+      );
+    }
+    // Actualizar lista de conversaciones para nuevas órdenes
+    const newOrders = notifications.filter(
+      (notif) => notif.type === "order_creation"
+    );
+    if (newOrders.length > 0) {
+      const fetchConversations = async () => {
+        try {
+          const data = await getConversations(user.id);
+          setConversations(data);
+        } catch (error) {
+          console.error("Error al actualizar conversaciones:", error);
+        }
+      };
+      fetchConversations();
+    }
+  }, [notifications, selectedConversation, user.id]);
+
+  // Enviar mensaje
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    if (!newMessage.trim() && files.length === 0) return;
+
+    try {
+      const toUserId =
+        messages.find((m) => m.from_user_id !== user.id)?.from_user_id ||
+        "technician";
+      const notification = await sendMessage(
+        toUserId,
+        selectedConversation.order_id,
+        newMessage,
+        files
+      );
+      setMessages((prev) => [...prev, notification]);
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.order_id === selectedConversation.order_id
+            ? {
+                ...c,
+                last_message_at: notification.created_at,
+                total_messages: c.total_messages + 1,
+              }
+            : c
+        )
+      );
+      setNewMessage("");
+      setFiles([]);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    } catch (error) {
+      console.error("Error al enviar mensaje:", error);
+      toast.error("Error al enviar mensaje");
+    }
   };
 
+  // Manejar archivos
+  const handleFileChange = (e) => {
+    const selectedFiles = Array.from(e.target.files).filter((file) =>
+      ["image/jpeg", "image/png", "application/pdf"].includes(file.type)
+    );
+    setFiles(selectedFiles);
+  };
+
+  // Auto-scroll al final de los mensajes
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // Filtrar notificaciones de part_request
+  const partRequestNotifications = useMemo(() => {
+    return messages.filter((m) => m.type === "part_request");
+  }, [messages]);
+
+  // Filtrar mensajes para el chat (excluir part_request y order_creation)
+  const chatMessages = useMemo(() => {
+    return messages.filter(
+      (m) => m.type !== "part_request" && m.type !== "order_creation"
+    );
+  }, [messages]);
+
+  const isChatDisabled = ["Facturado", "Finalizado"].includes(orderStatus);
+
   return (
-    <>
+    <MainContainer fluid>
       <Sidebar menuItems={adminMenu} title="Menú Administrador" />
-      <div className="content" style={{ marginLeft: "270px", padding: "20px" }}>
-        <DashboardHeader title="Notificaciones" {...userData} />
-        <Container className="mt-4">
-          {notifications.length > 0 ? (
-            <Table striped bordered hover>
-              <thead>
-                <tr>
-                  <th>Mensaje</th>
-                  <th>Tipo</th>
-                  <th>Orden</th>
-                  <th>Fecha</th>
-                  <th>Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {notifications.map((notification) => (
-                  <tr key={notification.id}>
-                    <td>{notification.message}</td>
-                    <td>
-                      {notification.type === "order_approval"
-                        ? "Aprobación de Orden"
-                        : notification.type === "part_request"
-                        ? "Solicitud de Repuesto"
-                        : "Rechazo de Orden"}
-                    </td>
-                    <td>
-                      {notification.order_id ? (
-                        <Button
-                          variant="link"
-                          onClick={() =>
-                            navigate(
-                              `/admin/orders?orderNumber=${notification.order_id}`
-                            )
+      <Content>
+        <DashboardHeader
+          title="Notificaciones"
+          userId={user?.id}
+          userName={`${user?.first_name} ${user?.last_name}`}
+          activeOrdersCount={0}
+          notificationsCount={conversations.reduce(
+            (acc, c) => acc + c.unread_messages,
+            0
+          )}
+        />
+        <Container fluid>
+          <MessageContainer>
+            <NotificationList>
+              <NotificationHeader>Conversaciones</NotificationHeader>
+              {conversations.map((conversation) => (
+                <NotificationItem
+                  key={conversation.order_id}
+                  className={conversation.unread_messages > 0 ? "new" : ""}
+                  onClick={() => handleSelectConversation(conversation)}
+                >
+                  <div
+                    style={{ display: "flex", justifyContent: "space-between" }}
+                  >
+                    <h3
+                      style={{
+                        fontSize: "1rem",
+                        fontWeight: "medium",
+                        color: "#1b4552",
+                      }}
+                    >
+                      Orden #{conversation.order_id} (
+                      {conversation.vehicle_economic_number})
+                    </h3>
+                    {conversation.unread_messages > 0 && (
+                      <span
+                        style={{
+                          backgroundColor: "#d74a49",
+                          color: "white",
+                          fontSize: "0.75rem",
+                          padding: "0.25rem 0.5rem",
+                          borderRadius: "9999px",
+                        }}
+                      >
+                        {conversation.unread_messages} Nuevo
+                        {conversation.unread_messages > 1 ? "s" : ""}
+                      </span>
+                    )}
+                  </div>
+                  <p
+                    style={{
+                      fontSize: "0.875rem",
+                      color: "#6c757d",
+                      marginTop: "0.25rem",
+                    }}
+                  >
+                    {conversation.senders} ↔ {conversation.recipients}
+                  </p>
+                  <p
+                    style={{
+                      fontSize: "0.75rem",
+                      color: "#6c757d",
+                      marginTop: "0.5rem",
+                    }}
+                  >
+                    Último mensaje:{" "}
+                    {new Date(conversation.last_message_at).toLocaleString(
+                      "es-ES"
+                    )}
+                  </p>
+                </NotificationItem>
+              ))}
+            </NotificationList>
+            <MessageDetailContainer>
+              {selectedConversation ? (
+                <>
+                  <div
+                    style={{ padding: "1.5rem", flex: "1", overflowY: "auto" }}
+                  >
+                    <div className="d-flex justify-content-between align-items-center">
+                      <div style={{ marginBottom: "1.5rem" }}>
+                        <h2
+                          style={{
+                            fontSize: "1.5rem",
+                            fontWeight: "bold",
+                            color: "#1b4552",
+                          }}
+                        >
+                          Orden #{selectedConversation.order_id} (
+                          {selectedConversation.vehicle_economic_number})
+                        </h2>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            color: "#6c757d",
+                            fontSize: "0.875rem",
+                          }}
+                        >
+                          <span>Estado: {orderStatus}</span>
+                          <span style={{ margin: "0 0.5rem" }}>•</span>
+                          <span>
+                            {chatMessages.length} mensaje
+                            {chatMessages.length !== 1 ? "s" : ""}
+                          </span>
+                        </div>
+                      </div>
+                      {partRequestNotifications.length > 0 && (
+                        <PartRequestBanner role="alert">
+                          <span
+                            style={{
+                              fontWeight: "bold",
+                              color: "#1b4552",
+                              marginBottom: "0.5rem",
+                            }}
+                          >
+                            Solicitud de repuestos para la orden #
+                            {selectedConversation.order_id}
+                          </span>
+                          <Button
+                            variant="primary"
+                            onClick={() => setShowPartsManagementModal(true)}
+                            aria-label="Ver repuestos solicitados"
+                          >
+                            Ver repuestos
+                          </Button>
+                        </PartRequestBanner>
+                      )}
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "0.5rem",
+                      }}
+                      aria-live="polite"
+                    >
+                      {chatMessages.map((message) => (
+                        <MessageBubble
+                          key={message.id}
+                          sender={
+                            message.from_user_id === user.id ? "user" : "other"
                           }
                         >
-                          #{notification.order_id}
-                        </Button>
-                      ) : (
-                        "-"
-                      )}
-                    </td>
-                    <td>
-                      {new Date(notification.created_at).toLocaleDateString(
-                        "es-ES"
-                      )}
-                    </td>
-                    <td>
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={() => handleMarkAsRead(notification.id)}
-                      >
-                        Marcar como Leída
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
-          ) : (
-            <p>No hay notificaciones pendientes.</p>
-          )}
+                          <p>{message.message}</p>
+                          {message.details && (
+                            <pre
+                              style={{
+                                fontSize: "0.75rem",
+                                background: "#f8f9fa",
+                                padding: "0.5rem",
+                                borderRadius: "0.25rem",
+                              }}
+                            >
+                              {JSON.stringify(message.details, null, 2)}
+                            </pre>
+                          )}
+                          {message.attachments?.length > 0 && (
+                            <div style={{ marginTop: "0.5rem" }}>
+                              {message.attachments.map((attachment) => (
+                                <div key={attachment.id}>
+                                  {attachment.file_type.startsWith("image/") ? (
+                                    <Image
+                                      src={attachment.file_path}
+                                      thumbnail
+                                      style={{ maxWidth: "200px" }}
+                                    />
+                                  ) : (
+                                    <a
+                                      href={attachment.file_path}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                    >
+                                      Descargar {attachment.file_type}
+                                    </a>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <p
+                            style={{
+                              fontSize: "0.75rem",
+                              color:
+                                message.from_user_id === user.id
+                                  ? "#f8f9fa"
+                                  : "#6c757d",
+                              marginTop: "0.25rem",
+                            }}
+                          >
+                            {new Date(message.created_at).toLocaleTimeString(
+                              "es-ES",
+                              {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              }
+                            )}
+                            {message.status === "Pendiente" &&
+                              message.to_user_id === user.id &&
+                              " (No leído)"}
+                          </p>
+                        </MessageBubble>
+                      ))}
+                      <div ref={messagesEndRef} />
+                    </div>
+                  </div>
+                  {!isChatDisabled ? (
+                    <MessageInputWrapper>
+                      <Form onSubmit={handleSendMessage}>
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: "0.5rem",
+                          }}
+                        >
+                          <div style={{ display: "flex", gap: "0.5rem" }}>
+                            <FormInput
+                              type="text"
+                              value={newMessage}
+                              onChange={(e) => setNewMessage(e.target.value)}
+                              placeholder="Escribe tu mensaje..."
+                              disabled={isChatDisabled}
+                            />
+                            <CustomButton
+                              type="submit"
+                              disabled={
+                                (!newMessage.trim() && files.length === 0) ||
+                                isChatDisabled
+                              }
+                            >
+                              Enviar
+                            </CustomButton>
+                          </div>
+                          <div>
+                            <Button
+                              variant="secondary"
+                              onClick={() => fileInputRef.current?.click()}
+                              disabled={isChatDisabled}
+                            >
+                              Adjuntar archivo
+                            </Button>
+                            <input
+                              type="file"
+                              ref={fileInputRef}
+                              onChange={handleFileChange}
+                              accept="image/jpeg,image/png,application/pdf"
+                              multiple
+                              style={{ display: "none" }}
+                            />
+                            {files.length > 0 && (
+                              <p
+                                style={{
+                                  fontSize: "0.875rem",
+                                  color: "#6c757d",
+                                }}
+                              >
+                                {files.length} archivo
+                                {files.length > 1 ? "s" : ""} seleccionado
+                                {files.length > 1 ? "s" : ""}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </Form>
+                    </MessageInputWrapper>
+                  ) : (
+                    <div
+                      style={{
+                        padding: "1rem",
+                        textAlign: "center",
+                        color: "#6c757d",
+                      }}
+                    >
+                      La mensajería está deshabilitada porque la orden está{" "}
+                      {orderStatus}.
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    height: "100%",
+                    color: "#6c757d",
+                  }}
+                >
+                  <p>Selecciona una conversación para ver los mensajes</p>
+                </div>
+              )}
+            </MessageDetailContainer>
+          </MessageContainer>
         </Container>
-      </div>
-    </>
+        {selectedConversation && (
+          <PartsModal
+            showPartsModal={false}
+            setShowPartsModal={() => {}}
+            showPartsManagementModal={showPartsManagementModal}
+            setShowPartsManagementModal={setShowPartsManagementModal}
+            partsList={partsList}
+            setPartsList={setPartsList}
+            availableParts={availableParts}
+            orderId={selectedConversation.order_id}
+            isReadOnly={isChatDisabled}
+            userId={user.id}
+            isFinalized={isChatDisabled}
+          />
+        )}
+      </Content>
+    </MainContainer>
   );
 };
 

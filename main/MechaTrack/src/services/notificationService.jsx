@@ -33,9 +33,12 @@ export const getConversations = async (userId) => {
 
 export const getMessagesByOrderId = async (orderId, userId) => {
   try {
-    const response = await axiosInstance.get(`/api/notifications`, {
-      params: { order_id: orderId, user_id: userId },
-    });
+    const response = await axiosInstance.get(
+      `/api/notifications/order/${orderId}`,
+      {
+        params: { user_id: userId },
+      }
+    );
     return response.data;
   } catch (error) {
     console.error(

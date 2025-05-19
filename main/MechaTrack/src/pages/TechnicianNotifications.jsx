@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useAuth } from "../context/AuthContext";
+import { useSocket } from "../context/SocketContext";
 import { Container, Form, Image, Button } from "react-bootstrap";
 import { useLocation, useNavigate } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
@@ -23,7 +24,6 @@ import { getOrderById } from "../services/orderService";
 import {
   getConversations,
   getMessagesByOrderId,
-  createNotification,
 } from "../services/notificationService";
 import { toast } from "react-toastify";
 
@@ -37,6 +37,7 @@ const technicianMenu = [
 
 const TechnicianNotifications = () => {
   const { user } = useAuth();
+  const { notifications, sendMessage, isConnected } = useSocket();
   const location = useLocation();
   const navigate = useNavigate();
   const [conversations, setConversations] = useState([]);
@@ -52,7 +53,7 @@ const TechnicianNotifications = () => {
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
 
-  // Cargar conversaciones
+  // Cargar conversaciones al montar
   useEffect(() => {
     const fetchConversations = async () => {
       try {
@@ -76,9 +77,22 @@ const TechnicianNotifications = () => {
       }
     };
     fetchConversations();
+  }, [location.search, user.id]);
+
+  // Respaldo: Polling si WebSocket está desconectado
+  useEffect(() => {
+    if (isConnected) return;
+    const fetchConversations = async () => {
+      try {
+        const data = await getConversations(user.id);
+        setConversations(data);
+      } catch (error) {
+        console.error("Error al cargar conversaciones (polling):", error);
+      }
+    };
     const interval = setInterval(fetchConversations, 10000);
     return () => clearInterval(interval);
-  }, [location.search, user.id]);
+  }, [isConnected, user.id]);
 
   // Cargar mensajes al seleccionar una conversación
   const handleSelectConversation = async (conversation) => {
@@ -106,7 +120,6 @@ const TechnicianNotifications = () => {
           created_at: m.created_at,
         }))
       );
-      // Log adicional para verificar tipos de mensajes
       console.log(
         "[TechnicianNotifications] Tipos de mensajes:",
         messagesData.map((m) => m.type)
@@ -116,7 +129,6 @@ const TechnicianNotifications = () => {
       setOrderStatus(order.status);
       setPartsList(order.parts || []);
       setAvailableParts([]); // Nota: getParts no está en orderService.jsx
-      // Log para verificar partRequestNotifications
       const partRequests = messagesData.filter(
         (m) => m.type === "part_request"
       );
@@ -131,7 +143,10 @@ const TechnicianNotifications = () => {
       for (const message of unreadMessages) {
         await fetch(`/api/notifications/${message.id}`, {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${user.token}`,
+          },
           body: JSON.stringify({ status: "Leída" }),
         });
       }
@@ -156,29 +171,91 @@ const TechnicianNotifications = () => {
     }
   };
 
+  // Actualizar mensajes y conversaciones con notificaciones en tiempo real
+  useEffect(() => {
+    if (!selectedConversation) return;
+    const newMessages = notifications.filter(
+      (notif) => notif.orderId === selectedConversation.order_id
+    );
+    if (newMessages.length > 0) {
+      setMessages((prev) => {
+        const updatedMessages = [...prev];
+        newMessages.forEach((notif) => {
+          if (!prev.some((m) => m.id === notif.id)) {
+            updatedMessages.push({
+              id: notif.id,
+              order_id: notif.orderId,
+              from_user_id: notif.fromUserId,
+              to_user_id: notif.toUserId,
+              message: notif.message,
+              type: notif.type,
+              status: notif.status,
+              created_at: new Date(notif.timestamp),
+              attachments: notif.attachments || [],
+            });
+          }
+        });
+        return updatedMessages;
+      });
+      // Actualizar conversaciones
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.order_id === selectedConversation.order_id
+            ? {
+                ...c,
+                last_message_at: new Date(
+                  newMessages[newMessages.length - 1].timestamp
+                ),
+                total_messages: c.total_messages + newMessages.length,
+                unread_messages:
+                  c.unread_messages +
+                  newMessages.filter(
+                    (n) => n.toUserId === user.id && n.status === "Pendiente"
+                  ).length,
+              }
+            : c
+        )
+      );
+    }
+    // Actualizar lista de conversaciones para nuevas órdenes
+    const newOrders = notifications.filter(
+      (notif) => notif.type === "order_creation"
+    );
+    if (newOrders.length > 0) {
+      const fetchConversations = async () => {
+        try {
+          const data = await getConversations(user.id);
+          setConversations(data);
+        } catch (error) {
+          console.error("Error al actualizar conversaciones:", error);
+        }
+      };
+      fetchConversations();
+    }
+  }, [notifications, selectedConversation, user.id]);
+
   // Enviar mensaje
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!newMessage.trim() && files.length === 0) return;
 
     try {
-      const notificationData = {
-        order_id: selectedConversation.order_id,
-        to_user_id:
-          messages.find((m) => m.from_user_id !== user.id)?.from_user_id ||
-          "admin",
-        message: newMessage || "Adjunto enviado",
-        type: "message",
-        status: "Pendiente",
-      };
-      const newNotification = await createNotification(notificationData, files);
-      setMessages((prev) => [...prev, newNotification]);
+      const toUserId =
+        messages.find((m) => m.from_user_id !== user.id)?.from_user_id ||
+        "admin";
+      const notification = await sendMessage(
+        toUserId,
+        selectedConversation.order_id,
+        newMessage,
+        files
+      );
+      setMessages((prev) => [...prev, notification]);
       setConversations((prev) =>
         prev.map((c) =>
           c.order_id === selectedConversation.order_id
             ? {
                 ...c,
-                last_message_at: newNotification.created_at,
+                last_message_at: notification.created_at,
                 total_messages: c.total_messages + 1,
               }
             : c
@@ -321,7 +398,6 @@ const TechnicianNotifications = () => {
                           </span>
                         </div>
                       </div>
-                      {/* Banner de solicitudes de repuestos */}
                       {partRequestNotifications.length > 0 && (
                         <PartRequestBanner role="alert">
                           <span
@@ -331,7 +407,7 @@ const TechnicianNotifications = () => {
                               marginBottom: "0.5rem",
                             }}
                           >
-                            solicitud de repuestos para la orden #
+                            Solicitud de repuestos para la orden #
                             {selectedConversation.order_id}
                           </span>
                           <Button
@@ -510,7 +586,6 @@ const TechnicianNotifications = () => {
             </MessageDetailContainer>
           </MessageContainer>
         </Container>
-        {/* Modal para gestionar repuestos */}
         {selectedConversation && (
           <PartsModal
             showPartsModal={false}

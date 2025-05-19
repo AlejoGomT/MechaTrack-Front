@@ -6,6 +6,7 @@ import {
   StyledTable,
   CustomButton,
   StatusDiv,
+  TableWrapper,
 } from "../styles/GlobalStyles";
 import { downloadOrderReportPdf } from "../services/reportService";
 import { toast } from "react-toastify";
@@ -19,6 +20,32 @@ const OrderReportModal = ({ show, onHide, report }) => {
       toast.error(error.message);
     }
   };
+
+  // Depurar datos recibidos
+  console.log("[OrderReportModal] report.parts:", report?.parts);
+  console.log(
+    "[OrderReportModal] report.notifications:",
+    report?.notifications
+  );
+
+  // Eliminar duplicados de repuestos usando part_id
+  const uniqueParts = report?.parts
+    ? Array.from(
+        new Map(report.parts.map((part) => [part.part_id, part])).values()
+      )
+    : [];
+
+  // Eliminar duplicados de notificaciones usando message y created_at
+  const uniqueNotifications = report?.notifications
+    ? Array.from(
+        new Map(
+          report.notifications.map((notification) => [
+            `${notification.message}-${notification.created_at}`,
+            notification,
+          ])
+        ).values()
+      )
+    : [];
 
   return (
     <Modal show={show} onHide={onHide} size="lg" centered>
@@ -50,7 +77,7 @@ const OrderReportModal = ({ show, onHide, report }) => {
                   ? "inProcess"
                   : report?.status === "Pendiente"
                   ? "pending"
-                  : report?.status === "Finalizado" &&
+                  : report?.status === "Finalizado" ||
                     report?.status === "Facturado"
                   ? "completed"
                   : ""
@@ -74,9 +101,10 @@ const OrderReportModal = ({ show, onHide, report }) => {
             </DetailValue>
           </div>
         </div>
-        <DetailLabel className="d-flex">
-          Tipo: <DetailValue className="ms-3">{report?.type}</DetailValue>
-        </DetailLabel>
+        <div className="d-flex me-3">
+          <DetailLabel className="d-flex">Tipo:</DetailLabel>
+          <DetailValue className="ms-3">{report?.type}</DetailValue>
+        </div>
 
         <DetailLabel>Descripción</DetailLabel>
         <DetailValue>{report?.description}</DetailValue>
@@ -174,31 +202,33 @@ const OrderReportModal = ({ show, onHide, report }) => {
         <h5 style={{ color: colors.backgroundDark, marginTop: "20px" }}>
           Repuestos
         </h5>
-        {report?.parts && report.parts.length > 0 && report.parts[0].part_id ? (
-          <StyledTable>
-            <thead>
-              <tr>
-                <th>Nombre</th>
-                <th>Cantidad</th>
-                <th>Precio</th>
-                <th>Estado</th>
-                <th>Solicitado por</th>
-                <th>Autorizado por</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.parts.map((part, index) => (
-                <tr key={index}>
-                  <td>{part.name}</td>
-                  <td>{part.quantity}</td>
-                  <td>{part.price ? part.price.toFixed(2) : "N/A"}</td>
-                  <td>{part.status}</td>
-                  <td>{part.requested_by || "N/A"}</td>
-                  <td>{part.authorized_by || "N/A"}</td>
+        {uniqueParts.length > 0 ? (
+          <TableWrapper>
+            <StyledTable>
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Cantidad</th>
+                  <th>Precio</th>
+                  <th>Estado</th>
+                  <th>Solicitado por</th>
+                  <th>Autorizado por</th>
                 </tr>
-              ))}
-            </tbody>
-          </StyledTable>
+              </thead>
+              <tbody>
+                {uniqueParts.map((part, index) => (
+                  <tr key={part.part_id || index}>
+                    <td>{part.name}</td>
+                    <td>{part.quantity}</td>
+                    <td>{part.price ? part.price.toFixed(2) : "N/A"}</td>
+                    <td>{part.status}</td>
+                    <td>{part.requested_by || "N/A"}</td>
+                    <td>{part.authorized_by || "N/A"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </StyledTable>
+          </TableWrapper>
         ) : (
           <p>No hay repuestos registrados.</p>
         )}
@@ -206,31 +236,33 @@ const OrderReportModal = ({ show, onHide, report }) => {
         <h5 style={{ color: colors.backgroundDark, marginTop: "20px" }}>
           Notificaciones
         </h5>
-        {report?.notifications &&
-        report.notifications.length > 0 &&
-        report.notifications[0].message ? (
-          <StyledTable>
-            <thead>
-              <tr>
-                <th>Mensaje</th>
-                <th>Fecha</th>
-                <th>De</th>
-                <th>Para</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.notifications.map((notification, index) => (
-                <tr key={index}>
-                  <td className="text-wrap">{notification.message}</td>
-                  <td>
-                    {new Date(notification.created_at).toLocaleDateString()}
-                  </td>
-                  <td>{notification.from_user}</td>
-                  <td>{notification.to_user}</td>
+        {uniqueNotifications.length > 0 ? (
+          <TableWrapper>
+            <StyledTable>
+              <thead>
+                <tr>
+                  <th>Mensaje</th>
+                  <th>Fecha</th>
+                  <th>De</th>
+                  <th>Para</th>
                 </tr>
-              ))}
-            </tbody>
-          </StyledTable>
+              </thead>
+              <tbody>
+                {uniqueNotifications.map((notification, index) => (
+                  <tr
+                    key={`${notification.message}-${notification.created_at}-${index}`}
+                  >
+                    <td className="text-wrap">{notification.message}</td>
+                    <td>
+                      {new Date(notification.created_at).toLocaleDateString()}
+                    </td>
+                    <td>{notification.from_user}</td>
+                    <td>{notification.to_user}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </StyledTable>
+          </TableWrapper>
         ) : (
           <p>No hay notificaciones registradas.</p>
         )}
@@ -241,24 +273,26 @@ const OrderReportModal = ({ show, onHide, report }) => {
         {report?.history &&
         report.history.length > 0 &&
         report.history[0].description ? (
-          <StyledTable>
-            <thead>
-              <tr>
-                <th>Descripción</th>
-                <th>Fecha</th>
-                <th>Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.history.map((entry, index) => (
-                <tr key={index}>
-                  <td>{entry.description}</td>
-                  <td>{new Date(entry.date).toLocaleDateString()}</td>
-                  <td>{entry.status}</td>
+          <TableWrapper>
+            <StyledTable>
+              <thead>
+                <tr>
+                  <th>Descripción</th>
+                  <th>Fecha</th>
+                  <th>Estado</th>
                 </tr>
-              ))}
-            </tbody>
-          </StyledTable>
+              </thead>
+              <tbody>
+                {report.history.map((entry, index) => (
+                  <tr key={index}>
+                    <td>{entry.description}</td>
+                    <td>{new Date(entry.date).toLocaleDateString()}</td>
+                    <td>{entry.status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </StyledTable>
+          </TableWrapper>
         ) : (
           <p>No hay historial registrado.</p>
         )}
