@@ -1,4 +1,5 @@
 import styled from "@emotion/styled";
+import { createGlobalStyle } from "styled-components";
 import {
   Container,
   Col,
@@ -10,6 +11,14 @@ import {
   Modal,
   Table,
 } from "react-bootstrap";
+
+export const GlobalStyle = createGlobalStyle`
+  @keyframes blink {
+    0% { opacity: 1; }
+    50% { opacity: 0.3; }
+    100% { opacity: 1; }
+  }
+`;
 
 export const colors = {
   primary: "#d74a49",
@@ -798,10 +807,11 @@ export const MessageBubble = styled.div`
   border-radius: 0.5rem;
   margin-bottom: 0.5rem;
   background-color: ${(props) =>
-    props.sender === "user" ? "#d74a49" : "#e9ecef"};
-  color: ${(props) => (props.sender === "user" ? "white" : "#333")};
+    props.sender === "user" ? colors.primary : colors.backgroundLight};
+  color: ${(props) => (props.sender === "user" ? "white" : "white")};
   align-self: ${(props) =>
     props.sender === "user" ? "flex-end" : "flex-start"};
+  position: relative;
 `;
 
 export const MessageInputWrapper = styled.div`
@@ -878,5 +888,52 @@ export const MessageDetailContainer = styled.div`
   @media (max-width: 768px) {
     width: 100%;
     min-height: 50vh;
+  }
+`;
+
+// Nuevos estilos para notificaciones
+export const NotificationMessage = styled.div`
+  padding: 10px;
+  margin: 10px 0;
+  border-radius: 5px;
+  font-family: Arial, sans-serif;
+  font-size: 16px;
+`;
+
+export const ApprovedNotification = styled(NotificationMessage)`
+  background-color: #e6f3e6;
+  border: 1px solid #28a745;
+  color: #28a745;
+`;
+
+export const RejectedNotification = styled(NotificationMessage)`
+  background-color: #f8d7da;
+  border: 1px solid #dc3545;
+  color: #dc3545;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+`;
+
+export const ToggleButton = styled.button`
+  background: none;
+  border: none;
+  color: #dc3545;
+  font-size: 16px;
+  cursor: pointer;
+`;
+
+export const RejectionReason = styled.span`
+  display: none;
+  background-color: #fff3cd;
+  border: 1px solid #ffc107;
+  padding: 8px;
+  margin-top: 5px;
+  border-radius: 5px;
+  color: #856404;
+  font-size: 14px;
+  width: 100%;
+  &.active {
+    display: block;
   }
 `;

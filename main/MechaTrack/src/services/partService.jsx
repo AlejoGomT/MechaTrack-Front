@@ -12,6 +12,16 @@ export const getParts = async (model, page = 1, limit = 10) => {
   }
 };
 
+export const getPartById = async (partId) => {
+  try {
+    const response = await axiosInstance.get(`/api/parts/${partId}`);
+    return response.data;
+  } catch (error) {
+    console.error("Error en getPartById:", error.response?.data || error);
+    throw error.response?.data || { message: "Error al obtener repuesto" };
+  }
+};
+
 export const createPart = async (partData) => {
   try {
     const formData = new FormData();
@@ -107,10 +117,14 @@ export const updatePartAdmin = async (
         authorized_by: partData.status === "Aprobado" ? authorizedBy : null,
       }
     );
-    console.log("Respuesta de updatePart:", response.data);
+    console.log("[partService] Respuesta de updatePartAdmin:", response.data);
     return response.data;
   } catch (error) {
-    console.error("Error en updatePart:", error.response?.data || error);
+    console.error("[partService] Error en updatePartAdmin:", {
+      status: error.response?.status,
+      data: error.response?.data,
+      message: error.message,
+    });
     throw error.response?.data || { message: "Error al actualizar repuesto" };
   }
 };

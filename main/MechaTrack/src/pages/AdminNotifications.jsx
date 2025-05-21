@@ -3,10 +3,11 @@ import { useAuth } from "../context/AuthContext";
 import { useSocket } from "../context/SocketContext";
 import { Container, Form, Image, Button } from "react-bootstrap";
 import { useLocation, useNavigate } from "react-router-dom";
+import axiosInstance from "../services/apiConfig"; // Importar axiosInstance
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import CustomButton from "../components/CustomButton";
-import PartsModal from "../components/PartsModal";
+import AuthPartModal from "../components/AuthPartModal";
 import {
   MainContainer,
   Content,
@@ -19,6 +20,10 @@ import {
   MessageInputWrapper,
   FormInput,
   PartRequestBanner,
+  ApprovedNotification,
+  RejectedNotification,
+  ToggleButton,
+  RejectionReason,
 } from "../styles/GlobalStyles";
 import { getOrderById } from "../services/orderService";
 import {
@@ -40,7 +45,14 @@ const adminMenu = [
 
 const AdminNotifications = () => {
   const { user, token } = useAuth();
-  const { notifications, sendMessage, isConnected } = useSocket();
+  const {
+    socket,
+    notifications,
+    sendMessage,
+    sendTyping,
+    isConnected,
+    typingUsers,
+  } = useSocket();
   const location = useLocation();
   const navigate = useNavigate();
   const [conversations, setConversations] = useState([]);
@@ -49,20 +61,30 @@ const AdminNotifications = () => {
   const [newMessage, setNewMessage] = useState("");
   const [orderStatus, setOrderStatus] = useState(null);
   const [files, setFiles] = useState([]);
-  const [showPartsManagementModal, setShowPartsManagementModal] =
-    useState(false);
+  const [showAuthPartModal, setShowAuthPartModal] = useState(false);
   const [partsList, setPartsList] = useState([]);
-  const [availableParts, setAvailableParts] = useState([]);
+  const [isTyping, setIsTyping] = useState(false);
+  const [expandedRejections, setExpandedRejections] = useState({});
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
 
-  // Cargar conversaciones al montar
+  // Unir a salas de órdenes al cargar conversaciones
   useEffect(() => {
     const fetchConversations = async () => {
       try {
         const data = await getConversations(user.id);
         console.log("[AdminNotifications] Conversaciones recibidas:", data);
         setConversations(data);
+        // Unir a salas de órdenes
+        if (socket && isConnected) {
+          data.forEach((conv) => {
+            socket.emit("joinOrder", conv.order_id);
+            console.log(
+              "[AdminNotifications] Joined room: order_",
+              conv.order_id
+            );
+          });
+        }
         const params = new URLSearchParams(location.search);
         const orderId = params.get("orderId");
         if (orderId) {
@@ -72,14 +94,17 @@ const AdminNotifications = () => {
           }
         }
       } catch (error) {
-        console.error("Error al cargar conversaciones:", error);
+        console.error(
+          "[AdminNotifications] Error al cargar conversaciones:",
+          error
+        );
         toast.error("Error al cargar conversaciones");
       }
     };
     if (token) fetchConversations();
-  }, [location.search, user.id, token]);
+  }, [token, user.id, location.search, socket, isConnected]);
 
-  // Respaldo: Polling si WebSocket está desconectado
+  // Polling si no hay conexión Socket.IO
   useEffect(() => {
     if (isConnected) return;
     const fetchConversations = async () => {
@@ -87,14 +112,16 @@ const AdminNotifications = () => {
         const data = await getConversations(user.id);
         setConversations(data);
       } catch (error) {
-        console.error("Error al cargar conversaciones (polling):", error);
+        console.error(
+          "[AdminNotifications] Error al cargar conversaciones (polling):",
+          error
+        );
       }
     };
     const interval = setInterval(fetchConversations, 10000);
     return () => clearInterval(interval);
   }, [isConnected, user.id]);
 
-  // Cargar mensajes al seleccionar una conversación
   const handleSelectConversation = async (conversation) => {
     console.log(
       "[AdminNotifications] Seleccionando conversación:",
@@ -107,48 +134,32 @@ const AdminNotifications = () => {
         conversation.order_id,
         user.id
       );
-      console.log(
-        "[AdminNotifications] Mensajes recibidos para order_id",
-        conversation.order_id,
-        ":",
-        messagesData.map((m) => ({
-          id: m.id,
-          message: m.message,
-          type: m.type,
-          from_user_id: m.from_user_id,
-          to_user_id: m.to_user_id,
-          created_at: m.created_at,
-        }))
-      );
-      console.log(
-        "[AdminNotifications] Tipos de mensajes:",
-        messagesData.map((m) => m.type)
-      );
+      console.log("[AdminNotifications] Mensajes recibidos:", messagesData);
       setMessages(messagesData);
       const order = await getOrderById(conversation.order_id);
-      setOrderStatus(order.status);
-      setPartsList(order.parts || []);
-      setAvailableParts([]); // Nota: getParts no está en orderService.jsx
-      const partRequests = messagesData.filter(
-        (m) => m.type === "part_request"
-      );
-      console.log(
-        "[AdminNotifications] Notificaciones de part_request:",
-        partRequests
-      );
-      // Marcar mensajes como leídos
+      console.log("[AdminNotifications] Orden recibida:", order);
+      setOrderStatus(order?.status || "Desconocido");
+      setPartsList(order?.parts || []);
       const unreadMessages = messagesData.filter(
         (m) => m.status === "Pendiente" && m.to_user_id === user.id
       );
+      console.log("[AdminNotifications] Mensajes no leídos:", unreadMessages);
       for (const message of unreadMessages) {
-        await fetch(`/api/notifications/${message.id}`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ status: "Leída" }),
-        });
+        try {
+          await axiosInstance.put(`/api/notifications/${message.id}`, {
+            status: "Leída",
+          });
+          console.log(
+            "[AdminNotifications] Mensaje marcado como leído:",
+            message.id
+          );
+        } catch (error) {
+          console.error(
+            "[AdminNotifications] Error al marcar mensaje como leído:",
+            message.id,
+            error.response?.status || error.message
+          );
+        }
       }
       setMessages((prev) =>
         prev.map((m) =>
@@ -165,15 +176,27 @@ const AdminNotifications = () => {
         )
       );
       navigate(`?orderId=${conversation.order_id}`, { replace: true });
+      // Unir a la sala de la orden seleccionada
+      if (socket && isConnected) {
+        socket.emit("joinOrder", conversation.order_id);
+        console.log(
+          "[AdminNotifications] Joined room: order_",
+          conversation.order_id
+        );
+      }
     } catch (error) {
-      console.error("Error al cargar mensajes o marcar como leídos:", error);
+      console.error(
+        "[AdminNotifications] Error en handleSelectConversation:",
+        error
+      );
       toast.error("Error al cargar mensajes");
     }
   };
 
-  // Actualizar mensajes y conversaciones con notificaciones en tiempo real
+  // Manejar notificaciones Socket.IO
   useEffect(() => {
-    if (!selectedConversation) return;
+    if (!selectedConversation || !notifications.length) return;
+    console.log("[AdminNotifications] Nuevas notificaciones:", notifications);
     const newMessages = notifications.filter(
       (notif) => notif.orderId === selectedConversation.order_id
     );
@@ -190,51 +213,41 @@ const AdminNotifications = () => {
               message: notif.message,
               type: notif.type,
               status: notif.status,
+              details: notif.details,
               created_at: new Date(notif.timestamp),
               attachments: notif.attachments || [],
             });
           }
         });
-        return updatedMessages;
+        return updatedMessages.sort(
+          (a, b) => new Date(a.created_at) - new Date(b.created_at)
+        );
       });
-      // Actualizar conversaciones
       setConversations((prev) =>
-        prev.map((c) =>
-          c.order_id === selectedConversation.order_id
-            ? {
-                ...c,
-                last_message_at: new Date(
-                  newMessages[newMessages.length - 1].timestamp
-                ),
-                total_messages: c.total_messages + newMessages.length,
-                unread_messages:
-                  c.unread_messages +
-                  newMessages.filter(
-                    (n) => n.toUserId === user.id && n.status === "Pendiente"
-                  ).length,
-              }
-            : c
-        )
+        prev
+          .map((c) =>
+            c.order_id === selectedConversation.order_id
+              ? {
+                  ...c,
+                  last_message_at: new Date(
+                    newMessages[newMessages.length - 1].timestamp
+                  ),
+                  total_messages: c.total_messages + newMessages.length,
+                  unread_messages:
+                    c.unread_messages +
+                    newMessages.filter(
+                      (n) => n.toUserId === user.id && n.status === "Pendiente"
+                    ).length,
+                }
+              : c
+          )
+          .sort(
+            (a, b) => new Date(b.last_message_at) - new Date(a.last_message_at)
+          )
       );
-    }
-    // Actualizar lista de conversaciones para nuevas órdenes
-    const newOrders = notifications.filter(
-      (notif) => notif.type === "order_creation"
-    );
-    if (newOrders.length > 0) {
-      const fetchConversations = async () => {
-        try {
-          const data = await getConversations(user.id);
-          setConversations(data);
-        } catch (error) {
-          console.error("Error al actualizar conversaciones:", error);
-        }
-      };
-      fetchConversations();
     }
   }, [notifications, selectedConversation, user.id]);
 
-  // Enviar mensaje
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!newMessage.trim() && files.length === 0) return;
@@ -265,12 +278,11 @@ const AdminNotifications = () => {
       setFiles([]);
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (error) {
-      console.error("Error al enviar mensaje:", error);
+      console.error("[AdminNotifications] Error al enviar mensaje:", error);
       toast.error("Error al enviar mensaje");
     }
   };
 
-  // Manejar archivos
   const handleFileChange = (e) => {
     const selectedFiles = Array.from(e.target.files).filter((file) =>
       ["image/jpeg", "image/png", "application/pdf"].includes(file.type)
@@ -278,22 +290,35 @@ const AdminNotifications = () => {
     setFiles(selectedFiles);
   };
 
-  // Auto-scroll al final de los mensajes
+  const handleTyping = (e) => {
+    setNewMessage(e.target.value);
+    const isCurrentlyTyping = e.target.value.trim().length > 0;
+    if (isCurrentlyTyping !== isTyping && selectedConversation) {
+      setIsTyping(isCurrentlyTyping);
+      sendTyping(selectedConversation.order_id, isCurrentlyTyping);
+    }
+  };
+
+  const toggleRejectionReason = (messageId) => {
+    setExpandedRejections((prev) => ({
+      ...prev,
+      [messageId]: !prev[messageId],
+    }));
+  };
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Filtrar notificaciones de part_request
-  const partRequestNotifications = useMemo(() => {
-    return messages.filter((m) => m.type === "part_request");
-  }, [messages]);
+  const chatMessages = useMemo(() => messages, [messages]);
 
-  // Filtrar mensajes para el chat (excluir part_request y order_creation)
-  const chatMessages = useMemo(() => {
-    return messages.filter(
-      (m) => m.type !== "part_request" && m.type !== "order_creation"
-    );
-  }, [messages]);
+  const isTechnicianTyping = selectedConversation
+    ? typingUsers[
+        `${messages.find((m) => m.from_user_id !== user.id)?.from_user_id}_${
+          selectedConversation.order_id
+        }`
+      ]
+    : false;
 
   const isChatDisabled = ["Facturado", "Finalizado"].includes(orderStatus);
 
@@ -332,7 +357,7 @@ const AdminNotifications = () => {
                       }}
                     >
                       Orden #{conversation.order_id} (
-                      {conversation.vehicle_economic_number})
+                      {conversation.vehicle_economic_number || "Sin número"})
                     </h3>
                     {conversation.unread_messages > 0 && (
                       <span
@@ -356,7 +381,8 @@ const AdminNotifications = () => {
                       marginTop: "0.25rem",
                     }}
                   >
-                    {conversation.senders} ↔ {conversation.recipients}
+                    {conversation.recipients || "Desconocido"} ↔{" "}
+                    {conversation.senders || "Desconocido"}
                   </p>
                   <p
                     style={{
@@ -366,9 +392,11 @@ const AdminNotifications = () => {
                     }}
                   >
                     Último mensaje:{" "}
-                    {new Date(conversation.last_message_at).toLocaleString(
-                      "es-ES"
-                    )}
+                    {conversation.last_message_at
+                      ? new Date(conversation.last_message_at).toLocaleString(
+                          "es-ES"
+                        )
+                      : "Sin mensajes"}
                   </p>
                 </NotificationItem>
               ))}
@@ -389,7 +417,9 @@ const AdminNotifications = () => {
                           }}
                         >
                           Orden #{selectedConversation.order_id} (
-                          {selectedConversation.vehicle_economic_number})
+                          {selectedConversation.vehicle_economic_number ||
+                            "Sin número"}
+                          )
                         </h2>
                         <div
                           style={{
@@ -399,7 +429,7 @@ const AdminNotifications = () => {
                             fontSize: "0.875rem",
                           }}
                         >
-                          <span>Estado: {orderStatus}</span>
+                          <span>Estado: {orderStatus || "Desconocido"}</span>
                           <span style={{ margin: "0 0.5rem" }}>•</span>
                           <span>
                             {chatMessages.length} mensaje
@@ -407,7 +437,7 @@ const AdminNotifications = () => {
                           </span>
                         </div>
                       </div>
-                      {partRequestNotifications.length > 0 && (
+                      {messages.some((m) => m.type === "part_request") && (
                         <PartRequestBanner role="alert">
                           <span
                             style={{
@@ -421,10 +451,10 @@ const AdminNotifications = () => {
                           </span>
                           <Button
                             variant="primary"
-                            onClick={() => setShowPartsManagementModal(true)}
-                            aria-label="Ver repuestos solicitados"
+                            onClick={() => setShowAuthPartModal(true)}
+                            aria-label="Autorizar repuestos solicitados"
                           >
-                            Ver repuestos
+                            Autorizar repuestos
                           </Button>
                         </PartRequestBanner>
                       )}
@@ -438,71 +468,241 @@ const AdminNotifications = () => {
                       aria-live="polite"
                     >
                       {chatMessages.map((message) => (
-                        <MessageBubble
-                          key={message.id}
-                          sender={
-                            message.from_user_id === user.id ? "user" : "other"
-                          }
-                        >
-                          <p>{message.message}</p>
-                          {message.details && (
-                            <pre
-                              style={{
-                                fontSize: "0.75rem",
-                                background: "#f8f9fa",
-                                padding: "0.5rem",
-                                borderRadius: "0.25rem",
-                              }}
-                            >
-                              {JSON.stringify(message.details, null, 2)}
-                            </pre>
-                          )}
-                          {message.attachments?.length > 0 && (
-                            <div style={{ marginTop: "0.5rem" }}>
-                              {message.attachments.map((attachment) => (
-                                <div key={attachment.id}>
-                                  {attachment.file_type.startsWith("image/") ? (
-                                    <Image
-                                      src={attachment.file_path}
-                                      thumbnail
-                                      style={{ maxWidth: "200px" }}
-                                    />
-                                  ) : (
-                                    <a
-                                      href={attachment.file_path}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                    >
-                                      Descargar {attachment.file_type}
-                                    </a>
+                        <div key={message.id}>
+                          {message.type === "part_approval" ? (
+                            <ApprovedNotification>
+                              {message.message}
+                              <p
+                                style={{
+                                  fontSize: "0.75rem",
+                                  color: "#28a745",
+                                  marginTop: "0.25rem",
+                                  textAlign:
+                                    message.from_user_id === user.id
+                                      ? "right"
+                                      : "left",
+                                }}
+                              >
+                                {message.created_at
+                                  ? new Date(
+                                      message.created_at
+                                    ).toLocaleTimeString("es-ES", {
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })
+                                  : "Hora desconocida"}
+                                {message.from_user_id === user.id && (
+                                  <span style={{ marginLeft: "0.5rem" }}>
+                                    {message.status === "Leída"
+                                      ? "✔️ Leído"
+                                      : "✔️ Enviado"}
+                                  </span>
+                                )}
+                                {message.status === "Pendiente" &&
+                                  message.to_user_id === user.id && (
+                                    <span style={{ marginLeft: "0.5rem" }}>
+                                      (No leído)
+                                    </span>
                                   )}
-                                </div>
-                              ))}
+                              </p>
+                            </ApprovedNotification>
+                          ) : message.type === "part_rejection" ? (
+                            <div>
+                              <RejectedNotification>
+                                {message.message}
+                                {message.details && message.details.reason && (
+                                  <ToggleButton
+                                    onClick={() =>
+                                      toggleRejectionReason(message.id)
+                                    }
+                                  >
+                                    {expandedRejections[message.id] ? "▲" : "▼"}
+                                  </ToggleButton>
+                                )}
+                              </RejectedNotification>
+                              {message.details && message.details.reason && (
+                                <RejectionReason
+                                  className={
+                                    expandedRejections[message.id]
+                                      ? "active"
+                                      : ""
+                                  }
+                                >
+                                  Motivo de rechazo: {message.details.reason}
+                                </RejectionReason>
+                              )}
+                              <p
+                                style={{
+                                  fontSize: "0.75rem",
+                                  color: "#dc3545",
+                                  marginTop: "0.25rem",
+                                  textAlign:
+                                    message.from_user_id === user.id
+                                      ? "right"
+                                      : "left",
+                                }}
+                              >
+                                {message.created_at
+                                  ? new Date(
+                                      message.created_at
+                                    ).toLocaleTimeString("es-ES", {
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })
+                                  : "Hora desconocida"}
+                                {message.from_user_id === user.id && (
+                                  <span style={{ marginLeft: "0.5rem" }}>
+                                    {message.status === "Leída"
+                                      ? "✔️ Leído"
+                                      : "✔️ Enviado"}
+                                  </span>
+                                )}
+                                {message.status === "Pendiente" &&
+                                  message.to_user_id === user.id && (
+                                    <span style={{ marginLeft: "0.5rem" }}>
+                                      (No leído)
+                                    </span>
+                                  )}
+                              </p>
                             </div>
-                          )}
-                          <p
-                            style={{
-                              fontSize: "0.75rem",
-                              color:
+                          ) : message.type === "part_request" ? (
+                            <PartRequestBanner role="alert">
+                              <span
+                                style={{
+                                  fontWeight: "bold",
+                                  color: "#1b4552",
+                                }}
+                              >
+                                {message.message}
+                              </span>
+                              <p
+                                style={{
+                                  fontSize: "0.75rem",
+                                  color: "#1b4552",
+                                  marginTop: "0.25rem",
+                                  textAlign:
+                                    message.from_user_id === user.id
+                                      ? "right"
+                                      : "left",
+                                }}
+                              >
+                                {message.created_at
+                                  ? new Date(
+                                      message.created_at
+                                    ).toLocaleTimeString("es-ES", {
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })
+                                  : "Hora desconocida"}
+                                {message.from_user_id === user.id && (
+                                  <span style={{ marginLeft: "0.5rem" }}>
+                                    {message.status === "Leída"
+                                      ? "✔️ Leído"
+                                      : "✔️ Enviado"}
+                                  </span>
+                                )}
+                                {message.status === "Pendiente" &&
+                                  message.to_user_id === user.id && (
+                                    <span style={{ marginLeft: "0.5rem" }}>
+                                      (No leído)
+                                    </span>
+                                  )}
+                              </p>
+                            </PartRequestBanner>
+                          ) : (
+                            <MessageBubble
+                              sender={
                                 message.from_user_id === user.id
-                                  ? "#f8f9fa"
-                                  : "#6c757d",
-                              marginTop: "0.25rem",
-                            }}
-                          >
-                            {new Date(message.created_at).toLocaleTimeString(
-                              "es-ES",
-                              {
-                                hour: "2-digit",
-                                minute: "2-digit",
+                                  ? "user"
+                                  : "other"
                               }
-                            )}
-                            {message.status === "Pendiente" &&
-                              message.to_user_id === user.id &&
-                              " (No leído)"}
-                          </p>
-                        </MessageBubble>
+                            >
+                              <p>{message.message}</p>
+                              {message.attachments?.length > 0 && (
+                                <div style={{ marginTop: "0.5rem" }}>
+                                  {message.attachments.map((attachment) => (
+                                    <div key={attachment.id}>
+                                      {attachment.file_type?.startsWith(
+                                        "image/"
+                                      ) ? (
+                                        <Image
+                                          src={attachment.file_path}
+                                          thumbnail
+                                          style={{ maxWidth: "200px" }}
+                                        />
+                                      ) : (
+                                        <a
+                                          href={attachment.file_path}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                        >
+                                          Descargar{" "}
+                                          {attachment.file_type || "archivo"}
+                                        </a>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              <p
+                                style={{
+                                  fontSize: "0.75rem",
+                                  color:
+                                    message.from_user_id === user.id
+                                      ? "#e0e0e0"
+                                      : "#d1d5db",
+                                  marginTop: "0.25rem",
+                                  textAlign:
+                                    message.from_user_id === user.id
+                                      ? "right"
+                                      : "left",
+                                }}
+                              >
+                                {message.created_at
+                                  ? new Date(
+                                      message.created_at
+                                    ).toLocaleTimeString("es-ES", {
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })
+                                  : "Hora desconocida"}
+                                {message.from_user_id === user.id && (
+                                  <span style={{ marginLeft: "0.5rem" }}>
+                                    {message.status === "Leída"
+                                      ? "✔️ Leído"
+                                      : "✔️ Enviado"}
+                                  </span>
+                                )}
+                                {message.status === "Pendiente" &&
+                                  message.to_user_id === user.id && (
+                                    <span style={{ marginLeft: "0.5rem" }}>
+                                      (No leído)
+                                    </span>
+                                  )}
+                              </p>
+                            </MessageBubble>
+                          )}
+                        </div>
                       ))}
+                      {isTechnicianTyping && (
+                        <div
+                          style={{
+                            padding: "0.5rem",
+                            color: "#1b4552",
+                            fontStyle: "italic",
+                            fontSize: "0.875rem",
+                            alignSelf: "flex-start",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "0.5rem",
+                          }}
+                        >
+                          Técnico está escribiendo
+                          <span style={{ animation: "blink 1s infinite" }}>
+                            ...
+                          </span>
+                        </div>
+                      )}
                       <div ref={messagesEndRef} />
                     </div>
                   </div>
@@ -520,7 +720,7 @@ const AdminNotifications = () => {
                             <FormInput
                               type="text"
                               value={newMessage}
-                              onChange={(e) => setNewMessage(e.target.value)}
+                              onChange={handleTyping}
                               placeholder="Escribe tu mensaje..."
                               disabled={isChatDisabled}
                             />
@@ -575,7 +775,7 @@ const AdminNotifications = () => {
                       }}
                     >
                       La mensajería está deshabilitada porque la orden está{" "}
-                      {orderStatus}.
+                      {orderStatus || "desconocida"}.
                     </div>
                   )}
                 </>
@@ -596,18 +796,12 @@ const AdminNotifications = () => {
           </MessageContainer>
         </Container>
         {selectedConversation && (
-          <PartsModal
-            showPartsModal={false}
-            setShowPartsModal={() => {}}
-            showPartsManagementModal={showPartsManagementModal}
-            setShowPartsManagementModal={setShowPartsManagementModal}
+          <AuthPartModal
+            showAuthPartModal={showAuthPartModal}
+            setShowAuthPartModal={setShowAuthPartModal}
             partsList={partsList}
-            setPartsList={setPartsList}
-            availableParts={availableParts}
             orderId={selectedConversation.order_id}
-            isReadOnly={isChatDisabled}
             userId={user.id}
-            isFinalized={isChatDisabled}
           />
         )}
       </Content>
