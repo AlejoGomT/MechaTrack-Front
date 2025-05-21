@@ -57,7 +57,8 @@ const AdminNotifications = () => {
   const navigate = useNavigate();
   const [conversations, setConversations] = useState([]);
   const [selectedConversation, setSelectedConversation] = useState(null);
-  const [messages, setMessages] = useState([]);
+  const [allMessages, setAllMessages] = useState([]); // Almacena todos los mensajes
+  const [filteredMessages, setFilteredMessages] = useState([]); // Mensajes sin part_request ni order_creation
   const [newMessage, setNewMessage] = useState("");
   const [orderStatus, setOrderStatus] = useState(null);
   const [files, setFiles] = useState([]);
@@ -73,22 +74,33 @@ const AdminNotifications = () => {
     const fetchConversations = async () => {
       try {
         const data = await getConversations(user.id);
-        console.log("[AdminNotifications] Conversaciones recibidas:", data);
-        setConversations(data);
+        // Procesar recipients y senders para evitar duplicados
+        const processedConversations = data.map((conv) => {
+          const recipients = conv.recipients
+            ? [...new Set(conv.recipients.split(", "))]
+                .filter((r) => r !== "Admin user" && r !== "technician user")
+                .join(", ") || "Técnico"
+            : "Técnico";
+          const senders = conv.senders
+            ? [...new Set(conv.senders.split(", "))]
+                .filter((s) => s !== "Admin user" && s !== "technician user")
+                .join(", ") || user.first_name + " " + user.last_name
+            : user.first_name + " " + user.last_name;
+          return { ...conv, recipients, senders };
+        });
+        setConversations(processedConversations);
         // Unir a salas de órdenes
         if (socket && isConnected) {
-          data.forEach((conv) => {
+          processedConversations.forEach((conv) => {
             socket.emit("joinOrder", conv.order_id);
-            console.log(
-              "[AdminNotifications] Joined room: order_",
-              conv.order_id
-            );
           });
         }
         const params = new URLSearchParams(location.search);
         const orderId = params.get("orderId");
         if (orderId) {
-          const conversation = data.find((c) => c.order_id === orderId);
+          const conversation = processedConversations.find(
+            (c) => c.order_id === orderId
+          );
           if (conversation) {
             handleSelectConversation(conversation);
           }
@@ -110,7 +122,20 @@ const AdminNotifications = () => {
     const fetchConversations = async () => {
       try {
         const data = await getConversations(user.id);
-        setConversations(data);
+        const processedConversations = data.map((conv) => {
+          const recipients = conv.recipients
+            ? [...new Set(conv.recipients.split(", "))]
+                .filter((r) => r !== "Admin user" && r !== "technician user")
+                .join(", ") || "Técnico"
+            : "Técnico";
+          const senders = conv.senders
+            ? [...new Set(conv.senders.split(", "))]
+                .filter((s) => s !== "Admin user" && r !== "technician user")
+                .join(", ") || user.first_name + " " + user.last_name
+            : user.first_name + " " + user.last_name;
+          return { ...conv, recipients, senders };
+        });
+        setConversations(processedConversations);
       } catch (error) {
         console.error(
           "[AdminNotifications] Error al cargar conversaciones (polling):",
@@ -123,45 +148,49 @@ const AdminNotifications = () => {
   }, [isConnected, user.id]);
 
   const handleSelectConversation = async (conversation) => {
-    console.log(
-      "[AdminNotifications] Seleccionando conversación:",
-      conversation
-    );
     setSelectedConversation(conversation);
-    setMessages([]);
+    setAllMessages([]);
+    setFilteredMessages([]);
     try {
       const messagesData = await getMessagesByOrderId(
         conversation.order_id,
         user.id
       );
-      console.log("[AdminNotifications] Mensajes recibidos:", messagesData);
-      setMessages(messagesData);
+      // Almacenar todos los mensajes
+      setAllMessages(messagesData);
+      // Filtrar mensajes para excluir part_request y order_creation
+      const filtered = messagesData.filter(
+        (m) => !["part_request", "order_creation"].includes(m.type)
+      );
+      setFilteredMessages(filtered);
       const order = await getOrderById(conversation.order_id);
-      console.log("[AdminNotifications] Orden recibida:", order);
       setOrderStatus(order?.status || "Desconocido");
       setPartsList(order?.parts || []);
-      const unreadMessages = messagesData.filter(
+      const unreadMessages = filtered.filter(
         (m) => m.status === "Pendiente" && m.to_user_id === user.id
       );
-      console.log("[AdminNotifications] Mensajes no leídos:", unreadMessages);
       for (const message of unreadMessages) {
         try {
           await axiosInstance.put(`/api/notifications/${message.id}`, {
             status: "Leída",
           });
-          console.log(
-            "[AdminNotifications] Mensaje marcado como leído:",
-            message.id
-          );
         } catch (error) {
-          console.error(
-            "[AdminNotifications] Error al marcar mensaje como leído:",
-            message.id,
-            error.response?.status || error.message
-          );
+          if (error.response?.status === 404) {
+            console.warn(
+              "[AdminNotifications] Notificación no encontrada, ID:",
+              message.id
+            );
+          } else {
+            console.error(
+              "[AdminNotifications] Error al marcar mensaje como leído:",
+              message.id,
+              error.response?.status || error.message,
+              error.response?.data
+            );
+          }
         }
       }
-      setMessages((prev) =>
+      setFilteredMessages((prev) =>
         prev.map((m) =>
           unreadMessages.some((um) => um.id === m.id)
             ? { ...m, status: "Leída" }
@@ -197,15 +226,16 @@ const AdminNotifications = () => {
   useEffect(() => {
     if (!selectedConversation || !notifications.length) return;
     console.log("[AdminNotifications] Nuevas notificaciones:", notifications);
+    // Filtrar notificaciones para la conversación seleccionada
     const newMessages = notifications.filter(
       (notif) => notif.orderId === selectedConversation.order_id
     );
     if (newMessages.length > 0) {
-      setMessages((prev) => {
-        const updatedMessages = [...prev];
+      setAllMessages((prev) => {
+        const updatedAllMessages = [...prev];
         newMessages.forEach((notif) => {
           if (!prev.some((m) => m.id === notif.id)) {
-            updatedMessages.push({
+            updatedAllMessages.push({
               id: notif.id,
               order_id: notif.orderId,
               from_user_id: notif.fromUserId,
@@ -219,7 +249,33 @@ const AdminNotifications = () => {
             });
           }
         });
-        return updatedMessages.sort(
+        return updatedAllMessages.sort(
+          (a, b) => new Date(a.created_at) - new Date(b.created_at)
+        );
+      });
+      setFilteredMessages((prev) => {
+        const updatedFilteredMessages = [...prev];
+        newMessages
+          .filter(
+            (notif) => !["part_request", "order_creation"].includes(notif.type)
+          )
+          .forEach((notif) => {
+            if (!prev.some((m) => m.id === notif.id)) {
+              updatedFilteredMessages.push({
+                id: notif.id,
+                order_id: notif.orderId,
+                from_user_id: notif.fromUserId,
+                to_user_id: notif.toUserId,
+                message: notif.message,
+                type: notif.type,
+                status: notif.status,
+                details: notif.details,
+                created_at: new Date(notif.timestamp),
+                attachments: notif.attachments || [],
+              });
+            }
+          });
+        return updatedFilteredMessages.sort(
           (a, b) => new Date(a.created_at) - new Date(b.created_at)
         );
       });
@@ -232,11 +288,19 @@ const AdminNotifications = () => {
                   last_message_at: new Date(
                     newMessages[newMessages.length - 1].timestamp
                   ),
-                  total_messages: c.total_messages + newMessages.length,
+                  total_messages:
+                    c.total_messages +
+                    newMessages.filter(
+                      (n) =>
+                        !["part_request", "order_creation"].includes(n.type)
+                    ).length,
                   unread_messages:
                     c.unread_messages +
                     newMessages.filter(
-                      (n) => n.toUserId === user.id && n.status === "Pendiente"
+                      (n) =>
+                        n.toUserId === user.id &&
+                        n.status === "Pendiente" &&
+                        !["part_request", "order_creation"].includes(n.type)
                     ).length,
                 }
               : c
@@ -254,7 +318,7 @@ const AdminNotifications = () => {
 
     try {
       const toUserId =
-        messages.find((m) => m.from_user_id !== user.id)?.from_user_id ||
+        allMessages.find((m) => m.from_user_id !== user.id)?.from_user_id ||
         "technician";
       const notification = await sendMessage(
         toUserId,
@@ -262,7 +326,10 @@ const AdminNotifications = () => {
         newMessage,
         files
       );
-      setMessages((prev) => [...prev, notification]);
+      setAllMessages((prev) => [...prev, notification]);
+      if (!["part_request", "order_creation"].includes(notification.type)) {
+        setFilteredMessages((prev) => [...prev, notification]);
+      }
       setConversations((prev) =>
         prev.map((c) =>
           c.order_id === selectedConversation.order_id
@@ -308,13 +375,13 @@ const AdminNotifications = () => {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [filteredMessages]);
 
-  const chatMessages = useMemo(() => messages, [messages]);
+  const chatMessages = useMemo(() => filteredMessages, [filteredMessages]);
 
   const isTechnicianTyping = selectedConversation
     ? typingUsers[
-        `${messages.find((m) => m.from_user_id !== user.id)?.from_user_id}_${
+        `${allMessages.find((m) => m.from_user_id !== user.id)?.from_user_id}_${
           selectedConversation.order_id
         }`
       ]
@@ -381,8 +448,7 @@ const AdminNotifications = () => {
                       marginTop: "0.25rem",
                     }}
                   >
-                    {conversation.recipients || "Desconocido"} ↔{" "}
-                    {conversation.senders || "Desconocido"}
+                    {conversation.recipients} ↔ {conversation.senders}
                   </p>
                   <p
                     style={{
@@ -437,7 +503,7 @@ const AdminNotifications = () => {
                           </span>
                         </div>
                       </div>
-                      {messages.some((m) => m.type === "part_request") && (
+                      {allMessages.some((m) => m.type === "part_request") && (
                         <PartRequestBanner role="alert">
                           <span
                             style={{
@@ -565,50 +631,6 @@ const AdminNotifications = () => {
                                   )}
                               </p>
                             </div>
-                          ) : message.type === "part_request" ? (
-                            <PartRequestBanner role="alert">
-                              <span
-                                style={{
-                                  fontWeight: "bold",
-                                  color: "#1b4552",
-                                }}
-                              >
-                                {message.message}
-                              </span>
-                              <p
-                                style={{
-                                  fontSize: "0.75rem",
-                                  color: "#1b4552",
-                                  marginTop: "0.25rem",
-                                  textAlign:
-                                    message.from_user_id === user.id
-                                      ? "right"
-                                      : "left",
-                                }}
-                              >
-                                {message.created_at
-                                  ? new Date(
-                                      message.created_at
-                                    ).toLocaleTimeString("es-ES", {
-                                      hour: "2-digit",
-                                      minute: "2-digit",
-                                    })
-                                  : "Hora desconocida"}
-                                {message.from_user_id === user.id && (
-                                  <span style={{ marginLeft: "0.5rem" }}>
-                                    {message.status === "Leída"
-                                      ? "✔️ Leído"
-                                      : "✔️ Enviado"}
-                                  </span>
-                                )}
-                                {message.status === "Pendiente" &&
-                                  message.to_user_id === user.id && (
-                                    <span style={{ marginLeft: "0.5rem" }}>
-                                      (No leído)
-                                    </span>
-                                  )}
-                              </p>
-                            </PartRequestBanner>
                           ) : (
                             <MessageBubble
                               sender={
