@@ -324,18 +324,36 @@ const AdminNotifications = () => {
         toUserId,
         selectedConversation.order_id,
         newMessage,
-        files
+        files,
+        "message"
       );
-      setAllMessages((prev) => [...prev, notification]);
-      if (!["part_request", "order_creation"].includes(notification.type)) {
-        setFilteredMessages((prev) => [...prev, notification]);
+      // Agregar el mensaje a allMessages y filteredMessages
+      const newNotification = {
+        id: notification.id,
+        order_id: selectedConversation.order_id,
+        from_user_id: user.id,
+        to_user_id: toUserId,
+        message: newMessage || "Adjunto enviado",
+        type: "message",
+        status: "Pendiente",
+        details: notification.details || {},
+        created_at: new Date(),
+        attachments: files.map((file) => ({
+          id: Date.now() + Math.random(), // Temporal, reemplazar con ID real si el backend lo proporciona
+          file_path: URL.createObjectURL(file),
+          file_type: file.type,
+        })),
+      };
+      setAllMessages((prev) => [...prev, newNotification]);
+      if (!["part_request", "order_creation"].includes(newNotification.type)) {
+        setFilteredMessages((prev) => [...prev, newNotification]);
       }
       setConversations((prev) =>
         prev.map((c) =>
           c.order_id === selectedConversation.order_id
             ? {
                 ...c,
-                last_message_at: notification.created_at,
+                last_message_at: new Date(),
                 total_messages: c.total_messages + 1,
               }
             : c
@@ -471,10 +489,24 @@ const AdminNotifications = () => {
               {selectedConversation ? (
                 <>
                   <div
-                    style={{ padding: "1.5rem", flex: "1", overflowY: "auto" }}
+                    style={{
+                      padding: "0 24px",
+                      flex: "1",
+                      overflowY: "auto",
+                    }}
                   >
-                    <div className="d-flex justify-content-between align-items-center">
-                      <div style={{ marginBottom: "1.5rem" }}>
+                    <div
+                      style={{
+                        position: "sticky",
+                        top: 0,
+                        backgroundColor: "#fff", // Fondo blanco para evitar superposición visual
+                        zIndex: 10, // Asegura que esté por encima de los mensajes
+                        padding: "1.5rem",
+                        borderBottom: "1px solid #e0e0e0",
+                      }}
+                      className="d-flex justify-content-between align-items-center"
+                    >
+                      <div>
                         <h2
                           style={{
                             fontSize: "1.5rem",
@@ -534,19 +566,29 @@ const AdminNotifications = () => {
                       aria-live="polite"
                     >
                       {chatMessages.map((message) => (
-                        <div key={message.id}>
+                        <div
+                          key={message.id}
+                          style={{
+                            display: "flex",
+                            justifyContent:
+                              message.from_user_id === user.id
+                                ? "flex-end"
+                                : "flex-start",
+                            marginBottom: "0.5rem",
+                          }}
+                        >
                           {message.type === "part_approval" ? (
-                            <ApprovedNotification>
-                              {message.message}
+                            <div>
+                              <ApprovedNotification>
+                                {message.message}
+                              </ApprovedNotification>
                               <p
                                 style={{
                                   fontSize: "0.75rem",
                                   color: "#28a745",
                                   marginTop: "0.25rem",
                                   textAlign:
-                                    message.from_user_id === user.id
-                                      ? "right"
-                                      : "left",
+                                    user.id === "U001" ? "right" : "left",
                                 }}
                               >
                                 {message.created_at
@@ -571,7 +613,7 @@ const AdminNotifications = () => {
                                     </span>
                                   )}
                               </p>
-                            </ApprovedNotification>
+                            </div>
                           ) : message.type === "part_rejection" ? (
                             <div>
                               <RejectedNotification>
@@ -632,40 +674,45 @@ const AdminNotifications = () => {
                               </p>
                             </div>
                           ) : (
-                            <MessageBubble
-                              sender={
-                                message.from_user_id === user.id
-                                  ? "user"
-                                  : "other"
-                              }
+                            <div
+                              className="d-flex flex-column"
+                              style={{ width: "100%" }}
                             >
-                              <p>{message.message}</p>
-                              {message.attachments?.length > 0 && (
-                                <div style={{ marginTop: "0.5rem" }}>
-                                  {message.attachments.map((attachment) => (
-                                    <div key={attachment.id}>
-                                      {attachment.file_type?.startsWith(
-                                        "image/"
-                                      ) ? (
-                                        <Image
-                                          src={attachment.file_path}
-                                          thumbnail
-                                          style={{ maxWidth: "200px" }}
-                                        />
-                                      ) : (
-                                        <a
-                                          href={attachment.file_path}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                        >
-                                          Descargar{" "}
-                                          {attachment.file_type || "archivo"}
-                                        </a>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
+                              <MessageBubble
+                                sender={
+                                  message.from_user_id === user.id
+                                    ? "user"
+                                    : "other"
+                                }
+                              >
+                                <p>{message.message}</p>
+                                {message.attachments?.length > 0 && (
+                                  <div>
+                                    {message.attachments.map((attachment) => (
+                                      <div key={attachment.id}>
+                                        {attachment.file_type?.startsWith(
+                                          "image/"
+                                        ) ? (
+                                          <Image
+                                            src={attachment.file_path}
+                                            thumbnail
+                                            style={{ maxWidth: "200px" }}
+                                          />
+                                        ) : (
+                                          <a
+                                            href={attachment.file_path}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                          >
+                                            Descargar{" "}
+                                            {attachment.file_type || "archivo"}
+                                          </a>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </MessageBubble>
                               <p
                                 style={{
                                   fontSize: "0.75rem",
@@ -702,7 +749,7 @@ const AdminNotifications = () => {
                                     </span>
                                   )}
                               </p>
-                            </MessageBubble>
+                            </div>
                           )}
                         </div>
                       ))}

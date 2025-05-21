@@ -802,8 +802,7 @@ export const ButtonDetails = styled(Button)(({ variant }) => ({
 }));
 
 export const MessageBubble = styled.div`
-  max-width: 70%;
-  padding: 0.75rem;
+  padding: 1px 12px;
   border-radius: 0.5rem;
   margin-bottom: 0.5rem;
   background-color: ${(props) =>
@@ -824,7 +823,7 @@ export const PartRequestBanner = styled.div`
   color: #333;
   padding: 1rem;
   border-radius: 8px;
-  margin: 1rem;
+  margin-left: 1rem;
   display: flex;
   flex-direction: column;
   justify-content: space-between;

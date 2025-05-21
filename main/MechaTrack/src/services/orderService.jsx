@@ -27,7 +27,6 @@ export const getOrderCounts = async (filters = {}) => {
     const response = await axiosInstance.get("/api/orders/counts", {
       params: filters,
     });
-    console.log("Respuesta de getOrderCounts:", response.data);
     return response.data;
   } catch (error) {
     console.error("Error en getOrderCounts:", error.response?.data || error);

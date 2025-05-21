@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import io from "socket.io-client";
 import { useAuth } from "./AuthContext";
 import { toast } from "react-toastify";
+import axiosInstance from "../services/apiConfig"; // Importar axiosInstance
 
 const SocketContext = createContext();
 
@@ -36,7 +37,10 @@ export const SocketProvider = ({ children }) => {
       if (
         notification.toUserId === user.id ||
         (notification.type === "order_creation" && user.role === "admin") ||
-        (notification.type === "invoice_complete" && user.role === "secretary")
+        (notification.type === "invoice_complete" &&
+          user.role === "secretary") ||
+        (user.role === "admin" &&
+          ["part_approval", "part_rejection"].includes(notification.type))
       ) {
         setNotifications((prev) => {
           if (!prev.some((n) => n.id === notification.id)) {
@@ -45,7 +49,23 @@ export const SocketProvider = ({ children }) => {
           return prev;
         });
         toast.info(`Nueva notificación: ${notification.message}`);
+      } else {
+        console.log(
+          "[SocketContext] Notificación ignorada por filtro:",
+          notification
+        );
       }
+    });
+
+    newSocket.on("messageSent", ({ message, notification }) => {
+      console.log("[SocketContext] Mensaje enviado:", notification);
+      setNotifications((prev) => {
+        if (!prev.some((n) => n.id === notification.id)) {
+          return [...prev, notification];
+        }
+        return prev;
+      });
+      toast.success(message);
     });
 
     newSocket.on("typing", ({ userId, orderId, isTyping }) => {
@@ -116,7 +136,7 @@ export const SocketProvider = ({ children }) => {
     };
   }, [socket, user, token, isConnected]);
 
-  const sendMessage = (
+  const sendMessage = async (
     toUserId,
     orderId,
     message,
@@ -140,10 +160,16 @@ export const SocketProvider = ({ children }) => {
       type,
       status: "Pendiente",
     };
-    return require("../services/notificationService").createNotification(
-      notificationData,
-      null
-    );
+    try {
+      const response = await axiosInstance.post(
+        "/api/notifications",
+        notificationData
+      );
+      return response.data;
+    } catch (error) {
+      console.error("[SocketContext] Error al crear notificación:", error);
+      throw error;
+    }
   };
 
   const sendTyping = (orderId, isTyping) => {
