@@ -198,7 +198,7 @@ const AdminOrders = () => {
           price: part.price || null,
           note: action === "reject" ? note : "",
         },
-        authorizedBy
+        user.id
       );
 
       const updatedOrder = await getOrderById(selectedOrder.id);
