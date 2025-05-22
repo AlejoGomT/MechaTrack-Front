@@ -11,6 +11,7 @@ import CustomButton from "../components/CustomButton";
 import TechnicianCreateOrder from "./TechnicianCreateOrder";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faEye, faCircle, faEdit } from "@fortawesome/free-solid-svg-icons";
+import io from "socket.io-client";
 import {
   StatusDiv,
   MainContainer,
@@ -30,6 +31,7 @@ import { getVehicles } from "../services/vehicleService";
 import {
   getOrders,
   updateOrderStatus,
+  getOrderById,
   getOrderCounts,
 } from "../services/orderService";
 import { toast } from "react-toastify";
@@ -72,6 +74,78 @@ const TechnicianDashboard = () => {
   const [completedOrdersCount, setCompletedOrdersCount] = useState(0);
   const pageSize = 5;
   const formRef = useRef(null);
+  const socketRef = useRef(null);
+
+  useEffect(() => {
+    // Inicializar Socket.IO
+    socketRef.current = io(import.meta.env.VITE_API_URL, {
+      auth: { token: localStorage.getItem("token") },
+    });
+
+    socketRef.current.on("connect", () => {
+      console.log("[TechnicianDashboard] Conectado a Socket.IO");
+      // Unirse a la sala del usuario
+      socketRef.current.emit("join", `user_${user.id}`);
+      // Unirse a las salas de órdenes activas y pendientes
+      orders.forEach((order) => {
+        if (["En Proceso", "Pendiente"].includes(order.status)) {
+          socketRef.current.emit("join", `order_${order.id}`);
+        }
+      });
+    });
+
+    socketRef.current.on("notification", (notification) => {
+      console.log("[TechnicianDashboard] Notificación recibida:", notification);
+      if (
+        notification.toUserId === user.id &&
+        ["closure_approval", "closure_rejection"].includes(notification.type)
+      ) {
+        // Actualizar la orden en el estado
+        const updateOrder = async () => {
+          try {
+            const updatedOrder = await getOrderById(notification.orderId);
+            setOrders((prev) =>
+              prev.map((o) =>
+                o.id === updatedOrder.id ? { ...o, ...updatedOrder } : o
+              )
+            );
+            // Actualizar contadores
+            const countsData = await getOrderCounts({ technician_id: user.id });
+            setInProcessOrdersCount(countsData.inProcess || 0);
+            setPendingOrdersCount(countsData.pending || 0);
+            setCompletedOrdersCount(countsData.completed || 0);
+            // Mostrar notificación
+            toast.info(notification.message, {
+              onClick: () => {
+                setSelectedOrder(updatedOrder);
+                setShowModal(false);
+                if (updatedOrder.status === "Finalizado") {
+                  setShowViewFinalizedModal(true);
+                } else {
+                  setShowEditModal(true);
+                }
+              },
+            });
+          } catch (err) {
+            console.error(
+              "[TechnicianDashboard] Error al actualizar orden desde notificación:",
+              err
+            );
+          }
+        };
+        updateOrder();
+      }
+    });
+
+    socketRef.current.on("disconnect", () => {
+      console.log("[TechnicianDashboard] Desconectado de Socket.IO");
+    });
+
+    return () => {
+      socketRef.current.disconnect();
+      console.log("[TechnicianDashboard] Socket.IO desconectado");
+    };
+  }, [user.id, orders]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -100,10 +174,6 @@ const TechnicianDashboard = () => {
         );
 
         if (!Array.isArray(ordersData.orders)) {
-          console.error(
-            "[TechnicianDashboard] Respuesta inválida de getOrders, se esperaba un arreglo en orders:",
-            ordersData
-          );
           setOrders([]);
           toast.error("Respuesta inválida al cargar órdenes");
           return;
@@ -114,10 +184,6 @@ const TechnicianDashboard = () => {
           typeof countsData !== "object" ||
           !("inProcess" in countsData)
         ) {
-          console.error(
-            "[TechnicianDashboard] Respuesta inválida de getOrderCounts:",
-            countsData
-          );
           setInProcessOrdersCount(0);
           setPendingOrdersCount(0);
           setCompletedOrdersCount(0);
@@ -135,8 +201,16 @@ const TechnicianDashboard = () => {
         setVehicles(
           Array.isArray(vehiclesData.vehicles) ? vehiclesData.vehicles : []
         );
+
+        // Unirse a las salas de las órdenes cargadas
+        if (socketRef.current?.connected) {
+          ordersData.orders.forEach((order) => {
+            if (["En Proceso", "Pendiente"].includes(order.status)) {
+              socketRef.current.emit("join", `order_${order.id}`);
+            }
+          });
+        }
       } catch (err) {
-        console.error("[TechnicianDashboard] Error al cargar datos:", err);
         toast.error(err.message || "Error al cargar datos");
         setOrders([]);
         setVehicles([]);
@@ -185,6 +259,15 @@ const TechnicianDashboard = () => {
           setModalTotalPages(
             Math.ceil((ordersData.total || ordersData.orders.length) / pageSize)
           );
+
+          // Unirse a las salas de las órdenes cargadas
+          if (socketRef.current?.connected) {
+            ordersData.orders.forEach((order) => {
+              if (["En Proceso", "Pendiente"].includes(order.status)) {
+                socketRef.current.emit("join", `order_${order.id}`);
+              }
+            });
+          }
         } catch (err) {
           toast.error(err.message || "Error al cargar órdenes");
           setOrders([]);
@@ -344,13 +427,11 @@ const TechnicianDashboard = () => {
   };
 
   const submitForApproval = async (order) => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     try {
-      console.log(
-        `[TechnicianDashboard] Enviando orden #${order.id} para aprobación con estado Pendiente`
-      );
       const updatedOrder = await updateOrderStatus(order.id, "Pendiente");
       console.log(`[TechnicianDashboard] Orden actualizada:`, updatedOrder);
-      toast.success(`Orden #${order.id} enviada para aprobación`);
       setOrders((prev) =>
         prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o))
       );
@@ -358,12 +439,19 @@ const TechnicianDashboard = () => {
       setInProcessOrdersCount(countsData.inProcess || 0);
       setPendingOrdersCount(countsData.pending || 0);
       setCompletedOrdersCount(countsData.completed || 0);
+      toast.success(`Orden #${order.id} enviada para aprobación`);
+      // Unirse a la sala de la orden si no está ya
+      if (socketRef.current?.connected) {
+        socketRef.current.emit("join", `order_${order.id}`);
+      }
     } catch (err) {
       console.error(
         `[TechnicianDashboard] Error al enviar orden #${order.id}:`,
         err
       );
       toast.error(err.message || "Error al enviar la orden para aprobación");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -659,6 +747,16 @@ const TechnicianDashboard = () => {
                     setInProcessOrdersCount(countsData.inProcess || 0);
                     setPendingOrdersCount(countsData.pending || 0);
                     setCompletedOrdersCount(countsData.completed || 0);
+                    // Unirse a la sala de la orden actualizada
+                    if (
+                      socketRef.current?.connected &&
+                      ["En Proceso", "Pendiente"].includes(updatedOrder.status)
+                    ) {
+                      socketRef.current.emit(
+                        "join",
+                        `order_${updatedOrder.id}`
+                      );
+                    }
                   }
                   closeModal("edit", "main", "in-process");
                 }}

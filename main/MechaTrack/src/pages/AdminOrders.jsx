@@ -38,6 +38,7 @@ import {
   updateOrderNumbers,
   updateOrderStatus,
   updateOrder,
+  finalizeOrder,
 } from "../services/orderService";
 
 library.add(faCircle, faCheck, faTimes, faEye);
@@ -621,8 +622,20 @@ const AdminOrders = () => {
               {selectedOrder.status === "Pendiente" && (
                 <ActionSection>
                   <h6>Revisión de Finalización</h6>
-                  <Row className="mt-3">
-                    <Col>
+                  <div className="d-flex justify-content-around">
+                    <Form.Group className="mt-2" style={{ width: "60%" }}>
+                      <FilterLabel>
+                        Observaciones (obligatorio para rechazar)
+                      </FilterLabel>
+                      <FilterInput
+                        as="textarea"
+                        rows={2}
+                        value={rejectionNote}
+                        onChange={(e) => setRejectionNote(e.target.value)}
+                        placeholder="Motivo del rechazo"
+                      />
+                    </Form.Group>
+                    <div className="d-flex flex-column justify-content-around">
                       <CustomButton
                         variant="success"
                         onClick={() => handleFinalizeAction("accept")}
@@ -638,20 +651,8 @@ const AdminOrders = () => {
                       >
                         <FontAwesomeIcon icon={faTimes} /> Rechazar Finalización
                       </CustomButton>
-                    </Col>
-                  </Row>
-                  <Form.Group className="mt-2">
-                    <FilterLabel>
-                      Observaciones (obligatorio para rechazar)
-                    </FilterLabel>
-                    <FilterInput
-                      as="textarea"
-                      rows={2}
-                      value={rejectionNote}
-                      onChange={(e) => setRejectionNote(e.target.value)}
-                      placeholder="Motivo del rechazo"
-                    />
-                  </Form.Group>
+                    </div>
+                  </div>
                 </ActionSection>
               )}
 
