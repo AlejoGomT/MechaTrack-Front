@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Container, Form, Modal, Row, Col, Pagination } from "react-bootstrap";
 import { useAuth } from "../context/AuthContext";
+import { useSocket } from "../context/SocketContext";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import CustomButton from "../components/CustomButton";
@@ -83,6 +84,7 @@ const ActionSection = styled.div`
 
 const AdminOrders = () => {
   const { user, token } = useAuth();
+  const { sendMessage, isConnected } = useSocket();
   const [branchFilter, setBranchFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [economicNumberFilter, setEconomicNumberFilter] = useState("");
@@ -175,8 +177,13 @@ const AdminOrders = () => {
     }
   };
 
-  const handlePartAction = async (partIndex, action, note) => {
-    const part = editedParts[partIndex];
+  const handlePartAction = async (partId, action, note) => {
+    const part = editedParts.find((p) => p.part_id === partId);
+    if (!part) {
+      toast.error("Repuesto no encontrado");
+      console.error("[AdminOrders] Repuesto no encontrado:", partId);
+      return;
+    }
     try {
       const status = action === "accept" ? "Aprobado" : "Rechazado";
       const authorizedBy =
@@ -192,6 +199,7 @@ const AdminOrders = () => {
         },
         authorizedBy
       );
+
       const updatedOrder = await getOrderById(selectedOrder.id);
       setSelectedOrder(updatedOrder);
       setEditedParts(updatedOrder.parts || []);
@@ -352,6 +360,7 @@ const AdminOrders = () => {
       invoice: selectedOrder.invoice,
       parts: editedParts,
       total: editedParts
+        .filter((part) => part.status === "Aprobado")
         .reduce((sum, part) => sum + part.quantity * (part.price || 0), 0)
         .toFixed(2),
     };

@@ -69,7 +69,7 @@ const StatusIndicator = styled.span`
       case "Solicitado":
         return "#ffc107";
       default:
-        return "#6c757d";
+        return "#ff6961";
     }
   }};
 `;
@@ -504,7 +504,10 @@ const OrderForm = memo(
       (v) => v.branch === formData.branch
     );
     const requestedParts = formData.partsList.filter(
-      (part) => part.status === "Aprobado" || part.status === "Solicitado"
+      (part) =>
+        part.status === "Aprobado" ||
+        part.status === "Solicitado" ||
+        part.status === "Rechazado"
     );
 
     return (

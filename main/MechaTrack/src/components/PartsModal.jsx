@@ -167,7 +167,7 @@ const PartsModal = ({
     try {
       const part = localPartsList[partIndex];
       console.log("[PartsModal] Actualizando cantidad:", { part, newQuantity });
-      if (part.status !== "Solicitado") {
+      if (part.status !== "Solicitado" && part.status !== "Rechazado") {
         toast.error("Solo se pueden editar repuestos en estado Solicitado");
         return;
       }
@@ -217,7 +217,6 @@ const PartsModal = ({
           : `Cantidad actualizada para ${part.name}`
       );
     } catch (err) {
-      console.error("[PartsModal] Error en handleUpdatePartQuantity:", err);
       toast.error(err.message || "Error al actualizar cantidad");
     }
   };
@@ -401,17 +400,19 @@ const PartsModal = ({
                           </td>
                           <td>
                             <ActionsContainer>
-                              {part.status === "Solicitado" && !isReadOnly && (
-                                <ActionButton
-                                  variant="danger"
-                                  size="sm"
-                                  onClick={() =>
-                                    handleUpdatePartQuantity(index, 0)
-                                  }
-                                >
-                                  <FontAwesomeIcon icon={faTrash} />
-                                </ActionButton>
-                              )}
+                              {(part.status === "Solicitado" ||
+                                part.status === "Rechazado") &&
+                                !isReadOnly && (
+                                  <ActionButton
+                                    variant="danger"
+                                    size="sm"
+                                    onClick={() =>
+                                      handleUpdatePartQuantity(index, 0)
+                                    }
+                                  >
+                                    <FontAwesomeIcon icon={faTrash} />
+                                  </ActionButton>
+                                )}
                               {part.status === "Aprobado" && !isReadOnly && (
                                 <ActionButton
                                   variant="warning"

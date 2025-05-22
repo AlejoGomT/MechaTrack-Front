@@ -74,18 +74,35 @@ const AdminNotifications = () => {
     const fetchConversations = async () => {
       try {
         const data = await getConversations(user.id);
-        // Procesar recipients y senders para evitar duplicados
+        // Procesar recipients y senders para evitar duplicados y mostrar nombres correctos
         const processedConversations = data.map((conv) => {
-          const recipients = conv.recipients
+          // Dividir recipients y senders, eliminando duplicados
+          const recipientList = conv.recipients
             ? [...new Set(conv.recipients.split(", "))]
-                .filter((r) => r !== "Admin user" && r !== "technician user")
-                .join(", ") || "Técnico"
-            : "Técnico";
-          const senders = conv.senders
+            : [];
+          const senderList = conv.senders
             ? [...new Set(conv.senders.split(", "))]
-                .filter((s) => s !== "Admin user" && s !== "technician user")
-                .join(", ") || user.first_name + " " + user.last_name
-            : user.first_name + " " + user.last_name;
+            : [];
+
+          // Determinar el nombre del técnico (excluyendo al administrador)
+          const technicianName =
+            recipientList
+              .concat(senderList)
+              .filter(
+                (name) =>
+                  name &&
+                  name !== "Admin user" &&
+                  name !== "technician user" &&
+                  name !== `${user.first_name} ${user.last_name}`
+              )[0] || "Técnico";
+
+          // Para el administrador, usamos el nombre del usuario logueado
+          const adminName = `${user.first_name} ${user.last_name}`;
+
+          // Asignar recipients y senders según el contexto
+          const recipients = technicianName;
+          const senders = adminName;
+
           return { ...conv, recipients, senders };
         });
         setConversations(processedConversations);
@@ -466,7 +483,7 @@ const AdminNotifications = () => {
                       marginTop: "0.25rem",
                     }}
                   >
-                    {conversation.recipients} ↔ {conversation.senders}
+                    {conversation.senders} ↔ {conversation.recipients}
                   </p>
                   <p
                     style={{
@@ -718,8 +735,8 @@ const AdminNotifications = () => {
                                   fontSize: "0.75rem",
                                   color:
                                     message.from_user_id === user.id
-                                      ? "#e0e0e0"
-                                      : "#d1d5db",
+                                      ? "#c7c7c7"
+                                      : "#b6bac0",
                                   marginTop: "0.25rem",
                                   textAlign:
                                     message.from_user_id === user.id

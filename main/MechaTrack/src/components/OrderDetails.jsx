@@ -74,17 +74,17 @@ const OrderDetails = ({
     setRejectionNotes({ ...rejectionNotes, [index]: value });
   };
 
-  const handlePartAction = (index, action) => {
-    if (action === "reject" && !rejectionNotes[index]) {
+  const handlePartAction = (partId, action, note) => {
+    if (action === "reject" && !note) {
       toast.error("La nota de rechazo es obligatoria");
       return;
     }
     console.log("[OrderDetails] Acción en repuesto:", {
-      index,
+      partId,
       action,
-      note: rejectionNotes[index],
+      note,
     });
-    onPartAction(index, action, rejectionNotes[index] || "");
+    onPartAction(partId, action, note);
   };
 
   const handleEditPartStart = (index) => {
@@ -142,7 +142,6 @@ const OrderDetails = ({
   const handleImageDelete = async (index) => {
     try {
       if (order.images[index].startsWith("blob:")) {
-        // Imagen nueva (aún no guardada en el servidor)
         const updatedImages = order.images.filter((_, i) => i !== index);
         const updatedNewImages = newImages.filter(
           (_, i) =>
@@ -152,7 +151,6 @@ const OrderDetails = ({
         onEditPart("images", updatedImages);
         toast.success("Imagen eliminada");
       } else {
-        // Imagen existente en el servidor
         await deleteOrderImage(order.id, index);
         const updatedImages = order.images.filter((_, i) => i !== index);
         onEditPart("images", updatedImages);
@@ -165,6 +163,7 @@ const OrderDetails = ({
 
   const calculateTotal = () => {
     return editedParts
+      .filter((part) => part.status === "Aprobado")
       .reduce((sum, part) => sum + part.quantity * (part.price || 0), 0)
       .toFixed(2);
   };
@@ -428,7 +427,7 @@ const OrderDetails = ({
             </thead>
             <tbody>
               {approvedParts.map((part, index) => (
-                <tr key={index}>
+                <tr key={part.part_id}>
                   <td>{part.name}</td>
                   <td>
                     {editingPartIndex === index ? (
@@ -524,7 +523,7 @@ const OrderDetails = ({
             </thead>
             <tbody>
               {approvedParts.map((part, index) => (
-                <tr key={index}>
+                <tr key={part.part_id}>
                   <td>{part.name}</td>
                   <td>{part.quantity}</td>
                   <td>${part.price != null ? part.price : 0}</td>
@@ -546,7 +545,7 @@ const OrderDetails = ({
           {requestedParts.length > 0 ? (
             <ListGroup className="mb-3">
               {requestedParts.map((part, index) => (
-                <PartItem key={index}>
+                <PartItem key={part.part_id}>
                   <div>
                     <strong>{part.name}</strong>
                     <br />
@@ -572,7 +571,13 @@ const OrderDetails = ({
                     <ActionButton
                       variant="primary"
                       size="sm"
-                      onClick={() => handlePartAction(index, "accept")}
+                      onClick={() =>
+                        handlePartAction(
+                          part.part_id,
+                          "accept",
+                          rejectionNotes[index] || ""
+                        )
+                      }
                       className="me-2"
                     >
                       <FontAwesomeIcon icon={faCheck} /> Aceptar
@@ -580,7 +585,13 @@ const OrderDetails = ({
                     <ActionButton
                       variant="danger"
                       size="sm"
-                      onClick={() => handlePartAction(index, "reject")}
+                      onClick={() =>
+                        handlePartAction(
+                          part.part_id,
+                          "reject",
+                          rejectionNotes[index] || ""
+                        )
+                      }
                       disabled={!rejectionNotes[index]}
                     >
                       <FontAwesomeIcon icon={faTimes} /> Rechazar
