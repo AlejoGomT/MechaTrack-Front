@@ -164,14 +164,6 @@ const TechnicianDashboard = () => {
           getVehicles({ limit: 1000 }),
           getOrderCounts({ technician_id: user.id }),
         ]);
-        console.log(
-          "[TechnicianDashboard] Respuesta de getOrders:",
-          ordersData
-        );
-        console.log(
-          "[TechnicianDashboard] Respuesta de getOrderCounts:",
-          countsData
-        );
 
         if (!Array.isArray(ordersData.orders)) {
           setOrders([]);

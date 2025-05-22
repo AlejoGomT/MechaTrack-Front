@@ -206,7 +206,9 @@ const AdminOrders = () => {
       setEditedParts(updatedOrder.parts || []);
       toast.success(
         `Repuesto ${part.name} ${
-          action === "accept" ? "aprobado" : "rechazado"
+          action === "accept"
+            ? "aprobado"
+            : "rechazado y será eliminado al aceptar la orden"
         }`
       );
     } catch (error) {
@@ -280,6 +282,18 @@ const AdminOrders = () => {
 
   const handleFinalizeAction = async (action) => {
     try {
+      if (action === "accept") {
+        const pendingParts = editedParts.filter(
+          (part) => part.status === "Solicitado"
+        );
+        if (pendingParts.length > 0) {
+          toast.error(
+            "No se puede aceptar la orden con repuestos pendientes. Por favor, apruebe o rechace todos los repuestos."
+          );
+          return;
+        }
+      }
+
       const newStatus = action === "accept" ? "Finalizado" : "En Proceso";
       await finalizeOrder(selectedOrder.id, {
         action,
@@ -303,7 +317,7 @@ const AdminOrders = () => {
         setShowModal(false);
       }
     } catch (error) {
-      toast.error("Error al procesar finalización");
+      toast.error(error.message || "Error al procesar finalización");
       console.error("[AdminOrders] Error al procesar finalización:", error);
     }
   };

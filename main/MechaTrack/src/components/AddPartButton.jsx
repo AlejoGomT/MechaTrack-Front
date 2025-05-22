@@ -47,9 +47,8 @@ const AddPartButton = ({
         }
 
         // Obtener repuestos disponibles basados en el modelo
-        console.log("Obteniendo repuestos para el modelo:", model);
-        const partsData = await getParts(model);
-        console.log("Repuestos recibidos:", partsData);
+        const partsResponse = await getParts(model);
+        const partsData = partsResponse.parts || [];
         if (!Array.isArray(partsData) || partsData.length === 0) {
           throw new Error(
             "No se encontraron repuestos para el modelo del vehículo"
