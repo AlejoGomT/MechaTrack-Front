@@ -214,17 +214,23 @@ const AdminOrders = () => {
     }
   };
 
-  const handleEditPart = (index, field, value) => {
-    const updatedParts = [...editedParts];
-    updatedParts[index] = { ...updatedParts[index], [field]: value };
+  const handleEditPartById = (partId, updates) => {
+    const updatedParts = editedParts.map((part) =>
+      part.part_id === partId ? { ...part, ...updates } : part
+    );
     setEditedParts(updatedParts);
   };
 
-  const handleDeletePart = async (index) => {
-    const part = editedParts[index];
+  const handleDeletePart = async (partId) => {
+    const part = editedParts.find((p) => p.part_id === partId);
+    if (!part) {
+      toast.error("Repuesto no encontrado");
+      console.error("[AdminOrders] Repuesto no encontrado:", partId);
+      return;
+    }
     try {
       await updatePartQuantity(selectedOrder.id, part.part_id, 0);
-      const updatedParts = editedParts.filter((_, i) => i !== index);
+      const updatedParts = editedParts.filter((p) => p.part_id !== partId);
       setEditedParts(updatedParts);
       toast.success(`Repuesto ${part.name} eliminado`);
     } catch (error) {
@@ -245,7 +251,13 @@ const AdminOrders = () => {
   };
 
   const handleEditOrderField = (field, value) => {
-    setEditedOrder({ ...editedOrder, [field]: value });
+    if (field === "parts") {
+      setEditedParts(value);
+    } else if (typeof field === "string" && typeof value === "object") {
+      handleEditPartById(field, value);
+    } else {
+      setEditedOrder({ ...editedOrder, [field]: value });
+    }
   };
 
   const saveEditedOrder = async () => {

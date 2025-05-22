@@ -56,7 +56,7 @@ const OrderDetails = ({
   const [rejectionNotes, setRejectionNotes] = useState({});
   const [newImages, setNewImages] = useState([]);
   const [showImagesModal, setShowImagesModal] = useState(false);
-  const [editingPartIndex, setEditingPartIndex] = useState(null);
+  const [editingPartId, setEditingPartId] = useState(null);
   const [editPartData, setEditPartData] = useState({ quantity: 0, price: 0 });
   const isFinalized = order.status === "Finalizado";
   const isInProcess = order.status === "En Proceso";
@@ -87,9 +87,13 @@ const OrderDetails = ({
     onPartAction(partId, action, note);
   };
 
-  const handleEditPartStart = (index) => {
-    const part = editedParts[index];
-    setEditingPartIndex(index);
+  const handleEditPartStart = (partId) => {
+    const part = editedParts.find((p) => p.part_id === partId);
+    if (!part) {
+      toast.error("Repuesto no encontrado");
+      return;
+    }
+    setEditingPartId(partId);
     setEditPartData({
       quantity: part.quantity,
       price: part.price || 0,
@@ -104,26 +108,26 @@ const OrderDetails = ({
     }));
   };
 
-  const handleEditPartSave = (index) => {
+  const handleEditPartSave = (partId) => {
     if (editPartData.quantity < 0 || editPartData.price < 0) {
       toast.error("Cantidad y precio deben ser no negativos");
       return;
     }
     const updatedPart = {
-      ...editedParts[index],
+      ...editedParts.find((p) => p.part_id === partId),
       quantity: editPartData.quantity,
       price: editPartData.price,
     };
-    const updatedParts = [...editedParts];
-    updatedParts[index] = updatedPart;
-    setEditedParts(updatedParts);
-    setEditingPartIndex(null);
-    onEditPart("parts", updatedParts);
+    onEditPart(partId, {
+      quantity: editPartData.quantity,
+      price: editPartData.price,
+    });
+    setEditingPartId(null);
     toast.success("Repuesto actualizado");
   };
 
   const handleEditPartCancel = () => {
-    setEditingPartIndex(null);
+    setEditingPartId(null);
     setEditPartData({ quantity: 0, price: 0 });
   };
 
@@ -426,11 +430,11 @@ const OrderDetails = ({
               </tr>
             </thead>
             <tbody>
-              {approvedParts.map((part, index) => (
+              {approvedParts.map((part) => (
                 <tr key={part.part_id}>
                   <td>{part.name}</td>
                   <td>
-                    {editingPartIndex === index ? (
+                    {editingPartId === part.part_id ? (
                       <InputGroup style={{ maxWidth: "120px" }}>
                         <Form.Control
                           type="number"
@@ -446,7 +450,7 @@ const OrderDetails = ({
                     )}
                   </td>
                   <td>
-                    {editingPartIndex === index ? (
+                    {editingPartId === part.part_id ? (
                       <InputGroup style={{ maxWidth: "120px" }}>
                         <Form.Control
                           type="number"
@@ -467,12 +471,12 @@ const OrderDetails = ({
                   <td>Aprobado</td>
                   <td className="actions">
                     <ActionsContainer>
-                      {editingPartIndex === index ? (
+                      {editingPartId === part.part_id ? (
                         <>
                           <ActionButton
                             variant="success"
                             className="me-2"
-                            onClick={() => handleEditPartSave(index)}
+                            onClick={() => handleEditPartSave(part.part_id)}
                           >
                             <FontAwesomeIcon icon={faCheck} />
                           </ActionButton>
@@ -489,13 +493,13 @@ const OrderDetails = ({
                             variant="primary"
                             size="sm"
                             className="me-2"
-                            onClick={() => handleEditPartStart(index)}
+                            onClick={() => handleEditPartStart(part.part_id)}
                           >
                             <FontAwesomeIcon icon={faEdit} />
                           </ActionButton>
                           <ActionButton
                             size="sm"
-                            onClick={() => onDeletePart(index)}
+                            onClick={() => onDeletePart(part.part_id)}
                           >
                             <FontAwesomeIcon icon={faTrash} />
                           </ActionButton>
@@ -522,7 +526,7 @@ const OrderDetails = ({
               </tr>
             </thead>
             <tbody>
-              {approvedParts.map((part, index) => (
+              {approvedParts.map((part) => (
                 <tr key={part.part_id}>
                   <td>{part.name}</td>
                   <td>{part.quantity}</td>
