@@ -507,7 +507,9 @@ const OrderForm = memo(
       (part) =>
         part.status === "Aprobado" ||
         part.status === "Solicitado" ||
-        part.status === "Rechazado"
+        part.status === "Rechazado" ||
+        part.status === "Devolución Solicitada" ||
+        part.status === "Devolución Rechazada"
     );
 
     return (
@@ -719,9 +721,7 @@ const OrderForm = memo(
                           <StatusIndicator status={part.status}>
                             <FontAwesomeIcon icon={faCircle} />
                           </StatusIndicator>
-                          {part.status === "Devolución Aprobada"
-                            ? "Eliminado (Devolución Aprobada)"
-                            : part.status}
+                          {part.status}
                         </td>
                       </tr>
                     ))}
@@ -950,7 +950,6 @@ const OrderForm = memo(
                     authorized_by: part.authorized_by_id || null,
                   }))
                 : [];
-              console.log("formData.partsList actualizado:", updatedPartsList);
               return {
                 ...prev,
                 partsList: updatedPartsList,

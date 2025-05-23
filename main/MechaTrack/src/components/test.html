@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Game Vanessa</title>
+    <style>
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(5, 80px);
+        gap: 5px;
+        margin: 20px auto;
+        width: fit-content;
+      }
+      .card {
+        width: 80px;
+        height: 80px;
+        background: #ccc;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 24px;
+        border-radius: 5px;
+      }
+      .card.matched {
+        background: #6f6;
+      }
+      .card.flipped {
+        background: #fff;
+      }
+      #message {
+        text-align: center;
+        font-size: 24px;
+        margin-top: 20px;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="grid" id="gameGrid"></div>
+    <div id="message">
+      ¡Ganaste mi princesa, te adoro!
+      <b>¡Ganhaste minha princesa, eu te adoro!</b>
+    </div>
+
+    <script>
+      const grid = document.getElementById("gameGrid");
+      const message = document.getElementById("message");
+      let cards = [];
+      let flippedCards = [];
+      let matchedPairs = 0;
+
+      // Crear array de 12 pares (24 cartas) + 1 carta extra para 25 total
+      const symbols = [
+        "❤️",
+        "⭐",
+        "🌸",
+        "🍎",
+        "🎀",
+        "🐾",
+        "🌙",
+        "☀️",
+        "🍒",
+        "🦋",
+        "🌼",
+        "💎",
+      ];
+      let gameCards = [...symbols, ...symbols.slice(0, 12), "👑"]; // 25 cartas
+
+      // Barajar las cartas
+      function shuffle(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [array[i], array[j]] = [array[j], array[i]];
+        }
+        return array;
+      }
+
+      // Crear el juego
+      function createGame() {
+        gameCards = shuffle(gameCards);
+        for (let i = 0; i < 25; i++) {
+          const card = document.createElement("div");
+          card.classList.add("card");
+          card.dataset.symbol = gameCards[i];
+          card.addEventListener("click", flipCard);
+          grid.appendChild(card);
+        }
+      }
+
+      // Voltear carta
+      function flipCard() {
+        if (
+          flippedCards.length < 2 &&
+          !this.classList.contains("flipped") &&
+          !this.classList.contains("matched")
+        ) {
+          this.classList.add("flipped");
+          this.textContent = this.dataset.symbol;
+          flippedCards.push(this);
+
+          if (flippedCards.length === 2) {
+            setTimeout(checkMatch, 1000);
+          }
+        }
+      }
+
+      // Verificar si hay pareja
+      function checkMatch() {
+        const [card1, card2] = flippedCards;
+        if (card1.dataset.symbol === card2.dataset.symbol) {
+          card1.classList.add("matched");
+          card2.classList.add("matched");
+          matchedPairs++;
+          if (matchedPairs === 12) {
+            // 12 pares completados
+            message.style.display = "block";
+          }
+        } else {
+          card1.classList.remove("flipped");
+          card2.classList.remove("flipped");
+          card1.textContent = "";
+          card2.textContent = "";
+        }
+        flippedCards = [];
+      }
+
+      // Iniciar el juego
+      createGame();
+    </script>
+  </body>
+</html>

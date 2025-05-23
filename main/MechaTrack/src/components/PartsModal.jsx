@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Button, Modal, Table, InputGroup, Form } from "react-bootstrap";
 import { toast } from "react-toastify";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faTrash } from "@fortawesome/free-solid-svg-icons";
+import { faTrash, faUndo } from "@fortawesome/free-solid-svg-icons";
 import { getOrderById } from "../services/orderService";
 import {
   requestPart,
@@ -16,6 +16,7 @@ import {
   ModalBody,
   ActionButton,
   ActionsContainer,
+  colors,
 } from "../styles/GlobalStyles";
 
 const PartsModal = ({
@@ -224,7 +225,10 @@ const PartsModal = ({
   const handleRequestPartReturn = async (partIndex) => {
     try {
       const part = localPartsList[partIndex];
-      if (part.status !== "Aprobado") {
+      if (
+        part.status !== "Aprobado" &&
+        part.status !== "Devolución Rechazada"
+      ) {
         toast.error("Solo se pueden devolver repuestos aprobados");
         return;
       }
@@ -245,7 +249,10 @@ const PartsModal = ({
       toast.success(`Solicitud de devolución enviada para ${part.name}`);
     } catch (err) {
       console.error("Error en handleRequestPartReturn:", err);
-      toast.error(err.message || "Error al solicitar devolución");
+      toast.error(
+        err.message ||
+          "Error al solicitar devolución. Verifica que el repuesto esté aprobado y que los datos sean correctos."
+      );
     }
   };
 
@@ -394,9 +401,17 @@ const PartsModal = ({
                             )}
                           </td>
                           <td>
-                            {part.status === "Devolución Aprobada"
-                              ? "Eliminado (Devolución Aprobada)"
-                              : part.status}
+                            {part.status === "Devolución Rechazada" ? (
+                              <>
+                                {part.status} <br />
+                                Estado Actual:{" "}
+                                <strong style={{ color: "#66CD66" }}>
+                                  Aprobado
+                                </strong>
+                              </>
+                            ) : (
+                              part.status
+                            )}
                           </td>
                           <td>
                             <ActionsContainer>
@@ -413,15 +428,20 @@ const PartsModal = ({
                                     <FontAwesomeIcon icon={faTrash} />
                                   </ActionButton>
                                 )}
-                              {part.status === "Aprobado" && !isReadOnly && (
-                                <ActionButton
-                                  variant="warning"
-                                  size="sm"
-                                  onClick={() => handleRequestPartReturn(index)}
-                                >
-                                  Solicitar Devolución
-                                </ActionButton>
-                              )}
+                              {(part.status === "Aprobado" ||
+                                part.status === "Devolución Rechazada") &&
+                                !isReadOnly && (
+                                  <ActionButton
+                                    variant="warning"
+                                    size="sm"
+                                    onClick={() =>
+                                      handleRequestPartReturn(index)
+                                    }
+                                    title="Solicitar Devolución"
+                                  >
+                                    <FontAwesomeIcon icon={faUndo} />
+                                  </ActionButton>
+                                )}
                             </ActionsContainer>
                           </td>
                         </tr>

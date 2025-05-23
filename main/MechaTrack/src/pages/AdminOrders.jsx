@@ -31,6 +31,7 @@ import {
   updatePartQuantity,
   requestPart,
   updatePartAdmin,
+  processPartReturn,
 } from "../services/partService";
 import {
   getOrders,
@@ -182,37 +183,51 @@ const AdminOrders = () => {
     const part = editedParts.find((p) => p.part_id === partId);
     if (!part) {
       toast.error("Repuesto no encontrado");
-      console.error("[AdminOrders] Repuesto no encontrado:", partId);
       return;
     }
     try {
-      const status = action === "accept" ? "Aprobado" : "Rechazado";
-      const authorizedBy =
-        action === "accept" ? `${user.first_name} ${user.last_name}` : null;
-      await updatePartAdmin(
-        selectedOrder.id,
-        part.part_id,
-        {
-          quantity: part.quantity,
-          status,
-          price: part.price || null,
-          note: action === "reject" ? note : "",
-        },
-        user.id
-      );
-
-      const updatedOrder = await getOrderById(selectedOrder.id);
-      setSelectedOrder(updatedOrder);
-      setEditedParts(updatedOrder.parts || []);
-      toast.success(
-        `Repuesto ${part.name} ${
-          action === "accept"
-            ? "aprobado"
-            : "rechazado y será eliminado al aceptar la orden"
-        }`
-      );
+      if (action === "acceptReturn" || action === "rejectReturn") {
+        const status =
+          action === "acceptReturn"
+            ? "Devolución Aprobada"
+            : "Devolución Rechazada";
+        await processPartReturn(selectedOrder.id, partId, status, note || "");
+        const updatedOrder = await getOrderById(selectedOrder.id);
+        setSelectedOrder(updatedOrder);
+        setEditedParts(updatedOrder.parts || []);
+        toast.success(
+          `Devolución de ${part.name} ${
+            action === "acceptReturn" ? "aprobada" : "rechazada"
+          }`
+        );
+      } else {
+        const status = action === "accept" ? "Aprobado" : "Rechazado";
+        if (action === "reject" && (!note || note.trim().length < 5)) {
+          toast.error("El motivo de rechazo debe tener al menos 5 caracteres");
+          return;
+        }
+        await updatePartAdmin(
+          selectedOrder.id,
+          part.part_id,
+          {
+            quantity: part.quantity,
+            status,
+            price: part.price || null,
+            note: action === "reject" ? note : "",
+          },
+          user.id
+        );
+        const updatedOrder = await getOrderById(selectedOrder.id);
+        setSelectedOrder(updatedOrder);
+        setEditedParts(updatedOrder.parts || []);
+        toast.success(
+          `Repuesto ${part.name} ${
+            action === "accept" ? "aprobado" : "rechazado"
+          }`
+        );
+      }
     } catch (error) {
-      toast.error("Error al procesar repuesto");
+      toast.error(error.message || "Error al procesar repuesto");
       console.error("[AdminOrders] Error al procesar repuesto:", error);
     }
   };

@@ -15,11 +15,13 @@ import {
   StyledTable,
   ImageContainer,
   ActionsContainer,
+  StatusDiv,
 } from "../styles/GlobalStyles";
 import AddPartButton from "./AddPartButton";
 import OrderImagesModal from "./OrderImagesModal";
 import { API_URL } from "../services/apiConfig";
 import { deleteOrderImage } from "../services/orderService";
+import { processPartReturn } from "../services/partService";
 
 const ReadOnlyField = styled(Form.Control)`
   background-color: #f8f9fa;
@@ -70,21 +72,48 @@ const OrderDetails = ({
     console.log("[OrderDetails] orderId para AddPartButton:", order.id);
   }, [order, editedParts]);
 
-  const handleRejectionNoteChange = (index, value) => {
-    setRejectionNotes({ ...rejectionNotes, [index]: value });
+  const handleRejectionNoteChange = (partId, value) => {
+    setRejectionNotes((prev) => ({ ...prev, [partId]: value }));
   };
 
-  const handlePartAction = (partId, action, note) => {
-    if (action === "reject" && !note) {
-      toast.error("La nota de rechazo es obligatoria");
+  const handlePartAction = async (partId, action, note) => {
+    if (action === "reject" && (!note || note.trim().length < 5)) {
+      toast.error("El motivo de rechazo debe tener al menos 5 caracteres");
       return;
     }
-    console.log("[OrderDetails] Acción en repuesto:", {
-      partId,
-      action,
-      note,
-    });
-    onPartAction(partId, action, note);
+    console.log("[OrderDetails] Acción en repuesto:", { partId, action, note });
+
+    try {
+      if (action === "acceptReturn" || action === "rejectReturn") {
+        const status =
+          action === "acceptReturn"
+            ? "Devolución Aprobada"
+            : "Devolución Rechazada";
+        await processPartReturn(order.id, partId, status, note || "");
+        toast.success(
+          status === "Devolución Aprobada"
+            ? "Devolución aprobada"
+            : "Devolución rechazada"
+        );
+        // Actualizar editedParts tras la acción
+        const updatedParts = editedParts.map((part) =>
+          part.part_id === partId
+            ? {
+                ...part,
+                status,
+                note: action === "rejectReturn" ? note || null : null,
+              }
+            : part
+        );
+        setEditedParts(updatedParts);
+        setRejectionNotes((prev) => ({ ...prev, [partId]: "" }));
+      } else {
+        onPartAction(partId, action, note);
+      }
+    } catch (error) {
+      console.error("[OrderDetails] Error al procesar acción:", error);
+      toast.error(error.message || "Error al procesar la acción");
+    }
   };
 
   const handleEditPartStart = (partId) => {
@@ -113,11 +142,6 @@ const OrderDetails = ({
       toast.error("Cantidad y precio deben ser no negativos");
       return;
     }
-    const updatedPart = {
-      ...editedParts.find((p) => p.part_id === partId),
-      quantity: editPartData.quantity,
-      price: editPartData.price,
-    };
     onEditPart(partId, {
       quantity: editPartData.quantity,
       price: editPartData.price,
@@ -182,6 +206,9 @@ const OrderDetails = ({
   );
   const approvedParts = editedParts.filter(
     (part) => part.status === "Aprobado"
+  );
+  const requestedPartsReturn = editedParts.filter(
+    (part) => part.status === "Devolución Solicitada"
   );
 
   return (
@@ -548,7 +575,7 @@ const OrderDetails = ({
           <h6>Repuestos Solicitados</h6>
           {requestedParts.length > 0 ? (
             <ListGroup className="mb-3">
-              {requestedParts.map((part, index) => (
+              {requestedParts.map((part) => (
                 <PartItem key={part.part_id}>
                   <div>
                     <strong>{part.name}</strong>
@@ -559,15 +586,19 @@ const OrderDetails = ({
                     <br />
                     Solicitado por: {part.requested_by}
                     <br />
-                    <Form.Group className="mt-2">
+                    <Form.Group className="mt-2" style={{ maxWidth: "300px" }}>
                       <Form.Label>Nota de Rechazo (obligatoria)</Form.Label>
                       <Form.Control
                         type="text"
-                        value={rejectionNotes[index] || ""}
+                        value={rejectionNotes[part.part_id] || ""}
                         onChange={(e) =>
-                          handleRejectionNoteChange(index, e.target.value)
+                          handleRejectionNoteChange(
+                            part.part_id,
+                            e.target.value
+                          )
                         }
                         placeholder="Motivo del rechazo"
+                        maxLength={255}
                       />
                     </Form.Group>
                   </div>
@@ -579,10 +610,11 @@ const OrderDetails = ({
                         handlePartAction(
                           part.part_id,
                           "accept",
-                          rejectionNotes[index] || ""
+                          rejectionNotes[part.part_id] || ""
                         )
                       }
                       className="me-2"
+                      title="Aceptar Repuesto"
                     >
                       <FontAwesomeIcon icon={faCheck} /> Aceptar
                     </ActionButton>
@@ -593,10 +625,14 @@ const OrderDetails = ({
                         handlePartAction(
                           part.part_id,
                           "reject",
-                          rejectionNotes[index] || ""
+                          rejectionNotes[part.part_id] || ""
                         )
                       }
-                      disabled={!rejectionNotes[index]}
+                      disabled={
+                        !rejectionNotes[part.part_id] ||
+                        rejectionNotes[part.part_id].trim().length < 5
+                      }
+                      title="Rechazar Repuesto"
                     >
                       <FontAwesomeIcon icon={faTimes} /> Rechazar
                     </ActionButton>
@@ -606,6 +642,79 @@ const OrderDetails = ({
             </ListGroup>
           ) : (
             <p>Sin repuestos solicitados</p>
+          )}
+
+          {requestedPartsReturn.length > 0 && (
+            <>
+              <div className="mt-3">
+                <h6>Devoluciones Solicitadas</h6>
+                <ListGroup className="mb-3">
+                  {requestedPartsReturn.map((part) => (
+                    <PartItem key={part.part_id}>
+                      <div>
+                        <strong>{part.name}</strong>
+                        <br />
+                        Cantidad: {part.quantity}
+                        <br />
+                        <strong style={{ color: "orange" }}>
+                          {part.status}
+                        </strong>
+                        <br />
+                        Precio Unitario: ${part.price != null ? part.price : 0}
+                        <br />
+                        Solicitado por: {part.requested_by}
+                        <br />
+                        <Form.Group
+                          className="mt-2"
+                          style={{ maxWidth: "300px" }}
+                        >
+                          <Form.Label>Nota de Rechazo (opcional)</Form.Label>
+                          <Form.Control
+                            type="text"
+                            value={rejectionNotes[part.part_id] || ""}
+                            onChange={(e) =>
+                              handleRejectionNoteChange(
+                                part.part_id,
+                                e.target.value
+                              )
+                            }
+                            placeholder="Motivo del rechazo (opcional)"
+                            maxLength={255}
+                          />
+                        </Form.Group>
+                      </div>
+                      <div>
+                        <ActionButton
+                          variant="primary"
+                          size="sm"
+                          onClick={() =>
+                            handlePartAction(part.part_id, "acceptReturn", "")
+                          }
+                          className="me-2"
+                          title="Aceptar Devolución"
+                        >
+                          <FontAwesomeIcon icon={faCheck} /> Aceptar
+                        </ActionButton>
+                        <ActionButton
+                          variant="danger"
+                          size="sm"
+                          onClick={() =>
+                            handlePartAction(
+                              part.part_id,
+                              "rejectReturn",
+                              rejectionNotes[part.part_id] || ""
+                            )
+                          }
+                          title="Rechazar Devolución"
+                        >
+                          <FontAwesomeIcon icon={faTimes} /> Rechazar
+                        </ActionButton>
+                      </div>
+                    </PartItem>
+                  ))}
+                </ListGroup>
+              </div>
+            </>
           )}
         </>
       )}
