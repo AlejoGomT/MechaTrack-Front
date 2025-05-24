@@ -23,10 +23,11 @@ import { API_URL } from "../services/apiConfig";
 import {
   deleteAdminImage,
   addAdminImages,
-  updateAdminOrder,
 } from "../services/adminOrderService";
 import { processPartReturn } from "../services/partService";
-import { getOrderById } from "../services/orderService"; // Añadir import
+import { getOrderById } from "../services/orderService";
+import { getPartById } from "../services/partService";
+import { editAdminPart } from "../services/adminOrderService";
 
 const ReadOnlyField = styled(Form.Control)`
   background-color: #f8f9fa;
@@ -187,28 +188,46 @@ const OrderDetails = ({
       return;
     }
     try {
-      const response = await getPartById(partId);
-      const { quantity, quantity_reserved } = response;
-      const availableQuantity = quantity - quantity_reserved;
-      const currentPart = editedParts.find((p) => p.part_id === partId);
-      const previousQuantity = currentPart.quantity || 0;
-      const quantityChange = editPartData.quantity - previousQuantity;
-
-      if (quantityChange > availableQuantity) {
-        toast.error(
-          `Inventario insuficiente. Disponible: ${availableQuantity}, Solicitado: ${editPartData.quantity}`
+      if (isFinalized) {
+        // Usar editAdminPart para órdenes finalizadas
+        await editAdminPart(
+          order.id,
+          partId,
+          {
+            quantity: editPartData.quantity,
+            price: editPartData.price,
+          },
+          userId
         );
-        return;
-      }
+        const updatedOrder = await getOrderById(order.id);
+        setEditedParts(updatedOrder.parts || []);
+        setOrder(updatedOrder);
+        toast.success("Repuesto actualizado");
+      } else {
+        // Lógica existente para órdenes no finalizadas
+        const response = await getPartById(partId);
+        const { quantity, quantity_reserved } = response;
+        const availableQuantity = quantity - quantity_reserved;
+        const currentPart = editedParts.find((p) => p.part_id === partId);
+        const previousQuantity = currentPart.quantity || 0;
+        const quantityChange = editPartData.quantity - previousQuantity;
 
-      onEditPart(partId, {
-        quantity: editPartData.quantity,
-        price: editPartData.price,
-      });
+        if (quantityChange > availableQuantity) {
+          toast.error(
+            `Inventario insuficiente. Disponible: ${availableQuantity}, Solicitado: ${editPartData.quantity}`
+          );
+          return;
+        }
+
+        onEditPart(partId, {
+          quantity: editPartData.quantity,
+          price: editPartData.price,
+        });
+        toast.success("Repuesto actualizado");
+      }
       setEditingPartId(null);
-      toast.success("Repuesto actualizado");
     } catch (error) {
-      console.error("[OrderDetails] Error al validar repuesto:", error);
+      console.error("[OrderDetails] Error al actualizar repuesto:", error);
       toast.error(
         error.message || error.details || "Error al actualizar repuesto"
       );
@@ -241,13 +260,12 @@ const OrderDetails = ({
             "No se recibieron imágenes actualizadas en la respuesta"
           );
         }
-        // Actualizar el estado de la orden
         setOrder({
           ...order,
           images: response.order.images,
         });
         setNewImages([]);
-        onEditPart("images", response.order.images); // Actualizar editedOrder
+        onEditPart("images", response.order.images);
         toast.success("Imágenes añadidas correctamente");
       } else {
         setNewImages([...newImages, ...files]);
@@ -601,7 +619,7 @@ const OrderDetails = ({
             </thead>
             <tbody>
               {approvedParts.map((part) => (
-                <tr key={part.part_id}>
+                <tr key={`${part.part_id}-${part.id}`}>
                   <td>{part.name}</td>
                   <td>
                     {editingPartId === part.part_id ? (
@@ -697,7 +715,7 @@ const OrderDetails = ({
             </thead>
             <tbody>
               {approvedParts.map((part) => (
-                <tr key={part.part_id}>
+                <tr key={`${part.part_id}-${part.id}`}>
                   <td>{part.name}</td>
                   <td>{part.quantity}</td>
                   <td>${part.price != null ? part.price : 0}</td>
@@ -719,7 +737,7 @@ const OrderDetails = ({
           {requestedParts.length > 0 ? (
             <ListGroup className="mb-3">
               {requestedParts.map((part) => (
-                <PartItem key={part.part_id}>
+                <PartItem key={`${part.part_id}-${part.id}`}>
                   <div>
                     <strong>{part.name}</strong>
                     <br />
@@ -793,7 +811,7 @@ const OrderDetails = ({
                 <h6>Devoluciones Solicitadas</h6>
                 <ListGroup className="mb-3">
                   {requestedPartsReturn.map((part) => (
-                    <PartItem key={part.part_id}>
+                    <PartItem key={`${part.part_id}-${part.id}`}>
                       <div>
                         <strong>{part.name}</strong>
                         <br />

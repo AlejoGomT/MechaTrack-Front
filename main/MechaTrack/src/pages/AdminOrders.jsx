@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { Container, Form, Modal, Row, Col, Pagination } from "react-bootstrap";
 import { useAuth } from "../context/AuthContext";
-import { useSocket } from "../context/SocketContext";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import CustomButton from "../components/CustomButton";
@@ -28,7 +27,6 @@ import {
 import { library } from "@fortawesome/fontawesome-svg-core";
 import { toast } from "react-toastify";
 import {
-  updatePartQuantity,
   requestPart,
   updatePartAdmin,
   processPartReturn,
@@ -40,7 +38,10 @@ import {
   updateOrderStatus,
   finalizeOrder,
 } from "../services/orderService";
-import { updateAdminOrder } from "../services/adminOrderService";
+import {
+  updateAdminOrder,
+  deleteAdminPart,
+} from "../services/adminOrderService";
 
 library.add(faCircle, faCheck, faTimes, faEye);
 
@@ -86,7 +87,6 @@ const ActionSection = styled.div`
 
 const AdminOrders = () => {
   const { user, token } = useAuth();
-  const { sendMessage, isConnected } = useSocket();
   const [branchFilter, setBranchFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [economicNumberFilter, setEconomicNumberFilter] = useState("");
@@ -242,7 +242,7 @@ const AdminOrders = () => {
 
   const handleDeletePart = async (partId) => {
     try {
-      await updatePartQuantity(selectedOrder.id, partId, 0);
+      await deleteAdminPart(selectedOrder.id, partId, user.id);
       setEditedParts(editedParts.filter((part) => part.part_id !== partId));
       toast.success("Repuesto eliminado");
     } catch (error) {
@@ -281,11 +281,45 @@ const AdminOrders = () => {
           toast.error("Tipo y descripción son obligatorios");
           return;
         }
+        const refreshedOrder = await getOrderById(selectedOrder.id);
+        console.log("[AdminOrders] Orden refrescada antes de guardar:", {
+          refreshedOrder,
+          vehicleData: {
+            vehicle_economic_number: refreshedOrder.vehicle_economic_number,
+            plate: refreshedOrder.plate,
+            brand: refreshedOrder.brand,
+            model: refreshedOrder.model,
+            year: refreshedOrder.year,
+            branch: refreshedOrder.branch,
+            mileage: refreshedOrder.mileage,
+          },
+        });
+
+        const updatedParts = refreshedOrder.parts.map((part) => {
+          const editedPart = editedParts.find(
+            (p) => p.part_id === part.part_id
+          );
+          return editedPart
+            ? {
+                ...part,
+                quantity: Number(editedPart.quantity),
+                price: editedPart.price ? Number(editedPart.price) : null,
+                status: editedPart.status || "Aprobado",
+                requested_by:
+                  editedPart.requested_by_id || editedPart.requested_by,
+                authorized_by:
+                  editedPart.authorized_by_id ||
+                  editedPart.authorized_by ||
+                  null,
+              }
+            : part;
+        });
+
         console.log("[AdminOrders] Guardando orden:", {
           orderId: selectedOrder.id,
           editedOrder,
           images: editedOrder.images,
-          parts: editedParts,
+          parts: updatedParts,
           vehicleData: {
             vehicle_economic_number: editedOrder.vehicle_economic_number,
             plate: editedOrder.plate,
@@ -296,16 +330,10 @@ const AdminOrders = () => {
             mileage: editedOrder.mileage,
           },
         });
+
         const response = await updateAdminOrder(selectedOrder.id, {
           ...editedOrder,
-          parts: editedParts.map((part) => ({
-            part_id: part.part_id,
-            quantity: Number(part.quantity),
-            status: part.status || "Aprobado",
-            requested_by: part.requested_by_id || part.requested_by,
-            authorized_by: part.authorized_by_id || part.authorized_by || null,
-            price: part.price ? Number(part.price) : null,
-          })),
+          parts: updatedParts,
           existingImages: editedOrder.images || [],
           vehicle_economic_number: editedOrder.vehicle_economic_number,
           plate: editedOrder.plate,
@@ -315,6 +343,7 @@ const AdminOrders = () => {
           branch: editedOrder.branch,
           mileage: editedOrder.mileage,
         });
+
         console.log("[AdminOrders] Respuesta de updateAdminOrder:", {
           response,
           vehicleData: {
@@ -328,25 +357,25 @@ const AdminOrders = () => {
           },
         });
 
-        // Refrescar con getOrderById como respaldo
-        const refreshedOrder = await getOrderById(selectedOrder.id);
-        console.log("[AdminOrders] Orden refrescada:", {
-          refreshedOrder,
+        // Refrescar nuevamente después de guardar
+        const finalOrder = await getOrderById(selectedOrder.id);
+        console.log("[AdminOrders] Orden refrescada después de guardar:", {
+          finalOrder,
           vehicleData: {
-            vehicle_economic_number: refreshedOrder.vehicle_economic_number,
-            plate: refreshedOrder.plate,
-            brand: refreshedOrder.brand,
-            model: refreshedOrder.model,
-            year: refreshedOrder.year,
-            branch: refreshedOrder.branch,
-            mileage: refreshedOrder.mileage,
+            vehicle_economic_number: finalOrder.vehicle_economic_number,
+            plate: finalOrder.plate,
+            brand: finalOrder.brand,
+            model: finalOrder.model,
+            year: finalOrder.year,
+            branch: finalOrder.branch,
+            mileage: finalOrder.mileage,
           },
         });
 
-        setSelectedOrder(refreshedOrder);
-        setEditedOrder(refreshedOrder);
+        setSelectedOrder(finalOrder);
+        setEditedOrder(finalOrder);
         setEditedParts(
-          refreshedOrder.parts.map((part) => ({
+          finalOrder.parts.map((part) => ({
             ...part,
             requested_by_id: part.requested_by_id,
             requested_by: part.requested_by,
@@ -355,7 +384,7 @@ const AdminOrders = () => {
           }))
         );
         setOrders((prev) =>
-          prev.map((o) => (o.id === refreshedOrder.id ? refreshedOrder : o))
+          prev.map((o) => (o.id === finalOrder.id ? finalOrder : o))
         );
         toast.success("Orden actualizada");
       } else {

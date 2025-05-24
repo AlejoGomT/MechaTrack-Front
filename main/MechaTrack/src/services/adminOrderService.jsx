@@ -20,9 +20,9 @@ export const updateAdminOrder = async (orderId, orderData) => {
               part_id: part.part_id,
               quantity: part.quantity,
               status: part.status || "Aprobado",
-              requested_by: part.requested_by_id || part.requested_by, // Usar ID
+              requested_by: part.requested_by_id || part.requested_by,
               authorized_by:
-                part.authorized_by_id || part.authorized_by || null, // Usar ID
+                part.authorized_by_id || part.authorized_by || null,
               price: part.price || null,
             }))
           )
@@ -126,6 +126,62 @@ export const addAdminPart = async (orderId, partData) => {
     throw (
       error.response?.data || {
         message: "Error al añadir repuesto",
+        details: error.message,
+      }
+    );
+  }
+};
+
+export const editAdminPart = async (orderId, partId, partData, userId) => {
+  try {
+    const response = await axiosInstance.put(
+      `/api/admin/orders/${orderId}/parts/${partId}`,
+      { ...partData, userId },
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    console.log("[editAdminPart] Respuesta:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error("[editAdminPart] Error:", {
+      status: error.response?.status,
+      data: error.response?.data,
+      message: error.message,
+    });
+    throw (
+      error.response?.data || {
+        message: "Error al actualizar repuesto",
+        details: error.message,
+      }
+    );
+  }
+};
+
+export const deleteAdminPart = async (orderId, partId, userId) => {
+  try {
+    const response = await axiosInstance.delete(
+      `/api/admin/orders/${orderId}/parts/${partId}`,
+      {
+        data: { userId },
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    console.log("[deleteAdminPart] Respuesta:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error("[deleteAdminPart] Error:", {
+      status: error.response?.status,
+      data: error.response?.data,
+      message: error.message,
+    });
+    throw (
+      error.response?.data || {
+        message: "Error al eliminar repuesto",
         details: error.message,
       }
     );
