@@ -38,9 +38,9 @@ import {
   getOrderById,
   updateOrderNumbers,
   updateOrderStatus,
-  updateOrder,
   finalizeOrder,
 } from "../services/orderService";
+import { updateAdminOrder } from "../services/adminOrderService";
 
 library.add(faCircle, faCheck, faTimes, faEye);
 
@@ -103,6 +103,7 @@ const AdminOrders = () => {
   const [orderNumber, setOrderNumber] = useState("");
   const [deliveryNoteNumber, setDeliveryNoteNumber] = useState("");
   const [isEditingNumbers, setIsEditingNumbers] = useState(false);
+  const isAdmin = user?.role === "admin";
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 15,
@@ -240,20 +241,15 @@ const AdminOrders = () => {
   };
 
   const handleDeletePart = async (partId) => {
-    const part = editedParts.find((p) => p.part_id === partId);
-    if (!part) {
-      toast.error("Repuesto no encontrado");
-      console.error("[AdminOrders] Repuesto no encontrado:", partId);
-      return;
-    }
     try {
-      await updatePartQuantity(selectedOrder.id, part.part_id, 0);
-      const updatedParts = editedParts.filter((p) => p.part_id !== partId);
-      setEditedParts(updatedParts);
-      toast.success(`Repuesto ${part.name} eliminado`);
+      await updatePartQuantity(selectedOrder.id, partId, 0);
+      setEditedParts(editedParts.filter((part) => part.part_id !== partId));
+      toast.success("Repuesto eliminado");
     } catch (error) {
-      toast.error("Error al eliminar repuesto");
       console.error("[AdminOrders] Error al eliminar repuesto:", error);
+      toast.error(
+        error.message || error.details || "Error al eliminar repuesto"
+      );
     }
   };
 
@@ -280,17 +276,118 @@ const AdminOrders = () => {
 
   const saveEditedOrder = async () => {
     try {
-      await updateOrder(selectedOrder.id, {
-        ...editedOrder,
-        parts: editedParts,
-      });
-      const updatedOrder = await getOrderById(selectedOrder.id);
-      setSelectedOrder(updatedOrder);
-      setEditedOrder(updatedOrder);
-      setEditedParts(updatedOrder.parts || []);
-      toast.success("Orden actualizada");
+      if (isAdmin && selectedOrder.status === "Finalizado") {
+        if (!editedOrder.type || !editedOrder.description) {
+          toast.error("Tipo y descripción son obligatorios");
+          return;
+        }
+        console.log("[AdminOrders] Guardando orden:", {
+          orderId: selectedOrder.id,
+          editedOrder,
+          images: editedOrder.images,
+          parts: editedParts,
+          vehicleData: {
+            vehicle_economic_number: editedOrder.vehicle_economic_number,
+            plate: editedOrder.plate,
+            brand: editedOrder.brand,
+            model: editedOrder.model,
+            year: editedOrder.year,
+            branch: editedOrder.branch,
+            mileage: editedOrder.mileage,
+          },
+        });
+        const response = await updateAdminOrder(selectedOrder.id, {
+          ...editedOrder,
+          parts: editedParts.map((part) => ({
+            part_id: part.part_id,
+            quantity: Number(part.quantity),
+            status: part.status || "Aprobado",
+            requested_by: part.requested_by_id || part.requested_by,
+            authorized_by: part.authorized_by_id || part.authorized_by || null,
+            price: part.price ? Number(part.price) : null,
+          })),
+          existingImages: editedOrder.images || [],
+          vehicle_economic_number: editedOrder.vehicle_economic_number,
+          plate: editedOrder.plate,
+          brand: editedOrder.brand,
+          model: editedOrder.model,
+          year: editedOrder.year,
+          branch: editedOrder.branch,
+          mileage: editedOrder.mileage,
+        });
+        console.log("[AdminOrders] Respuesta de updateAdminOrder:", {
+          response,
+          vehicleData: {
+            vehicle_economic_number: response.vehicle_economic_number,
+            plate: response.plate,
+            brand: response.brand,
+            model: response.model,
+            year: response.year,
+            branch: response.branch,
+            mileage: response.mileage,
+          },
+        });
+
+        // Refrescar con getOrderById como respaldo
+        const refreshedOrder = await getOrderById(selectedOrder.id);
+        console.log("[AdminOrders] Orden refrescada:", {
+          refreshedOrder,
+          vehicleData: {
+            vehicle_economic_number: refreshedOrder.vehicle_economic_number,
+            plate: refreshedOrder.plate,
+            brand: refreshedOrder.brand,
+            model: refreshedOrder.model,
+            year: refreshedOrder.year,
+            branch: refreshedOrder.branch,
+            mileage: refreshedOrder.mileage,
+          },
+        });
+
+        setSelectedOrder(refreshedOrder);
+        setEditedOrder(refreshedOrder);
+        setEditedParts(
+          refreshedOrder.parts.map((part) => ({
+            ...part,
+            requested_by_id: part.requested_by_id,
+            requested_by: part.requested_by,
+            authorized_by_id: part.authorized_by_id,
+            authorized_by: part.authorized_by,
+          }))
+        );
+        setOrders((prev) =>
+          prev.map((o) => (o.id === refreshedOrder.id ? refreshedOrder : o))
+        );
+        toast.success("Orden actualizada");
+      } else {
+        const response = await getOrderById(selectedOrder.id);
+        console.log("[AdminOrders] Orden refrescada:", {
+          response,
+          vehicleData: {
+            vehicle_economic_number: response.vehicle_economic_number,
+            plate: response.plate,
+            brand: response.brand,
+            model: response.model,
+            year: response.year,
+            branch: response.branch,
+            mileage: response.mileage,
+          },
+        });
+        setSelectedOrder(response);
+        setEditedOrder(response);
+        setEditedParts(
+          response.parts.map((part) => ({
+            ...part,
+            requested_by_id: part.requested_by_id,
+            authorized_by_id: part.authorized_by_id,
+          }))
+        );
+        setOrders((prev) =>
+          prev.map((o) => (o.id === response.id ? response : o))
+        );
+        toast.success("Orden refrescada");
+      }
     } catch (error) {
-      toast.error("Error al guardar orden");
+      toast.error(error.message || error.details || "Error al guardar orden");
       console.error("[AdminOrders] Error al guardar orden:", error);
     }
   };
@@ -637,6 +734,7 @@ const AdminOrders = () => {
 
               <OrderDetails
                 order={editedOrder}
+                setOrder={setEditedOrder}
                 isReadOnly={isReadOnly}
                 onPartAction={handlePartAction}
                 onEditPart={handleEditOrderField}
@@ -646,6 +744,7 @@ const AdminOrders = () => {
                 setEditedParts={setEditedParts}
                 canEditParts={canEditParts}
                 userId={user.id}
+                isAdmin={user?.role === "admin"}
               />
 
               {selectedOrder.status === "Pendiente" && (

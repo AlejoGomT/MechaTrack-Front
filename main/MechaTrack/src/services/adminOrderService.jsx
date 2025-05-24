@@ -20,8 +20,9 @@ export const updateAdminOrder = async (orderId, orderData) => {
               part_id: part.part_id,
               quantity: part.quantity,
               status: part.status || "Aprobado",
-              requested_by: part.requested_by,
-              authorized_by: part.authorized_by || null,
+              requested_by: part.requested_by_id || part.requested_by, // Usar ID
+              authorized_by:
+                part.authorized_by_id || part.authorized_by || null, // Usar ID
               price: part.price || null,
             }))
           )
@@ -47,7 +48,11 @@ export const updateAdminOrder = async (orderId, orderData) => {
     console.log("Respuesta de updateAdminOrder:", response.data);
     return response.data;
   } catch (error) {
-    console.error("Error en updateAdminOrder:", error.response?.data || error);
+    console.error("Error en updateAdminOrder:", {
+      status: error.response?.status,
+      data: error.response?.data,
+      message: error.message,
+    });
     throw (
       error.response?.data || {
         message: "Error al actualizar la orden",
@@ -93,6 +98,34 @@ export const deleteAdminImage = async (orderId, imageIndex) => {
     throw (
       error.response?.data || {
         message: "Error al eliminar imagen",
+        details: error.message,
+      }
+    );
+  }
+};
+
+export const addAdminPart = async (orderId, partData) => {
+  try {
+    const response = await axiosInstance.post(
+      `/api/admin/orders/${orderId}/parts`,
+      partData,
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    console.log("[addAdminPart] Respuesta:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error("[addAdminPart] Error:", {
+      status: error.response?.status,
+      data: error.response?.data,
+      message: error.message,
+    });
+    throw (
+      error.response?.data || {
+        message: "Error al añadir repuesto",
         details: error.message,
       }
     );

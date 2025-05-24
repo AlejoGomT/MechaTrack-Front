@@ -15,13 +15,18 @@ import {
   StyledTable,
   ImageContainer,
   ActionsContainer,
-  StatusDiv,
 } from "../styles/GlobalStyles";
 import AddPartButton from "./AddPartButton";
+import { useSocket } from "../context/SocketContext";
 import OrderImagesModal from "./OrderImagesModal";
 import { API_URL } from "../services/apiConfig";
-import { deleteOrderImage } from "../services/orderService";
+import {
+  deleteAdminImage,
+  addAdminImages,
+  updateAdminOrder,
+} from "../services/adminOrderService";
 import { processPartReturn } from "../services/partService";
+import { getOrderById } from "../services/orderService"; // Añadir import
 
 const ReadOnlyField = styled(Form.Control)`
   background-color: #f8f9fa;
@@ -45,6 +50,7 @@ const PartItem = styled(ListGroup.Item)`
 
 const OrderDetails = ({
   order,
+  setOrder,
   isReadOnly,
   onPartAction,
   onEditPart,
@@ -54,7 +60,9 @@ const OrderDetails = ({
   setEditedParts,
   canEditParts,
   userId,
+  isAdmin,
 }) => {
+  const { setUpdateOrderCallback } = useSocket();
   const [rejectionNotes, setRejectionNotes] = useState({});
   const [newImages, setNewImages] = useState([]);
   const [showImagesModal, setShowImagesModal] = useState(false);
@@ -66,11 +74,48 @@ const OrderDetails = ({
   const orderTypes = ["Mantenimiento", "Reparación"];
 
   useEffect(() => {
-    console.log("[OrderDetails] order:", order);
+    console.log("[OrderDetails] order:", {
+      ...order,
+      vehicleData: {
+        vehicle_economic_number: order.vehicle_economic_number,
+        plate: order.plate,
+        brand: order.brand,
+        model: order.model,
+        year: order.year,
+        branch: order.branch,
+        mileage: order.mileage,
+      },
+    });
     console.log("[OrderDetails] order.mileage:", order.mileage);
     console.log("[OrderDetails] editedParts:", editedParts);
     console.log("[OrderDetails] orderId para AddPartButton:", order.id);
-  }, [order, editedParts]);
+
+    setUpdateOrderCallback((orderId, updatedOrder) => {
+      if (orderId === order.id) {
+        console.log("[OrderDetails] Actualizando orden desde Socket.IO:", {
+          updatedOrder,
+          vehicleData: {
+            vehicle_economic_number: updatedOrder.vehicle_economic_number,
+            plate: updatedOrder.plate,
+            brand: updatedOrder.brand,
+            model: updatedOrder.model,
+            year: updatedOrder.year,
+            branch: updatedOrder.branch,
+            mileage: updatedOrder.mileage,
+          },
+        });
+        setOrder(updatedOrder);
+        if (updatedOrder.parts) {
+          setEditedParts(updatedOrder.parts);
+        }
+        toast.info("Orden actualizada en tiempo real");
+      }
+    });
+
+    return () => {
+      setUpdateOrderCallback(null);
+    };
+  }, [order, editedParts, setOrder, setEditedParts, setUpdateOrderCallback]);
 
   const handleRejectionNoteChange = (partId, value) => {
     setRejectionNotes((prev) => ({ ...prev, [partId]: value }));
@@ -95,7 +140,6 @@ const OrderDetails = ({
             ? "Devolución aprobada"
             : "Devolución rechazada"
         );
-        // Actualizar editedParts tras la acción
         const updatedParts = editedParts.map((part) =>
           part.part_id === partId
             ? {
@@ -137,17 +181,38 @@ const OrderDetails = ({
     }));
   };
 
-  const handleEditPartSave = (partId) => {
+  const handleEditPartSave = async (partId) => {
     if (editPartData.quantity < 0 || editPartData.price < 0) {
       toast.error("Cantidad y precio deben ser no negativos");
       return;
     }
-    onEditPart(partId, {
-      quantity: editPartData.quantity,
-      price: editPartData.price,
-    });
-    setEditingPartId(null);
-    toast.success("Repuesto actualizado");
+    try {
+      const response = await getPartById(partId);
+      const { quantity, quantity_reserved } = response;
+      const availableQuantity = quantity - quantity_reserved;
+      const currentPart = editedParts.find((p) => p.part_id === partId);
+      const previousQuantity = currentPart.quantity || 0;
+      const quantityChange = editPartData.quantity - previousQuantity;
+
+      if (quantityChange > availableQuantity) {
+        toast.error(
+          `Inventario insuficiente. Disponible: ${availableQuantity}, Solicitado: ${editPartData.quantity}`
+        );
+        return;
+      }
+
+      onEditPart(partId, {
+        quantity: editPartData.quantity,
+        price: editPartData.price,
+      });
+      setEditingPartId(null);
+      toast.success("Repuesto actualizado");
+    } catch (error) {
+      console.error("[OrderDetails] Error al validar repuesto:", error);
+      toast.error(
+        error.message || error.details || "Error al actualizar repuesto"
+      );
+    }
   };
 
   const handleEditPartCancel = () => {
@@ -155,20 +220,58 @@ const OrderDetails = ({
     setEditPartData({ quantity: 0, price: 0 });
   };
 
-  const handleImageUpload = (e) => {
+  const handleImageUpload = async (e) => {
     const files = Array.from(e.target.files);
-    if (files.length + order.images.length + newImages.length > 10) {
+    if (files.length + (order.images?.length || 0) + newImages.length > 10) {
       toast.error("No se pueden cargar más de 10 imágenes");
       return;
     }
-    setNewImages([...newImages, ...files]);
-    const filePaths = files.map((file) => URL.createObjectURL(file));
-    onEditPart("images", [...order.images, ...filePaths]);
-    toast.success("Imágenes añadidas");
+    try {
+      if (isAdmin && isFinalized) {
+        const formData = new FormData();
+        files.forEach((file) => formData.append("images", file));
+        formData.append("existingImages", JSON.stringify(order.images || []));
+        for (let [key, value] of formData.entries()) {
+          console.log(`[OrderDetails] FormData: ${key} =`, value);
+        }
+        const response = await addAdminImages(order.id, formData);
+        console.log("[OrderDetails] Respuesta de addAdminImages:", response);
+        if (!response.order?.images) {
+          throw new Error(
+            "No se recibieron imágenes actualizadas en la respuesta"
+          );
+        }
+        // Actualizar el estado de la orden
+        setOrder({
+          ...order,
+          images: response.order.images,
+        });
+        setNewImages([]);
+        onEditPart("images", response.order.images); // Actualizar editedOrder
+        toast.success("Imágenes añadidas correctamente");
+      } else {
+        setNewImages([...newImages, ...files]);
+        const filePaths = files.map((file) => URL.createObjectURL(file));
+        const updatedImages = [...(order.images || []), ...filePaths];
+        setOrder({
+          ...order,
+          images: updatedImages,
+        });
+        onEditPart("images", updatedImages);
+        toast.success("Imágenes añadidas localmente");
+      }
+    } catch (error) {
+      console.error("[OrderDetails] Error al subir imágenes:", error);
+      toast.error(error.message || "Error al subir imágenes");
+    }
   };
 
   const handleImageDelete = async (index) => {
     try {
+      if (!order.images[index]) {
+        toast.error("Índice de imagen inválido");
+        return;
+      }
       if (order.images[index].startsWith("blob:")) {
         const updatedImages = order.images.filter((_, i) => i !== index);
         const updatedNewImages = newImages.filter(
@@ -176,16 +279,53 @@ const OrderDetails = ({
             !order.images[index].includes(URL.createObjectURL(newImages[i]))
         );
         setNewImages(updatedNewImages);
+        setOrder({
+          ...order,
+          images: updatedImages,
+        });
         onEditPart("images", updatedImages);
         toast.success("Imagen eliminada");
       } else {
-        await deleteOrderImage(order.id, index);
+        await deleteAdminImage(order.id, index);
         const updatedImages = order.images.filter((_, i) => i !== index);
+        setOrder({
+          ...order,
+          images: updatedImages,
+        });
         onEditPart("images", updatedImages);
         toast.success("Imagen eliminada del servidor");
       }
     } catch (error) {
-      toast.error(error.message || "Error al eliminar imagen");
+      console.error("[OrderDetails] Error al eliminar imagen:", error);
+      toast.error(error.message || error.details || "Error al eliminar imagen");
+    }
+  };
+
+  const handleCloseImagesModal = async () => {
+    setShowImagesModal(false);
+    try {
+      const updatedOrder = await getOrderById(order.id);
+      console.log("[OrderDetails] Orden actualizada al cerrar modal:", {
+        updatedOrder,
+        vehicleData: {
+          vehicle_economic_number: updatedOrder.vehicle_economic_number,
+          plate: updatedOrder.plate,
+          brand: updatedOrder.brand,
+          model: updatedOrder.model,
+          year: updatedOrder.year,
+          branch: updatedOrder.branch,
+          mileage: updatedOrder.mileage,
+        },
+      });
+      setOrder(updatedOrder);
+      setEditedParts(updatedOrder.parts || []);
+      onEditPart("images", updatedOrder.images);
+    } catch (error) {
+      console.error(
+        "[OrderDetails] Error al obtener orden actualizada:",
+        error
+      );
+      toast.error("Error al actualizar imágenes");
     }
   };
 
@@ -431,10 +571,13 @@ const OrderDetails = ({
 
       <OrderImagesModal
         show={showImagesModal}
-        onHide={() => setShowImagesModal(false)}
+        onHide={handleCloseImagesModal}
         orderId={order.id}
         images={order.images}
-        setImages={(newImages) => onEditPart("images", newImages)}
+        setImages={(newImages) => {
+          setOrder({ ...order, images: newImages });
+          onEditPart("images", newImages);
+        }}
         isReadOnly={isReadOnly}
         isFinalized={isFinalized}
       />
@@ -495,7 +638,7 @@ const OrderDetails = ({
                   </td>
                   <td>{part.requested_by}</td>
                   <td>{part.authorized_by || "-"}</td>
-                  <td>Aprobado</td>
+                  <td>{part.status}</td>
                   <td className="actions">
                     <ActionsContainer>
                       {editingPartId === part.part_id ? (

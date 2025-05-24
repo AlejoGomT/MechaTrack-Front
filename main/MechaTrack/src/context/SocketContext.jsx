@@ -1,20 +1,25 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import io from "socket.io-client";
-import { useAuth } from "./AuthContext";
+import { io } from "socket.io-client";
 import { toast } from "react-toastify";
-import axiosInstance from "../services/apiConfig"; // Importar axiosInstance
+import { useAuth } from "./AuthContext";
 
-const SocketContext = createContext();
+export const SocketContext = createContext();
 
 export const SocketProvider = ({ children }) => {
-  const { token, user } = useAuth();
+  const { user, token } = useAuth();
   const [socket, setSocket] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
   const [typingUsers, setTypingUsers] = useState({});
+  const [updateOrderCallback, setUpdateOrderCallback] = useState(null); // Nuevo callback
 
   useEffect(() => {
-    if (!token || !user) return;
+    if (!user || !token) {
+      console.log(
+        "[SocketContext] No hay usuario o token, no se inicializa socket"
+      );
+      return;
+    }
 
     const newSocket = io("http://localhost:5000", {
       query: { token },
@@ -23,6 +28,8 @@ export const SocketProvider = ({ children }) => {
       reconnectionDelay: 1000,
       transports: ["websocket"],
     });
+
+    setSocket(newSocket);
 
     newSocket.on("connect", () => {
       console.log("[SocketContext] Conectado al servidor Socket.IO");
@@ -35,13 +42,14 @@ export const SocketProvider = ({ children }) => {
 
     newSocket.on("notification", (notification) => {
       console.log("[SocketContext] Notificación recibida:", notification);
+      const roles = ["admin", "secretary"];
       if (
         notification.toUserId === user.id ||
-        (notification.type === "order_creation" && user.role === "admin") ||
-        (notification.type === "invoice_complete" &&
-          user.role === "secretary") ||
-        (user.role === "admin" &&
-          ["part_approval", "part_rejection"].includes(notification.type))
+        roles.includes(user.role) ||
+        notification.type === "order_creation" ||
+        notification.type === "invoice_complete" ||
+        notification.type === "part_approval" ||
+        notification.type === "part_rejection"
       ) {
         setNotifications((prev) => {
           if (!prev.some((n) => n.id === notification.id)) {
@@ -49,138 +57,115 @@ export const SocketProvider = ({ children }) => {
           }
           return prev;
         });
-        toast.info(`Nueva notificación: ${notification.message}`);
-      } else {
-        console.log(
-          "[SocketContext] Notificación ignorada por filtro:",
-          notification
-        );
+        toast.info(notification.message);
       }
     });
 
-    newSocket.on("messageSent", ({ message, notification }) => {
-      console.log("[SocketContext] Mensaje enviado:", notification);
+    newSocket.on("orderUpdated", ({ orderId, updatedOrder }) => {
+      console.log("[SocketContext] orderUpdated recibido:", {
+        orderId,
+        updatedOrder,
+      });
+      toast.info(`Orden ${orderId} actualizada`);
+      if (updateOrderCallback) {
+        updateOrderCallback(orderId, updatedOrder); // Llamar al callback
+      }
+    });
+
+    newSocket.on("messageSent", (notification) => {
       setNotifications((prev) => {
         if (!prev.some((n) => n.id === notification.id)) {
           return [...prev, notification];
         }
         return prev;
       });
-      toast.success(message);
+      toast.success("Mensaje enviado");
     });
 
     newSocket.on("typing", ({ userId, orderId, isTyping }) => {
-      console.log("[SocketContext] Evento typing:", {
-        userId,
-        orderId,
-        isTyping,
-      });
       setTypingUsers((prev) => ({
         ...prev,
-        [`${userId}_${orderId}`]: isTyping,
+        [orderId]: isTyping ? userId : null,
       }));
     });
 
     newSocket.on("disconnect", () => {
       console.log("[SocketContext] Desconectado del servidor Socket.IO");
       setIsConnected(false);
-      toast.warn("Conexión perdida, intentando reconectar...");
+      toast.warn("Conexión perdida con el servidor");
     });
 
-    newSocket.on("error", (err) => {
-      console.error("[SocketContext] Error en Socket.IO:", err);
-      toast.error("Error de conexión con el servidor");
-      setIsConnected(false);
+    newSocket.on("error", (error) => {
+      console.error("[SocketContext] Error de Socket.IO:", error);
+      toast.error("Error en la conexión en tiempo real");
     });
-
-    setSocket(newSocket);
 
     return () => {
-      newSocket.close();
-      console.log("[SocketContext] Socket desconectado");
-      setIsConnected(false);
+      newSocket.disconnect();
+      setSocket(null);
     };
-  }, [token, user]);
+  }, [user, token]);
 
-  // Unir a salas de órdenes
   useEffect(() => {
     if (!socket || !user || !isConnected) return;
 
     const joinOrderRooms = async () => {
       try {
         const response = await fetch("/api/notifications/conversations", {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { Authorization: `Bearer ${token}` },
         });
-        if (!response.ok) throw new Error("Error al obtener conversaciones");
         const conversations = await response.json();
         conversations.forEach((conv) => {
           socket.emit("joinOrder", conv.order_id);
-          console.log("[SocketContext] Joined room: order_", conv.order_id);
         });
       } catch (error) {
         console.error(
           "[SocketContext] Error al unirse a salas de órdenes:",
           error
         );
+        toast.error("Error al unirse a salas de órdenes");
       }
     };
 
     joinOrderRooms();
-
-    // Re-unir en reconexión
     socket.on("connect", joinOrderRooms);
 
     return () => {
-      socket.off("connect", joinOrderRooms);
+      socket.off("connect");
     };
   }, [socket, user, token, isConnected]);
 
-  const sendMessage = async (
-    toUserId,
-    orderId,
-    message,
-    files = [],
-    type = "message"
-  ) => {
+  const sendMessage = async (orderId, message, toUserId) => {
     if (!socket || !isConnected) {
-      console.error("[SocketContext] Socket no está conectado");
-      throw new Error("No se puede enviar el mensaje: conexión perdida");
+      toast.error("No conectado al servidor en tiempo real");
+      return;
     }
-    socket.emit("message", {
-      toUserId,
-      orderId,
-      message,
-      type,
-    });
-    const notificationData = {
-      order_id: orderId,
-      to_user_id: toUserId,
-      message: message || "Adjunto enviado",
-      type,
-      status: "Pendiente",
-    };
     try {
-      const response = await axiosInstance.post(
-        "/api/notifications",
-        notificationData
-      );
-      return response.data;
+      const response = await fetch("/api/notifications", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          orderId,
+          toUserId,
+          message,
+          type: "message",
+        }),
+      });
+      const notification = await response.json();
+      socket.emit("message", { orderId, message, toUserId, userId: user.id });
+      return notification;
     } catch (error) {
-      console.error("[SocketContext] Error al crear notificación:", error);
-      throw error;
+      console.error("[SocketContext] Error al enviar mensaje:", error);
+      toast.error("Error al enviar mensaje");
     }
   };
 
   const sendTyping = (orderId, isTyping) => {
-    if (socket && isConnected) {
-      socket.emit("typing", { userId: user.id, orderId, isTyping });
-      console.log("[SocketContext] Enviado evento typing:", {
-        orderId,
-        isTyping,
-      });
-    }
+    if (!socket || !isConnected) return;
+    socket.emit("typing", { orderId, userId: user.id, isTyping });
   };
 
   return (
@@ -188,10 +173,11 @@ export const SocketProvider = ({ children }) => {
       value={{
         socket,
         notifications,
+        isConnected,
+        typingUsers,
         sendMessage,
         sendTyping,
-        typingUsers,
-        isConnected,
+        setUpdateOrderCallback, // Exponer callback para OrderDetails
       }}
     >
       {children}
@@ -199,10 +185,4 @@ export const SocketProvider = ({ children }) => {
   );
 };
 
-export const useSocket = () => {
-  const context = useContext(SocketContext);
-  if (!context) {
-    throw new Error("useSocket must be used within a SocketProvider");
-  }
-  return context;
-};
+export const useSocket = () => useContext(SocketContext);
