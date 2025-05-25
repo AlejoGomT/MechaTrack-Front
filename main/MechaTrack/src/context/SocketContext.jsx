@@ -11,7 +11,8 @@ export const SocketProvider = ({ children }) => {
   const [notifications, setNotifications] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
   const [typingUsers, setTypingUsers] = useState({});
-  const [updateOrderCallback, setUpdateOrderCallback] = useState(null); // Nuevo callback
+  const [updateOrderCallback, setUpdateOrderCallback] = useState(null);
+  const [updateInvoiceCallback, setUpdateInvoiceCallback] = useState(null);
 
   useEffect(() => {
     if (!user || !token) {
@@ -68,7 +69,28 @@ export const SocketProvider = ({ children }) => {
       });
       toast.info(`Orden ${orderId} actualizada`);
       if (updateOrderCallback) {
-        updateOrderCallback(orderId, updatedOrder); // Llamar al callback
+        updateOrderCallback(orderId, updatedOrder);
+      }
+    });
+
+    newSocket.on("invoice_created", (newInvoice) => {
+      console.log("[SocketContext] invoice_created recibido:", newInvoice);
+      if (updateInvoiceCallback) {
+        updateInvoiceCallback("created", newInvoice);
+      }
+    });
+
+    newSocket.on("invoice_updated", (updatedInvoice) => {
+      console.log("[SocketContext] invoice_updated recibido:", updatedInvoice);
+      if (updateInvoiceCallback) {
+        updateInvoiceCallback("updated", updatedInvoice);
+      }
+    });
+
+    newSocket.on("invoice_deleted", (deletedInvoice) => {
+      console.log("[SocketContext] invoice_deleted recibido:", deletedInvoice);
+      if (updateInvoiceCallback) {
+        updateInvoiceCallback("deleted", deletedInvoice);
       }
     });
 
@@ -177,7 +199,8 @@ export const SocketProvider = ({ children }) => {
         typingUsers,
         sendMessage,
         sendTyping,
-        setUpdateOrderCallback, // Exponer callback para OrderDetails
+        setUpdateOrderCallback,
+        setUpdateInvoiceCallback, // Exponer callback para facturas
       }}
     >
       {children}

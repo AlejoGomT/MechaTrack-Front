@@ -54,14 +54,6 @@ const AdminDashboard = () => {
         const notifications = notificationsResponse.data;
         let vehiclesData = vehiclesResponse.data;
 
-        // Depuración: Imprimir la respuesta de /api/orders y /api/vehicles
-        console.log("[AdminDashboard] Respuesta de /api/orders:", ordersData);
-        console.log(
-          "[AdminDashboard] Respuesta de /api/vehicles:",
-          vehiclesData
-        );
-
-        // Validar ordersData.orders
         let orders = [];
         if (
           ordersData &&

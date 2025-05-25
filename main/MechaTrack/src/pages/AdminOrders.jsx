@@ -15,6 +15,7 @@ import {
   ModalBody,
   StyledTable,
   ActionsContainer,
+  colors,
 } from "../styles/GlobalStyles";
 import styled from "@emotion/styled";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -23,6 +24,7 @@ import {
   faCheck,
   faTimes,
   faEye,
+  faHistory,
 } from "@fortawesome/free-solid-svg-icons";
 import { library } from "@fortawesome/fontawesome-svg-core";
 import { toast } from "react-toastify";
@@ -43,7 +45,7 @@ import {
   deleteAdminPart,
 } from "../services/adminOrderService";
 
-library.add(faCircle, faCheck, faTimes, faEye);
+library.add(faCircle, faCheck, faTimes, faEye, faHistory);
 
 const adminMenu = [
   { label: "Inicio", path: "../admin" },
@@ -85,6 +87,13 @@ const ActionSection = styled.div`
   border-radius: 5px;
 `;
 
+const HeaderContainer = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+`;
+
 const AdminOrders = () => {
   const { user, token } = useAuth();
   const [branchFilter, setBranchFilter] = useState("");
@@ -93,6 +102,7 @@ const AdminOrders = () => {
   const [orderNumberFilter, setOrderNumberFilter] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [rejectionNote, setRejectionNote] = useState("");
@@ -282,19 +292,6 @@ const AdminOrders = () => {
           return;
         }
         const refreshedOrder = await getOrderById(selectedOrder.id);
-        console.log("[AdminOrders] Orden refrescada antes de guardar:", {
-          refreshedOrder,
-          vehicleData: {
-            vehicle_economic_number: refreshedOrder.vehicle_economic_number,
-            plate: refreshedOrder.plate,
-            brand: refreshedOrder.brand,
-            model: refreshedOrder.model,
-            year: refreshedOrder.year,
-            branch: refreshedOrder.branch,
-            mileage: refreshedOrder.mileage,
-          },
-        });
-
         const updatedParts = refreshedOrder.parts.map((part) => {
           const editedPart = editedParts.find(
             (p) => p.part_id === part.part_id
@@ -313,22 +310,6 @@ const AdminOrders = () => {
                   null,
               }
             : part;
-        });
-
-        console.log("[AdminOrders] Guardando orden:", {
-          orderId: selectedOrder.id,
-          editedOrder,
-          images: editedOrder.images,
-          parts: updatedParts,
-          vehicleData: {
-            vehicle_economic_number: editedOrder.vehicle_economic_number,
-            plate: editedOrder.plate,
-            brand: editedOrder.brand,
-            model: editedOrder.model,
-            year: editedOrder.year,
-            branch: editedOrder.branch,
-            mileage: editedOrder.mileage,
-          },
         });
 
         const response = await updateAdminOrder(selectedOrder.id, {
@@ -485,6 +466,7 @@ const AdminOrders = () => {
   const handleSendToBilling = () => {
     setConfirmAction(() => async () => {
       try {
+        await saveEditedOrder();
         await updateOrderStatus(selectedOrder.id, "Pendiente de Facturación");
         const updatedOrder = await getOrderById(selectedOrder.id);
         setSelectedOrder(updatedOrder);
@@ -548,6 +530,20 @@ const AdminOrders = () => {
     if (newPage >= 1 && newPage <= pagination.totalPages) {
       setPagination({ ...pagination, page: newPage });
     }
+  };
+
+  // Función para formatear fechas
+  const formatDate = (dateString) => {
+    if (!dateString) return "-";
+    const date = new Date(dateString);
+    return date.toLocaleString("es-MX", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
   };
 
   const userData = {
@@ -689,7 +685,21 @@ const AdminOrders = () => {
         centered
       >
         <Modal.Header closeButton>
-          <Modal.Title>Detalles de la Orden #{selectedOrder?.id}</Modal.Title>
+          <HeaderContainer>
+            <Modal.Title>Detalles de la Orden #{selectedOrder?.id}</Modal.Title>
+            {selectedOrder?.notifications?.length > 0 && (
+              <CustomButton
+                onClick={() => {
+                  setShowModal(false);
+                  setShowHistoryModal(true);
+                }}
+                title="Ver Historial de Notificaciones"
+                style={{ marginLeft: "10px", color: "white" }}
+              >
+                <FontAwesomeIcon icon={faHistory} /> Historial
+              </CustomButton>
+            )}
+          </HeaderContainer>
         </Modal.Header>
         <ModalBody>
           {selectedOrder && (
@@ -828,7 +838,7 @@ const AdminOrders = () => {
                       variant="success"
                       onClick={handleSendToBilling}
                     >
-                      Enviar a Facturación
+                      Guardar y Enviar a Facturación
                     </CustomButton>
                   </ActionsContainer>
                 </ActionSection>
@@ -836,22 +846,30 @@ const AdminOrders = () => {
 
               {selectedOrder.status === "Pendiente de Facturación" && (
                 <ActionSection>
-                  <h6>Acciones</h6>
-                  <CustomButton variant="danger" onClick={handleCancelBilling}>
-                    Cancelar Solicitud de Facturación
-                  </CustomButton>
+                  <div className="d-flex justify-content-around align-items-center">
+                    <h6>Acciones</h6>
+                    <CustomButton
+                      variant="danger"
+                      onClick={handleCancelBilling}
+                      className="w-25"
+                    >
+                      Cancelar Solicitud de Facturación
+                    </CustomButton>
+                  </div>
                 </ActionSection>
               )}
 
               {selectedOrder.status === "Facturado" && (
                 <ActionSection>
-                  <h6>Acciones</h6>
-                  <CustomButton
-                    variant="primary"
-                    onClick={handleDownloadReport}
-                  >
-                    Descargar Informe
-                  </CustomButton>
+                  <div className="d-flex justify-content-around align-items-center">
+                    <h6>Acciones</h6>
+                    <CustomButton
+                      variant="primary"
+                      onClick={handleDownloadReport}
+                    >
+                      Descargar Informe
+                    </CustomButton>
+                  </div>
                 </ActionSection>
               )}
             </>
@@ -865,6 +883,73 @@ const AdminOrders = () => {
       </StyledModal>
 
       <StyledModal
+        show={showHistoryModal}
+        onHide={() => {
+          setShowHistoryModal(false);
+          setShowModal(true);
+        }}
+        size="lg"
+        centered
+      >
+        <Modal.Header closeButton>
+          <Modal.Title>
+            Historial de Notificaciones - Orden #{selectedOrder?.id}
+          </Modal.Title>
+        </Modal.Header>
+        <ModalBody>
+          {selectedOrder?.notifications?.length > 0 ? (
+            <StyledTable>
+              <thead>
+                <tr>
+                  <th>Mensaje</th>
+                  <th>Fecha de Creación</th>
+                  <th>Detalles</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedOrder.notifications.map((notification) => (
+                  <tr key={notification.id}>
+                    <td className="text-wrap">{notification.message || "-"}</td>
+                    <td>{formatDate(notification.created_at)}</td>
+                    <td>
+                      {notification.details ? (
+                        <ul style={{ margin: 0, paddingLeft: "20px" }}>
+                          {notification.details.vehicle_economic_number && (
+                            <li>
+                              Número Económico:{" "}
+                              {notification.details.vehicle_economic_number}
+                            </li>
+                          )}
+                          {notification.details.branch && (
+                            <li>Sucursal: {notification.details.branch}</li>
+                          )}
+                        </ul>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </StyledTable>
+          ) : (
+            <p>No hay notificaciones para esta orden.</p>
+          )}
+        </ModalBody>
+        <Modal.Footer>
+          <CustomButton
+            onClick={() => {
+              setShowHistoryModal(false);
+              setShowModal(true);
+            }}
+          >
+            Cerrar
+          </CustomButton>
+        </Modal.Footer>
+      </StyledModal>
+
+      <StyledModal
+        variant="alertModal"
         show={showConfirmModal}
         onHide={() => setShowConfirmModal(false)}
         size="sm"

@@ -1,14 +1,13 @@
 import { useState, useEffect } from "react";
-import { Container, Row, Col } from "react-bootstrap";
+import { Container, Row } from "react-bootstrap";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import StatCard from "../components/StatCard";
+import axios from "axios";
 import { toast } from "react-toastify";
 import io from "socket.io-client";
-import { getOrders } from "../services/orderService";
-import axios from "axios";
 
 const secretaryMenu = [
   { label: "Inicio", path: "/secretary" },
@@ -18,12 +17,11 @@ const secretaryMenu = [
   { label: "Cerrar Sesión", path: "/" },
 ];
 
-const SecretaryDashboard = () => {
+const SecretaryNotifications = () => {
   const { user, token } = useAuth();
   const navigate = useNavigate();
   const [stats, setStats] = useState({
     pendingBillingOrdersCount: 0,
-    billedOrdersCount: 0,
     notificationsCount: 0,
   });
 
@@ -31,27 +29,26 @@ const SecretaryDashboard = () => {
     const fetchData = async () => {
       try {
         const [ordersResponse, notificationsResponse] = await Promise.all([
-          getOrders({ limit: 1000 }), // Obtener todas las órdenes con límite
+          axios.get("/api/orders", {
+            headers: { Authorization: `Bearer ${token}` },
+            params: { status: "Pendiente de Facturación", limit: 1000 },
+          }),
           axios.get("/api/notifications", {
             headers: { Authorization: `Bearer ${token}` },
             params: { to_user_id: user.id, status: "Pendiente" },
           }),
         ]);
 
-        const ordersData = ordersResponse;
+        const ordersData = ordersResponse.data;
         const notifications = notificationsResponse.data;
 
-        // Depuración detallada
+        // Depuración: Imprimir la respuesta de /api/orders
         console.log(
-          "[SecretaryDashboard] Respuesta completa de getOrders:",
+          "[SecretaryDashboard] Respuesta de /api/orders:",
           ordersData
         );
-        console.log(
-          "[SecretaryDashboard] Respuesta de /api/notifications:",
-          notifications
-        );
 
-        // Validar ordersData
+        // Validar ordersData.orders
         let orders = [];
         if (
           ordersData &&
@@ -64,40 +61,18 @@ const SecretaryDashboard = () => {
             "[SecretaryDashboard] Respuesta inválida de /api/orders, se esperaba un objeto con orders:",
             ordersData
           );
-          toast.error("Error al cargar órdenes");
-        }
-
-        // Filtrar órdenes por estado
-        const pendingBillingCount = orders.filter(
-          (order) => order.status === "Pendiente de Facturación"
-        ).length;
-        const billedCount = orders.filter(
-          (order) => order.status === "Facturado"
-        ).length;
-
-        // Validar notificaciones
-        const notificationsCount = Array.isArray(notifications)
-          ? notifications.length
-          : 0;
-        if (!Array.isArray(notifications)) {
-          console.warn(
-            "[SecretaryDashboard] Respuesta inválida de /api/notifications, se esperaba un arreglo:",
-            notifications
-          );
-          toast.error("Error al cargar notificaciones");
+          toast.error("Respuesta inválida al cargar órdenes");
         }
 
         setStats({
-          pendingBillingOrdersCount: pendingBillingCount,
-          billedOrdersCount: billedCount,
-          notificationsCount,
+          pendingBillingOrdersCount: orders.length,
+          notificationsCount: notifications.length,
         });
       } catch (error) {
         console.error("[SecretaryDashboard] Error al cargar datos:", error);
-        toast.error("Error al cargar datos");
+        toast.error(error.message || "Error al cargar estadísticas");
         setStats({
           pendingBillingOrdersCount: 0,
-          billedOrdersCount: 0,
           notificationsCount: 0,
         });
       }
@@ -119,24 +94,17 @@ const SecretaryDashboard = () => {
     });
 
     socket.on("order_updated", (updatedOrder) => {
-      console.log("[SecretaryDashboard] order_updated recibido:", updatedOrder);
       if (updatedOrder.status === "Pendiente de Facturación") {
         setStats((prev) => ({
           ...prev,
           pendingBillingOrdersCount: prev.pendingBillingOrdersCount + 1,
         }));
         toast.info(`Nueva orden pendiente de facturación: #${updatedOrder.id}`);
-      } else if (updatedOrder.status === "Facturado") {
-        setStats((prev) => ({
-          ...prev,
-          billedOrdersCount: prev.billedOrdersCount + 1,
-          pendingBillingOrdersCount:
-            prev.pendingBillingOrdersCount > 0
-              ? prev.pendingBillingOrdersCount - 1
-              : prev.pendingBillingOrdersCount,
-        }));
-        toast.info(`Orden facturada: #${updatedOrder.id}`);
-      } else if (stats.pendingBillingOrdersCount > 0) {
+      } else if (
+        (prev) =>
+          prev.pendingBillingOrdersCount > 0 &&
+          updatedOrder.status !== "Pendiente de Facturación"
+      ) {
         setStats((prev) => ({
           ...prev,
           pendingBillingOrdersCount: prev.pendingBillingOrdersCount - 1,
@@ -145,10 +113,6 @@ const SecretaryDashboard = () => {
     });
 
     socket.on("notification_created", (notification) => {
-      console.log(
-        "[SecretaryDashboard] notification_created recibido:",
-        notification
-      );
       if (
         notification.to_user_id === user.id &&
         notification.status === "Pendiente"
@@ -170,7 +134,7 @@ const SecretaryDashboard = () => {
       socket.disconnect();
       console.log("[SecretaryDashboard] Desconectado de Socket.IO");
     };
-  }, [token, user.id, stats.pendingBillingOrdersCount]);
+  }, [token, user.id]);
 
   const statCards = [
     {
@@ -178,12 +142,6 @@ const SecretaryDashboard = () => {
       content: `${stats.pendingBillingOrdersCount} órdenes esperando facturación`,
       buttonText: "Ver Facturación",
       onClick: () => navigate("/secretary/billing"),
-    },
-    {
-      title: "Historial de Facturaciones",
-      content: `${stats.billedOrdersCount} órdenes facturadas`,
-      buttonText: "Ver Historial",
-      onClick: () => navigate("/secretary/history"),
     },
     {
       title: "Mensajes",
@@ -214,4 +172,4 @@ const SecretaryDashboard = () => {
   );
 };
 
-export default SecretaryDashboard;
+export default SecretaryNotifications;

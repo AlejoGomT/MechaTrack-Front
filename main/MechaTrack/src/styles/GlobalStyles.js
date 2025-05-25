@@ -548,7 +548,9 @@ export const MobileToggleButton = styled(Button)`
 export const StyledModal = styled(Modal)`
   .modal-dialog {
     max-width: ${(props) =>
-      props.variant === "detailsVehicle"
+      props.variant === "alertModal"
+        ? "auto"
+        : props.variant === "detailsVehicle"
         ? "500px"
         : props.variant === "detailsParts"
         ? "800px"

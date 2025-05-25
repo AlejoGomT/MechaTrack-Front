@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Container, Table, Form, Button } from "react-bootstrap";
+import { Container, Table } from "react-bootstrap";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import CustomButton from "../components/CustomButton";
@@ -10,43 +10,80 @@ import {
   updateOrderStatus,
 } from "../services/orderService";
 import { toast } from "react-toastify";
+import {
+  FiltersContainer,
+  FilterGroup,
+  FilterLabel,
+  FilterInput,
+  FilterSelect,
+  StyledTable,
+  TableWrapper,
+} from "../styles/GlobalStyles";
 
 const secretaryMenu = [
   { label: "Inicio", path: "/secretary" },
   { label: "Facturación", path: "/secretary/billing" },
   { label: "Historial de Facturaciones", path: "/secretary/history" },
+  { label: "Notificaciones", path: "/secretary/notifications" },
   { label: "Cerrar Sesión", path: "/" },
 ];
 
 const SecretaryBilling = () => {
   const { user, token } = useAuth();
   const [orders, setOrders] = useState([]);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [branches, setBranches] = useState([]);
+  const [filters, setFilters] = useState({
+    orderNumber: "",
+    status: "Pendiente de Facturación",
+    economicNumber: "",
+    branch: "",
+  });
   const [invoiceNumbers, setInvoiceNumbers] = useState({});
+  const [loading, setLoading] = useState({});
 
   useEffect(() => {
     const fetchOrders = async () => {
       try {
         const ordersData = await getOrders({
-          status: "Pendiente de Facturación",
+          status: filters.status || undefined,
+          orderNumber: filters.orderNumber || undefined,
+          economicNumber: filters.economicNumber || undefined,
+          branch: filters.branch || undefined,
         });
-        setOrders(ordersData);
-        // Inicializar invoiceNumbers con valores actuales
+        console.log("[SecretaryBilling] Respuesta de getOrders:", ordersData);
+        setOrders(ordersData.orders || []);
+
+        // Extraer sucursales únicas
+        const uniqueBranches = [
+          ...new Set(
+            (ordersData.orders || [])
+              .map((order) => order.branch)
+              .filter((branch) => branch) // Excluir null o undefined
+          ),
+        ];
+        setBranches(uniqueBranches);
+
         const initialInvoiceNumbers = {};
-        ordersData.forEach((order) => {
+        (ordersData.orders || []).forEach((order) => {
           initialInvoiceNumbers[order.id] = order.invoice?.invoice_number || "";
         });
         setInvoiceNumbers(initialInvoiceNumbers);
       } catch (error) {
-        toast.error("Error al cargar órdenes");
         console.error("[SecretaryBilling] Error al cargar órdenes:", error);
+        toast.error("Error al cargar órdenes");
+        setOrders([]);
+        setBranches([]);
       }
     };
     if (token) fetchOrders();
-  }, [token]);
+  }, [token, filters]);
 
-  const handleSearch = (e) => {
-    setSearchTerm(e.target.value);
+  const handleFilterChange = (e) => {
+    const { name, value } = e.target;
+    setFilters((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
   };
 
   const handleInvoiceNumberChange = (orderId, value) => {
@@ -57,39 +94,48 @@ const SecretaryBilling = () => {
   };
 
   const handleSaveInvoiceNumber = async (orderId) => {
+    setLoading((prev) => ({ ...prev, [orderId]: true }));
     try {
       const invoiceNumber = invoiceNumbers[orderId];
       if (!invoiceNumber) {
         toast.error("Por favor ingrese un número de factura");
         return;
       }
-      // Guardar invoice_number
-      await updateOrderNumbers(orderId, { invoiceNumber });
-      // Cambiar estado a Facturado
+      await updateOrderNumbers(orderId, { invoice_number: invoiceNumber });
       await updateOrderStatus(orderId, "Facturado");
       toast.success(`Factura registrada para orden #${orderId}`);
-      // Actualizar lista de órdenes
       const updatedOrders = await getOrders({
-        status: "Pendiente de Facturación",
+        status: filters.status || undefined,
+        orderNumber: filters.orderNumber || undefined,
+        economicNumber: filters.economicNumber || undefined,
+        branch: filters.branch || undefined,
       });
-      setOrders(updatedOrders);
-      // Actualizar invoiceNumbers
+      console.log("[SecretaryBilling] Órdenes actualizadas:", updatedOrders);
+      setOrders(updatedOrders.orders || []);
+      const uniqueBranches = [
+        ...new Set(
+          (updatedOrders.orders || [])
+            .map((order) => order.branch)
+            .filter((branch) => branch)
+        ),
+      ];
+      setBranches(uniqueBranches);
       const updatedInvoiceNumbers = {};
-      updatedOrders.forEach((order) => {
+      (updatedOrders.orders || []).forEach((order) => {
         updatedInvoiceNumbers[order.id] = order.invoice?.invoice_number || "";
       });
       setInvoiceNumbers(updatedInvoiceNumbers);
     } catch (error) {
-      toast.error(error.message || "Error al registrar factura");
       console.error("[SecretaryBilling] Error al registrar factura:", error);
+      const errorMessage =
+        error.message ||
+        error.response?.data?.message ||
+        "Error al registrar factura";
+      toast.error(errorMessage);
+    } finally {
+      setLoading((prev) => ({ ...prev, [orderId]: false }));
     }
   };
-
-  const filteredOrders = orders.filter(
-    (order) =>
-      order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.branch?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
 
   return (
     <>
@@ -100,64 +146,116 @@ const SecretaryBilling = () => {
           subtitle="Listado de órdenes listas para facturación"
         />
         <Container className="mt-4">
-          <div className="d-flex justify-content-between mb-3">
-            <Form.Group className="d-flex align-items-center">
-              <Form.Label className="me-2">Buscar Orden:</Form.Label>
-              <Form.Control
+          <FiltersContainer>
+            <FilterGroup>
+              <FilterLabel>Número de Orden</FilterLabel>
+              <FilterInput
                 type="text"
-                placeholder="Número de Orden o Sucursal"
-                value={searchTerm}
-                onChange={handleSearch}
-                style={{ width: "200px" }}
+                name="orderNumber"
+                value={filters.orderNumber}
+                onChange={handleFilterChange}
+                placeholder="Ej: 123"
               />
-            </Form.Group>
-          </div>
-          <Table striped bordered hover className="factura-table">
-            <thead>
-              <tr>
-                <th>Número de Orden</th>
-                <th>Número Económico</th>
-                <th>Sucursal</th>
-                <th>Número de Factura</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredOrders.length > 0 ? (
-                filteredOrders.map((order) => (
-                  <tr key={order.id}>
-                    <td>{order.id}</td>
-                    <td>{order.vehicle_economic_number}</td>
-                    <td>{order.branch || "-"}</td>
-                    <td>
-                      <Form.Control
-                        type="text"
-                        value={invoiceNumbers[order.id] || ""}
-                        onChange={(e) =>
-                          handleInvoiceNumberChange(order.id, e.target.value)
-                        }
-                        placeholder="Ej: FAC-12345"
-                      />
-                    </td>
-                    <td>
-                      <CustomButton
-                        onClick={() => handleSaveInvoiceNumber(order.id)}
-                        disabled={!invoiceNumbers[order.id]}
-                      >
-                        Registrar Factura
-                      </CustomButton>
+            </FilterGroup>
+            <FilterGroup>
+              <FilterLabel>Estado</FilterLabel>
+              <FilterSelect
+                name="status"
+                value={filters.status}
+                onChange={handleFilterChange}
+              >
+                <option value="Pendiente de Facturación">
+                  Pendiente de Facturación
+                </option>
+                <option value="Facturado">Facturado</option>
+              </FilterSelect>
+            </FilterGroup>
+            <FilterGroup>
+              <FilterLabel>Número Económico</FilterLabel>
+              <FilterInput
+                type="text"
+                name="economicNumber"
+                value={filters.economicNumber}
+                onChange={handleFilterChange}
+                placeholder="Ej: ABC123"
+              />
+            </FilterGroup>
+            <FilterGroup>
+              <FilterLabel>Sucursal</FilterLabel>
+              <FilterSelect
+                name="branch"
+                value={filters.branch}
+                onChange={handleFilterChange}
+              >
+                <option value="">Todas las sucursales</option>
+                {branches.map((branch) => (
+                  <option key={branch} value={branch}>
+                    {branch}
+                  </option>
+                ))}
+              </FilterSelect>
+            </FilterGroup>
+          </FiltersContainer>
+          <TableWrapper>
+            <StyledTable>
+              <thead>
+                <tr>
+                  <th>Número de Orden</th>
+                  <th>Número Económico</th>
+                  <th>Sucursal</th>
+                  <th>Estado</th>
+                  <th>Número de Factura</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {orders.length > 0 ? (
+                  orders.map((order) => (
+                    <tr key={order.id}>
+                      <td>{order.id}</td>
+                      <td>{order.vehicle_economic_number}</td>
+                      <td>{order.branch || "-"}</td>
+                      <td>{order.status}</td>
+                      <td>
+                        <FilterInput
+                          type="text"
+                          value={invoiceNumbers[order.id] || ""}
+                          onChange={(e) =>
+                            handleInvoiceNumberChange(order.id, e.target.value)
+                          }
+                          placeholder="Ej: FAC-12345"
+                          disabled={
+                            loading[order.id] || order.status === "Facturado"
+                          }
+                        />
+                      </td>
+                      <td>
+                        <CustomButton
+                          onClick={() => handleSaveInvoiceNumber(order.id)}
+                          disabled={
+                            !invoiceNumbers[order.id] ||
+                            loading[order.id] ||
+                            order.status === "Facturado"
+                          }
+                          loading={loading[order.id]}
+                        >
+                          {loading[order.id]
+                            ? "Registrando..."
+                            : "Registrar Factura"}
+                        </CustomButton>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="6" className="text-center">
+                      No hay órdenes que coincidan con los filtros
                     </td>
                   </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan="5" className="text-center">
-                    No hay órdenes pendientes de facturación
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </Table>
+                )}
+              </tbody>
+            </StyledTable>
+          </TableWrapper>
         </Container>
       </div>
     </>

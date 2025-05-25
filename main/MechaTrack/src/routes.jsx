@@ -16,6 +16,7 @@ import TechnicianCreateOrder from "./pages/TechnicianCreateOrder";
 import TechnicianHistory from "./pages/TechnicianHistory";
 import TechnicianNotifications from "./pages/TechnicianNotifications";
 import ClientDashboard from "./pages/ClientDashboard";
+import SecretaryNotifications from "./pages/SecretaryNotifications";
 
 // Componente para proteger rutas
 const PrivateRoute = ({ children, allowedRoles }) => {
@@ -106,6 +107,14 @@ const AppRoutes = () => (
       element={
         <PrivateRoute allowedRoles={["secretary"]}>
           <SecretaryHistory />
+        </PrivateRoute>
+      }
+    />
+    <Route
+      path="/secretary/notifications"
+      element={
+        <PrivateRoute allowedRoles={["secretary"]}>
+          <SecretaryNotifications />
         </PrivateRoute>
       }
     />
