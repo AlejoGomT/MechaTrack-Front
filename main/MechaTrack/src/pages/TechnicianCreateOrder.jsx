@@ -175,10 +175,6 @@ const OrderForm = memo(
       const fetchVehicles = async () => {
         try {
           const data = await getVehicles({ limit: 1000 });
-          console.log(
-            "[TechnicianCreateOrder] Respuesta de getVehicles:",
-            data
-          );
 
           const vehiclesData = Array.isArray(data.vehicles)
             ? data.vehicles
@@ -287,10 +283,6 @@ const OrderForm = memo(
                 branch: vehicle.branch,
                 limit: 1000,
               });
-              console.log(
-                "[TechnicianCreateOrder] Respuesta de getOrders para historial:",
-                historyData
-              );
 
               if (!Array.isArray(historyData.orders)) {
                 console.error(
@@ -319,20 +311,11 @@ const OrderForm = memo(
             }
             try {
               const partsData = await getParts(vehicle.model, 1, 1000);
-              console.log(
-                "[TechnicianCreateOrder] Respuesta de getParts:",
-                partsData
-              );
-
               const partsArray = Array.isArray(partsData.parts)
                 ? partsData.parts
                 : [];
               setParts(partsArray);
             } catch (err) {
-              console.error(
-                "[TechnicianCreateOrder] Error al cargar repuestos:",
-                err
-              );
               toast.error(err.message || "Error al cargar repuestos");
               setParts([]);
             }

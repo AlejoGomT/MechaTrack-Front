@@ -105,10 +105,6 @@ export const updateOrder = async (orderId, orderData) => {
       }
     });
 
-    for (let [key, value] of formData.entries()) {
-      console.log(`FormData updateOrder: ${key} =`, value);
-    }
-
     const response = await axiosInstance.put(
       `/api/orders/${orderId}`,
       formData,
@@ -118,16 +114,15 @@ export const updateOrder = async (orderId, orderData) => {
         },
       }
     );
-    console.log("Respuesta de updateOrder:", response.data);
     return response.data;
   } catch (error) {
-    console.error("Error en updateOrder:", error.response?.data || error);
     throw error.response?.data || { message: "Error al actualizar la orden" };
   }
 };
 
 export const deleteOrderImage = async (orderId, imageIndex) => {
   try {
+    console.log("order: ", orderId, " index: ", imageIndex);
     const response = await axiosInstance.delete(
       `/api/orders/${orderId}/images/${imageIndex}`
     );

@@ -569,22 +569,23 @@ const OrderDetails = ({
             variant="primary"
             onClick={() => setShowImagesModal(true)}
           >
-            {!isReadOnly ? "Gestionar Imágenes" : "Ver"}
+            {!isReadOnly && isFinalized ? "Gestionar Imágenes" : "Ver"}
           </ActionButton>
         </>
       ) : (
-        <p>Sin imágenes disponibles</p>
-      )}
-      {isFinalized && !isReadOnly && (
-        <Form.Group className="mb-3">
-          <Form.Label>Añadir Nuevas Imágenes</Form.Label>
-          <Form.Control
-            type="file"
-            multiple
-            accept="image/jpeg,image/jpg,image/png"
-            onChange={handleImageUpload}
-          />
-        </Form.Group>
+        <>
+          {isFinalized && !isReadOnly && (
+            <Form.Group className="mb-3">
+              <Form.Label>Añadir Nuevas Imágenes</Form.Label>
+              <Form.Control
+                type="file"
+                multiple
+                accept="image/jpeg,image/jpg,image/png"
+                onChange={handleImageUpload}
+              />
+            </Form.Group>
+          )}
+        </>
       )}
 
       <OrderImagesModal
