@@ -968,3 +968,20 @@ export const DeleteIcon = styled.span`
 export const InvoiceNumber = styled.span`
   flex: 1;
 `;
+
+export const InfoGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  & > div {
+    display: flex;
+    flex-direction: column;
+  }
+  & > div.full-width {
+    grid-column: 1 / -1;
+  }
+  @media (max-width: 768px) {
+    grid-template-columns: 1fr;
+  }
+`;

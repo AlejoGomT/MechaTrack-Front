@@ -106,8 +106,12 @@ export const createNotification = async (notificationData, files = []) => {
 
 export const getAdminId = async () => {
   try {
-    const response = await axiosInstance.get("/api/users/admin-id");
-    if (!response.data.id) {
+    const response = await axiosInstance.get("/api/admin/admin-id");
+    console.log(
+      "[notificationService] Respuesta de getAdminId:",
+      response.data
+    );
+    if (!response.data || !response.data.id) {
       throw new Error("No se encontró un administrador");
     }
     return response.data.id;

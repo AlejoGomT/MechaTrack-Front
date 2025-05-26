@@ -65,7 +65,6 @@ const DashboardHeader = ({ title }) => {
   useEffect(() => {
     const fetchCounts = async () => {
       if (!user?.id) {
-        console.warn("[DashboardHeader] No hay usuario, omitiendo fetchCounts");
         return;
       }
 
@@ -83,12 +82,7 @@ const DashboardHeader = ({ title }) => {
         ).length;
         setActiveOrdersCount(activeOrders);
         setNotificationsCount(pendingNotifications);
-        console.log("[DashboardHeader] Contadores cargados:", {
-          activeOrders,
-          pendingNotifications,
-        });
       } catch (err) {
-        console.error("[DashboardHeader] Error al cargar contadores:", err);
         toast.error(err.message || "Error al cargar contadores");
         setActiveOrdersCount(0);
         setNotificationsCount(0);

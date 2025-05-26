@@ -7,7 +7,7 @@ import { API_URL } from "../services/apiConfig";
 export const SocketContext = createContext();
 
 export const SocketProvider = ({ children }) => {
-  const { user, token, loading } = useAuth();
+  const { user, token } = useAuth();
   const [socket, setSocket] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
@@ -16,15 +16,13 @@ export const SocketProvider = ({ children }) => {
   const [updateInvoiceCallback, setUpdateInvoiceCallback] = useState(null);
 
   useEffect(() => {
-    if (loading || !user || !token) {
-      console.log("[SocketContext] Esperando autenticación, loading:", loading);
+    if (!user || !token) {
+      console.log(
+        "[SocketContext] No hay usuario o token, no se inicializa socket"
+      );
       return;
     }
 
-    console.log(
-      "[SocketContext] Inicializando socket con token:",
-      token.slice(0, 10) + "..."
-    );
     const newSocket = io(API_URL, {
       query: { token },
       reconnection: true,
@@ -107,25 +105,17 @@ export const SocketProvider = ({ children }) => {
       toast.success("Mensaje enviado");
     });
 
-    newSocket.on("typing", ({ userId, room, isTyping }) => {
+    newSocket.on("typing", ({ userId, orderId, isTyping }) => {
       setTypingUsers((prev) => ({
         ...prev,
-        [`${userId}_${room}`]: isTyping ? userId : null,
+        [orderId]: isTyping ? userId : null,
       }));
     });
 
     newSocket.on("disconnect", () => {
       console.log("[SocketContext] Desconectado del servidor Socket.IO");
       setIsConnected(false);
-      toast.warn("Conexión perdida con el servidor, intentando reconectar...");
-    });
-
-    newSocket.on("connect_error", (error) => {
-      console.error(
-        "[SocketContext] Error de conexión Socket.IO:",
-        error.message
-      );
-      toast.error("Error en la conexión en tiempo real");
+      toast.warn("Conexión perdida con el servidor");
     });
 
     newSocket.on("error", (error) => {
@@ -137,7 +127,7 @@ export const SocketProvider = ({ children }) => {
       newSocket.disconnect();
       setSocket(null);
     };
-  }, [user, token, loading]);
+  }, [user, token]);
 
   useEffect(() => {
     if (!socket || !user || !isConnected) return;
@@ -150,9 +140,6 @@ export const SocketProvider = ({ children }) => {
             headers: { Authorization: `Bearer ${token}` },
           }
         );
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
         const conversations = await response.json();
         conversations.forEach((conv) => {
           socket.emit("joinOrder", conv.order_id);
@@ -170,59 +157,41 @@ export const SocketProvider = ({ children }) => {
     socket.on("connect", joinOrderRooms);
 
     return () => {
-      socket.off("connect", joinOrderRooms);
+      socket.off("connect");
     };
   }, [socket, user, token, isConnected]);
 
-  const sendMessage = async (orderId, message, toUserId, files = []) => {
+  const sendMessage = async (orderId, message, toUserId) => {
     if (!socket || !isConnected) {
       toast.error("No conectado al servidor en tiempo real");
       return;
     }
     try {
-      const notification = await createNotification(
-        {
-          order_id: orderId,
-          to_user_id: toUserId,
+      const response = await fetch(`${API_URL}/api/notifications`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          orderId,
+          toUserId,
           message,
           type: "message",
-        },
-        files
-      );
+        }),
+      });
+      const notification = await response.json();
       socket.emit("message", { orderId, message, toUserId, userId: user.id });
       return notification;
     } catch (error) {
       console.error("[SocketContext] Error al enviar mensaje:", error);
       toast.error("Error al enviar mensaje");
-      throw error;
     }
   };
 
-  const sendTyping = (room, isTyping) => {
+  const sendTyping = (orderId, isTyping) => {
     if (!socket || !isConnected) return;
-    socket.emit("typing", { room, userId: user.id, isTyping });
-  };
-
-  const createNotification = async (notificationData, files = []) => {
-    const formData = new FormData();
-    Object.entries(notificationData).forEach(([key, value]) => {
-      formData.append(key, value);
-    });
-    files.forEach((file) => {
-      formData.append("attachments", file);
-    });
-
-    const response = await fetch(`${API_URL}/api/notifications`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      body: formData,
-    });
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    return response.json();
+    socket.emit("typing", { orderId, userId: user.id, isTyping });
   };
 
   return (

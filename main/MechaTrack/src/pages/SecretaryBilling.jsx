@@ -22,14 +22,25 @@ import {
   InvoiceDisplay,
   DeleteIcon,
   InvoiceNumber,
+  ActionsContainer,
 } from "../styles/GlobalStyles";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faPen, faTrash } from "@fortawesome/free-solid-svg-icons";
+import { faPen, faTrash, faEye } from "@fortawesome/free-solid-svg-icons";
 import styled from "styled-components";
+import OrderInvoiceModal from "../components/OrderInvoiceModal";
 
 const ActionButton = styled(CustomButton)`
   padding: 6px 12px;
   font-size: 0.9rem;
+`;
+
+const DetailButton = styled(CustomButton)`
+  padding: 6px 12px;
+  font-size: 0.9rem;
+  background-color: #17a2b8;
+  &:hover {
+    background-color: #138496;
+  }
 `;
 
 const secretaryMenu = [
@@ -46,23 +57,51 @@ const SecretaryBilling = () => {
   const [branches, setBranches] = useState([]);
   const [filters, setFilters] = useState({
     orderNumber: "",
-    status: "Pendiente de Facturación",
+    status: "",
     economicNumber: "",
     branch: "",
   });
   const [invoiceNumbers, setInvoiceNumbers] = useState({});
   const [loading, setLoading] = useState({});
+  const [showModal, setShowModal] = useState(false);
+  const [selectedOrderId, setSelectedOrderId] = useState(null);
 
   useEffect(() => {
     const fetchOrders = async () => {
       try {
-        const ordersData = await getOrders({
-          status: filters.status || undefined,
+        let ordersData = { orders: [] };
+        const params = {
           orderNumber: filters.orderNumber || undefined,
           economicNumber: filters.economicNumber || undefined,
           branch: filters.branch || undefined,
-        });
-        console.log("[SecretaryBilling] Respuesta de getOrders:", ordersData);
+        };
+
+        if (filters.status) {
+          params.status = filters.status;
+          ordersData = await getOrders(params);
+        } else {
+          const pendingParams = {
+            ...params,
+            status: "Pendiente de Facturación",
+          };
+          const invoicedParams = { ...params, status: "Facturado" };
+
+          console.log(
+            "[SecretaryBilling] Parámetros Pendiente:",
+            pendingParams
+          );
+
+          const [pendingOrders, invoicedOrders] = await Promise.all([
+            getOrders(pendingParams),
+            getOrders(invoicedParams),
+          ]);
+
+          ordersData.orders = [
+            ...(pendingOrders.orders || []),
+            ...(invoicedOrders.orders || []),
+          ];
+        }
+
         setOrders(ordersData.orders || []);
 
         const uniqueBranches = [
@@ -80,7 +119,6 @@ const SecretaryBilling = () => {
         });
         setInvoiceNumbers(initialInvoiceNumbers);
       } catch (error) {
-        console.error("[SecretaryBilling] Error al cargar órdenes:", error);
         toast.error("Error al cargar órdenes");
         setOrders([]);
         setBranches([]);
@@ -91,10 +129,6 @@ const SecretaryBilling = () => {
 
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
-    setFilters((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
   };
 
   const handleInvoiceNumberChange = (orderId, value) => {
@@ -117,7 +151,6 @@ const SecretaryBilling = () => {
       toast.success(`Factura registrada para orden #${orderId}`);
       refreshOrders();
     } catch (error) {
-      console.error("[SecretaryBilling] Error al registrar factura:", error);
       toast.error(error.message || "Error al registrar factura");
     } finally {
       setLoading((prev) => ({ ...prev, [orderId]: false }));
@@ -136,10 +169,8 @@ const SecretaryBilling = () => {
         invoice_number: invoiceNumber,
         issued_by: user.id,
       });
-      toast.success(`Factura actualizada para orden #${orderId}`);
       refreshOrders();
     } catch (error) {
-      console.error("[SecretaryBilling] Error al editar factura:", error);
       toast.error(error.message || "Error al editar factura");
     } finally {
       setLoading((prev) => ({ ...prev, [orderId]: false }));
@@ -154,21 +185,49 @@ const SecretaryBilling = () => {
       toast.success(`Factura eliminada para orden #${orderId}`);
       refreshOrders();
     } catch (error) {
-      console.error("[SecretaryBilling] Error al eliminar factura:", error);
       toast.error(error.message || "Error al eliminar factura");
     } finally {
       setLoading((prev) => ({ ...prev, [orderId]: false }));
     }
   };
 
+  const handleShowModal = (orderId) => {
+    setSelectedOrderId(orderId);
+    setShowModal(true);
+  };
+
+  const handleCloseModal = () => {
+    setShowModal(false);
+    setSelectedOrderId(null);
+  };
+
   const refreshOrders = async () => {
     try {
-      const ordersData = await getOrders({
-        status: filters.status || undefined,
+      let ordersData = { orders: [] };
+      const params = {
         orderNumber: filters.orderNumber || undefined,
         economicNumber: filters.economicNumber || undefined,
         branch: filters.branch || undefined,
-      });
+      };
+
+      if (filters.status) {
+        params.status = filters.status;
+        ordersData = await getOrders(params);
+      } else {
+        const pendingParams = { ...params, status: "Pendiente de Facturación" };
+        const invoicedParams = { ...params, status: "Facturado" };
+
+        const [pendingOrders, invoicedOrders] = await Promise.all([
+          getOrders(pendingParams),
+          getOrders(invoicedParams),
+        ]);
+
+        ordersData.orders = [
+          ...(pendingOrders.orders || []),
+          ...(invoicedOrders.orders || []),
+        ];
+      }
+
       setOrders(ordersData.orders || []);
       const uniqueBranches = [
         ...new Set(
@@ -184,7 +243,6 @@ const SecretaryBilling = () => {
       });
       setInvoiceNumbers(updatedInvoiceNumbers);
     } catch (error) {
-      console.error("[SecretaryBilling] Error al recargar órdenes:", error);
       toast.error("Error al recargar órdenes");
     }
   };
@@ -216,6 +274,7 @@ const SecretaryBilling = () => {
                 value={filters.status}
                 onChange={handleFilterChange}
               >
+                <option value="">Todos los estados</option>
                 <option value="Pendiente de Facturación">
                   Pendiente de Facturación
                 </option>
@@ -252,6 +311,7 @@ const SecretaryBilling = () => {
             <StyledTable>
               <thead>
                 <tr>
+                  <th></th>
                   <th>Número de Orden</th>
                   <th>Número Económico</th>
                   <th>Sucursal</th>
@@ -264,6 +324,15 @@ const SecretaryBilling = () => {
                 {orders.length > 0 ? (
                   orders.map((order) => (
                     <tr key={order.id}>
+                      <td>
+                        <ActionsContainer>
+                          <DetailButton
+                            onClick={() => handleShowModal(order.id)}
+                          >
+                            <FontAwesomeIcon icon={faEye} />
+                          </DetailButton>
+                        </ActionsContainer>
+                      </td>
                       <td>{order.id}</td>
                       <td>{order.vehicle_economic_number}</td>
                       <td>{order.branch || "-"}</td>
@@ -325,7 +394,7 @@ const SecretaryBilling = () => {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="6" className="text-center">
+                    <td colSpan="7" className="text-center">
                       No hay órdenes que coincidan con los filtros
                     </td>
                   </tr>
@@ -334,6 +403,13 @@ const SecretaryBilling = () => {
             </StyledTable>
           </TableWrapper>
         </Container>
+        {selectedOrderId && (
+          <OrderInvoiceModal
+            show={showModal}
+            handleClose={handleCloseModal}
+            orderId={selectedOrderId}
+          />
+        )}
       </div>
     </>
   );

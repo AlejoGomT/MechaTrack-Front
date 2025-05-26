@@ -209,7 +209,7 @@ const SecretaryHistory = () => {
                           "es-MX"
                         )}
                       </td>
-                      <td>${invoice.total.toFixed(2)}</td>
+                      <td>${invoice.total}</td>
                       <td>
                         <CustomButton
                           onClick={() => handleDownload(invoice.id)}
