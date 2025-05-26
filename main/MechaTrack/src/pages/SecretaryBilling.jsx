@@ -78,6 +78,10 @@ const SecretaryBilling = () => {
 
         if (filters.status) {
           params.status = filters.status;
+          console.log(
+            "[SecretaryBilling] Parámetros (un solo estado):",
+            params
+          );
           ordersData = await getOrders(params);
         } else {
           const pendingParams = {
@@ -90,11 +94,18 @@ const SecretaryBilling = () => {
             "[SecretaryBilling] Parámetros Pendiente:",
             pendingParams
           );
+          console.log(
+            "[SecretaryBilling] Parámetros Facturado:",
+            invoicedParams
+          );
 
           const [pendingOrders, invoicedOrders] = await Promise.all([
             getOrders(pendingParams),
             getOrders(invoicedParams),
           ]);
+
+          console.log("[SecretaryBilling] Pending Orders:", pendingOrders);
+          console.log("[SecretaryBilling] Invoiced Orders:", invoicedOrders);
 
           ordersData.orders = [
             ...(pendingOrders.orders || []),
@@ -102,6 +113,13 @@ const SecretaryBilling = () => {
           ];
         }
 
+        // Eliminar duplicados basados en order.id
+        const uniqueOrders = Array.from(
+          new Map(ordersData.orders.map((order) => [order.id, order])).values()
+        );
+        ordersData.orders = uniqueOrders;
+
+        console.log("[SecretaryBilling] Órdenes recibidas:", ordersData.orders);
         setOrders(ordersData.orders || []);
 
         const uniqueBranches = [
@@ -115,10 +133,22 @@ const SecretaryBilling = () => {
 
         const initialInvoiceNumbers = {};
         (ordersData.orders || []).forEach((order) => {
-          initialInvoiceNumbers[order.id] = order.invoice?.invoice_number || "";
+          initialInvoiceNumbers[order.id] =
+            Array.isArray(order.invoice) && order.invoice.length > 0
+              ? order.invoice[0].invoice_number || ""
+              : order.invoice?.invoice_number || "";
+          console.log(
+            `[SecretaryBilling] Invoice para orden ${order.id}:`,
+            order.invoice
+          );
         });
+        console.log(
+          "[SecretaryBilling] InvoiceNumbers:",
+          initialInvoiceNumbers
+        );
         setInvoiceNumbers(initialInvoiceNumbers);
       } catch (error) {
+        console.error("[SecretaryBilling] Error al cargar órdenes:", error);
         toast.error("Error al cargar órdenes");
         setOrders([]);
         setBranches([]);
@@ -129,6 +159,11 @@ const SecretaryBilling = () => {
 
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
+    console.log("[SecretaryBilling] Filtro cambiado:", { [name]: value });
+    setFilters((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
   };
 
   const handleInvoiceNumberChange = (orderId, value) => {
@@ -136,25 +171,6 @@ const SecretaryBilling = () => {
       ...prev,
       [orderId]: value,
     }));
-  };
-
-  const handleSaveInvoiceNumber = async (orderId) => {
-    setLoading((prev) => ({ ...prev, [orderId]: true }));
-    try {
-      const invoiceNumber = invoiceNumbers[orderId];
-      if (!invoiceNumber) {
-        toast.error("Por favor ingrese un número de factura");
-        return;
-      }
-      await updateOrderNumbers(orderId, { invoice_number: invoiceNumber });
-      await updateOrderStatus(orderId, "Facturado");
-      toast.success(`Factura registrada para orden #${orderId}`);
-      refreshOrders();
-    } catch (error) {
-      toast.error(error.message || "Error al registrar factura");
-    } finally {
-      setLoading((prev) => ({ ...prev, [orderId]: false }));
-    }
   };
 
   const handleEditInvoice = async (orderId) => {
@@ -169,8 +185,10 @@ const SecretaryBilling = () => {
         invoice_number: invoiceNumber,
         issued_by: user.id,
       });
+      toast.success(`Factura actualizada para orden #${orderId}`);
       refreshOrders();
     } catch (error) {
+      console.error("[SecretaryBilling] Error al editar factura:", error);
       toast.error(error.message || "Error al editar factura");
     } finally {
       setLoading((prev) => ({ ...prev, [orderId]: false }));
@@ -185,6 +203,7 @@ const SecretaryBilling = () => {
       toast.success(`Factura eliminada para orden #${orderId}`);
       refreshOrders();
     } catch (error) {
+      console.error("[SecretaryBilling] Error al eliminar factura:", error);
       toast.error(error.message || "Error al eliminar factura");
     } finally {
       setLoading((prev) => ({ ...prev, [orderId]: false }));
@@ -212,15 +231,37 @@ const SecretaryBilling = () => {
 
       if (filters.status) {
         params.status = filters.status;
+        console.log(
+          "[SecretaryBilling] Refresh parámetros (un solo estado):",
+          params
+        );
         ordersData = await getOrders(params);
       } else {
         const pendingParams = { ...params, status: "Pendiente de Facturación" };
         const invoicedParams = { ...params, status: "Facturado" };
 
+        console.log(
+          "[SecretaryBilling] Refresh parámetros Pendiente:",
+          pendingParams
+        );
+        console.log(
+          "[SecretaryBilling] Refresh parámetros Facturado:",
+          invoicedParams
+        );
+
         const [pendingOrders, invoicedOrders] = await Promise.all([
           getOrders(pendingParams),
           getOrders(invoicedParams),
         ]);
+
+        console.log(
+          "[SecretaryBilling] Refresh Pending Orders:",
+          pendingOrders
+        );
+        console.log(
+          "[SecretaryBilling] Refresh Invoiced Orders:",
+          invoicedOrders
+        );
 
         ordersData.orders = [
           ...(pendingOrders.orders || []),
@@ -228,6 +269,16 @@ const SecretaryBilling = () => {
         ];
       }
 
+      // Eliminar duplicados basados en order.id
+      const uniqueOrders = Array.from(
+        new Map(ordersData.orders.map((order) => [order.id, order])).values()
+      );
+      ordersData.orders = uniqueOrders;
+
+      console.log(
+        "[SecretaryBilling] Refresh órdenes recibidas:",
+        ordersData.orders
+      );
       setOrders(ordersData.orders || []);
       const uniqueBranches = [
         ...new Set(
@@ -239,10 +290,22 @@ const SecretaryBilling = () => {
       setBranches(uniqueBranches);
       const updatedInvoiceNumbers = {};
       (ordersData.orders || []).forEach((order) => {
-        updatedInvoiceNumbers[order.id] = order.invoice?.invoice_number || "";
+        updatedInvoiceNumbers[order.id] =
+          Array.isArray(order.invoice) && order.invoice.length > 0
+            ? order.invoice[0].invoice_number || ""
+            : order.invoice?.invoice_number || "";
+        console.log(
+          `[SecretaryBilling] Refresh invoice para orden ${order.id}:`,
+          order.invoice
+        );
       });
+      console.log(
+        "[SecretaryBilling] Refresh InvoiceNumbers:",
+        updatedInvoiceNumbers
+      );
       setInvoiceNumbers(updatedInvoiceNumbers);
     } catch (error) {
+      console.error("[SecretaryBilling] Error al recargar órdenes:", error);
       toast.error("Error al recargar órdenes");
     }
   };
@@ -346,7 +409,7 @@ const SecretaryBilling = () => {
                               <FontAwesomeIcon icon={faTrash} />
                             </DeleteIcon>
                             <InvoiceNumber>
-                              {invoiceNumbers[order.id]}
+                              {invoiceNumbers[order.id] || "Sin factura"}
                             </InvoiceNumber>
                           </InvoiceDisplay>
                         ) : (
@@ -365,20 +428,9 @@ const SecretaryBilling = () => {
                         )}
                       </td>
                       <td>
-                        {order.status === "Facturado" ? (
-                          <ActionButton
-                            onClick={() => handleEditInvoice(order.id)}
-                            disabled={
-                              !invoiceNumbers[order.id] || loading[order.id]
-                            }
-                            loading={loading[order.id]}
-                            variant="warning"
-                          >
-                            <FontAwesomeIcon icon={faPen} /> Editar
-                          </ActionButton>
-                        ) : (
+                        {order.status === "Pendiente de Facturación" && (
                           <CustomButton
-                            onClick={() => handleSaveInvoiceNumber(order.id)}
+                            onClick={() => handleEditInvoice(order.id)}
                             disabled={
                               !invoiceNumbers[order.id] || loading[order.id]
                             }

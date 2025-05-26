@@ -160,14 +160,12 @@ const OrderInvoiceModal = ({ show, handleClose, orderId }) => {
               <div>
                 <DetailLabel>Subtotal</DetailLabel>
                 <DetailValue className="price">
-                  ${calculateSubtotal().toFixed(2)}
+                  ${calculateSubtotal()}
                 </DetailValue>
               </div>
               <div>
                 <DetailLabel>Total</DetailLabel>
-                <DetailValue className="price">
-                  ${calculateTotal().toFixed(2)}
-                </DetailValue>
+                <DetailValue className="price">${calculateTotal()}</DetailValue>
               </div>
             </InfoGrid>
           </div>

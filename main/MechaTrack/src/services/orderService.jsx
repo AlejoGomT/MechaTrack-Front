@@ -2,12 +2,28 @@ import axiosInstance from "./apiConfig";
 
 export const getOrders = async (filters = {}) => {
   try {
+    // Asegurar que los parámetros undefined se omitan
+    const cleanFilters = Object.fromEntries(
+      Object.entries(filters).filter(([_, value]) => value !== undefined)
+    );
+    console.log(
+      "[OrderService] Parámetros enviados a /api/orders:",
+      cleanFilters
+    );
     const response = await axiosInstance.get("/api/orders", {
-      params: filters,
+      params: cleanFilters,
     });
+    console.log(
+      "[OrderService] Respuesta completa de /api/orders:",
+      response.data
+    );
     return response.data;
   } catch (error) {
-    console.error("Error en getOrders:", error.response?.data || error);
+    console.error("[OrderService] Error en getOrders:", {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+    });
     throw error.response?.data || { message: "Error al obtener órdenes" };
   }
 };
