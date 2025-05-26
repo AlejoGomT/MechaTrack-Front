@@ -185,6 +185,7 @@ const SecretaryBilling = () => {
         invoice_number: invoiceNumber,
         issued_by: user.id,
       });
+      await updateOrderStatus(orderId, "Facturado");
       toast.success(`Factura actualizada para orden #${orderId}`);
       refreshOrders();
     } catch (error) {
@@ -231,37 +232,15 @@ const SecretaryBilling = () => {
 
       if (filters.status) {
         params.status = filters.status;
-        console.log(
-          "[SecretaryBilling] Refresh parámetros (un solo estado):",
-          params
-        );
         ordersData = await getOrders(params);
       } else {
         const pendingParams = { ...params, status: "Pendiente de Facturación" };
         const invoicedParams = { ...params, status: "Facturado" };
 
-        console.log(
-          "[SecretaryBilling] Refresh parámetros Pendiente:",
-          pendingParams
-        );
-        console.log(
-          "[SecretaryBilling] Refresh parámetros Facturado:",
-          invoicedParams
-        );
-
         const [pendingOrders, invoicedOrders] = await Promise.all([
           getOrders(pendingParams),
           getOrders(invoicedParams),
         ]);
-
-        console.log(
-          "[SecretaryBilling] Refresh Pending Orders:",
-          pendingOrders
-        );
-        console.log(
-          "[SecretaryBilling] Refresh Invoiced Orders:",
-          invoicedOrders
-        );
 
         ordersData.orders = [
           ...(pendingOrders.orders || []),
@@ -269,7 +248,6 @@ const SecretaryBilling = () => {
         ];
       }
 
-      // Eliminar duplicados basados en order.id
       const uniqueOrders = Array.from(
         new Map(ordersData.orders.map((order) => [order.id, order])).values()
       );

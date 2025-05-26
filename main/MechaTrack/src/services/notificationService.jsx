@@ -4,9 +4,12 @@ export const getNotifications = async (userIdOrParams) => {
   try {
     let params = {};
     if (typeof userIdOrParams === "string") {
-      params = { to_user_id: userIdOrParams };
+      params = { user_id: userIdOrParams };
     } else if (userIdOrParams && typeof userIdOrParams === "object") {
-      params = userIdOrParams;
+      params = { ...userIdOrParams };
+      if (!params.order_id && !params.to_user_id && params.user_id) {
+        params = { user_id: params.user_id };
+      }
     } else {
       console.error(
         "[notificationService] Parámetro inválido en getNotifications:",
@@ -78,8 +81,14 @@ export const getMessagesByOrderId = async (orderId, userId) => {
 export const createNotification = async (notificationData, files = []) => {
   try {
     const formData = new FormData();
-    Object.entries(notificationData).forEach(([key, value]) => {
-      formData.append(key, value);
+    const cleanedData = { ...notificationData };
+    if (cleanedData.type === "direct_message") {
+      cleanedData.orderId = null;
+    }
+    Object.entries(cleanedData).forEach(([key, value]) => {
+      if (value !== undefined && value !== "null") {
+        formData.append(key, value);
+      }
     });
     files.forEach((file) => {
       formData.append("attachments", file);
@@ -125,5 +134,18 @@ export const getAdminId = async () => {
         message: "Error al obtener ID del administrador",
       }
     );
+  }
+};
+
+export const getSecretaryId = async () => {
+  try {
+    const response = await axiosInstance.get("/api/users/role/secretary");
+    return response.data.id;
+  } catch (error) {
+    console.error(
+      "[notificationService] Error al obtener ID de secretaria:",
+      error
+    );
+    throw error;
   }
 };

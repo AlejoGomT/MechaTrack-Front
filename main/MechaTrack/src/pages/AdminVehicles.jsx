@@ -16,6 +16,7 @@ import {
   ModalBody,
   StyledTable,
   ActionsContainer,
+  TableWrapper,
 } from "../styles/GlobalStyles";
 import {
   getVehicles,
@@ -211,7 +212,7 @@ const AdminVehicles = () => {
               Nuevo Vehículo
             </CustomButton>
           </FiltersContainer>
-          <ListGroup.Item className="w-100">
+          <TableWrapper>
             <StyledTable>
               <thead>
                 <tr>
@@ -271,7 +272,7 @@ const AdminVehicles = () => {
                 ))}
               </tbody>
             </StyledTable>
-          </ListGroup.Item>
+          </TableWrapper>
           <Pagination>
             <Pagination.Prev
               onClick={() => handlePageChange(pagination.page - 1)}

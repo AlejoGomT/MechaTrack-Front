@@ -85,20 +85,12 @@ const SecretaryNotifications = () => {
       setAdminId(adminId);
 
       // Obtener notificaciones
-      const notificationsData = await getNotifications({
-        to_user_id: user.id,
-        user_id: user.id,
-      });
+      const notificationsData = await getNotifications({ user_id: user.id });
 
       // Procesar notificaciones como una única conversación
       const processedMessages = notificationsData
         .filter((n) =>
-          [
-            "invoice_complete",
-            "invoice_updated",
-            "invoice_deleted",
-            "message",
-          ].includes(n.type)
+          ["invoice_complete", "message", "direct_message"].includes(n.type)
         )
         .map((n) => ({
           ...n,
@@ -140,15 +132,15 @@ const SecretaryNotifications = () => {
         }
       }
 
-      // Unir a la sala secretary
+      // Unir a la sala DIRECT
       if (socket && isConnected) {
-        socket.emit("join", "secretary");
-        console.log("[SecretaryNotifications] Unido a sala secretary");
+        socket.emit("joinOrder", "DIRECT");
+        console.log("[SecretaryNotifications] Unido a sala DIRECT");
       }
     } catch (error) {
       console.error("[SecretaryNotifications] Error al cargar datos:", error);
       toast.error("Error al cargar notificaciones");
-      hasFetchedRef.current = false; // Permitir reintentos
+      hasFetchedRef.current = false;
     }
   }, 500);
 
@@ -162,7 +154,6 @@ const SecretaryNotifications = () => {
     fetchData();
   }, [user?.id, token, socket, isConnected]);
 
-  // Polling si no hay conexión Socket.IO
   useEffect(() => {
     if (isConnected) return;
     const fetchNotifications = async () => {
@@ -174,18 +165,10 @@ const SecretaryNotifications = () => {
       }
 
       try {
-        const notificationsData = await getNotifications({
-          to_user_id: user.id,
-          user_id: user.id,
-        });
+        const notificationsData = await getNotifications({ user_id: user.id });
         const processedMessages = notificationsData
           .filter((n) =>
-            [
-              "invoice_complete",
-              "invoice_updated",
-              "invoice_deleted",
-              "message",
-            ].includes(n.type)
+            ["invoice_complete", "message", "direct_message"].includes(n.type)
           )
           .map((n) => ({
             ...n,
@@ -219,15 +202,12 @@ const SecretaryNotifications = () => {
   // Manejar notificaciones Socket.IO
   useEffect(() => {
     if (!notifications.length) return;
-    const newMessages = notifications.filter(
-      (notif) =>
-        [
-          "invoice_complete",
-          "invoice_updated",
-          "invoice_deleted",
-          "message",
-        ].includes(notif.type) &&
-        (notif.toUserId === user.id || notif.fromUserId === adminId)
+    const newMessages = notifications.filter((notif) =>
+      [
+        "invoice_complete",
+        "message",
+        "direct_message", // Incluir mensajes directos
+      ].includes(notif.type)
     );
     if (newMessages.length > 0) {
       setAllMessages((prev) => {
@@ -287,7 +267,7 @@ const SecretaryNotifications = () => {
         total_messages: prev.total_messages + newMessages.length,
       }));
     }
-  }, [notifications, user, adminId]);
+  }, [notifications, user]);
 
   // Enviar mensaje
   const handleSendMessage = async (e) => {
@@ -300,21 +280,20 @@ const SecretaryNotifications = () => {
           order_id: null, // No se usa para mensajes directos
           to_user_id: adminId,
           message: newMessage || "Adjunto enviado",
-          type: "message",
+          type: "direct_message",
         },
         files
       );
-      await sendMessage(null, newMessage || "Adjunto enviado", adminId);
       const newNotification = {
         id: notification.id,
         order_id: null,
         from_user_id: user.id,
         to_user_id: adminId,
         message: newMessage || "Adjunto enviado",
-        type: "message",
+        type: "direct_message",
         status: "Pendiente",
         details: notification.details || {},
-        created_at: new Date(),
+        created_at: new Date(notification.created_at),
         attachments: notification.attachments || [],
       };
       setAllMessages((prev) => [...prev, newNotification]);
@@ -332,7 +311,6 @@ const SecretaryNotifications = () => {
       toast.error("Error al enviar mensaje");
     }
   };
-
   // Manejar adjuntos
   const handleFileChange = (e) => {
     const selectedFiles = Array.from(e.target.files).filter((file) =>

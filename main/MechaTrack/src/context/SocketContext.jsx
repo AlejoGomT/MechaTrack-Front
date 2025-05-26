@@ -140,9 +140,19 @@ export const SocketProvider = ({ children }) => {
             headers: { Authorization: `Bearer ${token}` },
           }
         );
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
         const conversations = await response.json();
-        conversations.forEach((conv) => {
-          socket.emit("joinOrder", conv.order_id);
+        const validConversations = Array.isArray(conversations)
+          ? conversations
+          : [];
+        console.log(
+          "[SocketContext] Conversaciones recibidas:",
+          validConversations
+        );
+        validConversations.forEach((conv) => {
+          socket.emit("joinOrder", conv.conversation_id);
         });
       } catch (error) {
         console.error(

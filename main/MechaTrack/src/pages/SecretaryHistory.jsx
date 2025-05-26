@@ -65,7 +65,6 @@ const SecretaryHistory = () => {
   useEffect(() => {
     if (token) fetchInvoices();
 
-    // Registrar callback para eventos de facturas
     setUpdateInvoiceCallback((eventType, payload) => {
       console.log(`[SecretaryHistory] ${eventType} recibido:`, payload);
       if (eventType === "created") {
@@ -85,7 +84,7 @@ const SecretaryHistory = () => {
     });
 
     return () => {
-      setUpdateInvoiceCallback(null); // Limpiar callback al desmontar
+      setUpdateInvoiceCallback(null);
     };
   }, [token, filters, pagination.currentPage, setUpdateInvoiceCallback]);
 
@@ -143,43 +142,12 @@ const SecretaryHistory = () => {
               />
             </FilterGroup>
             <FilterGroup>
-              <FilterLabel>Número de Albarán</FilterLabel>
-              <FilterInput
-                type="text"
-                name="deliveryNoteNumber"
-                value={filters.deliveryNoteNumber}
-                onChange={handleFilterChange}
-                placeholder="Ej: PA-45678"
-              />
-            </FilterGroup>
-            <FilterGroup>
-              <FilterLabel>Emisor</FilterLabel>
-              <FilterInput
-                type="text"
-                name="issuedBy"
-                value={filters.issuedBy}
-                onChange={handleFilterChange}
-                placeholder="Ej: Juan Pérez"
-              />
-            </FilterGroup>
-            <FilterGroup>
               <FilterLabel>Fecha de Facturación</FilterLabel>
               <FilterInput
                 type="date"
                 name="issuedAt"
                 value={filters.issuedAt}
                 onChange={handleFilterChange}
-              />
-            </FilterGroup>
-            <FilterGroup>
-              <FilterLabel>Total</FilterLabel>
-              <FilterInput
-                type="number"
-                name="total"
-                value={filters.total}
-                onChange={handleFilterChange}
-                placeholder="Ej: 1500.00"
-                step="0.01"
               />
             </FilterGroup>
           </FiltersContainer>
@@ -193,7 +161,7 @@ const SecretaryHistory = () => {
                   <th>Emisor</th>
                   <th>Fecha</th>
                   <th>Total</th>
-                  <th>Acciones</th>
+                  {/*<th>Acciones</th>*/}
                 </tr>
               </thead>
               <tbody>
@@ -210,13 +178,13 @@ const SecretaryHistory = () => {
                         )}
                       </td>
                       <td>${invoice.total}</td>
-                      <td>
+                      {/*<td>
                         <CustomButton
                           onClick={() => handleDownload(invoice.id)}
                         >
                           Descargar
                         </CustomButton>
-                      </td>
+                      </td>*/}
                     </tr>
                   ))
                 ) : (

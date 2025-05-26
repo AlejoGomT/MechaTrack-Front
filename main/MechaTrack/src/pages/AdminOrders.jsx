@@ -16,6 +16,7 @@ import {
   StyledTable,
   ActionsContainer,
   colors,
+  TableWrapper,
 } from "../styles/GlobalStyles";
 import styled from "@emotion/styled";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -616,46 +617,48 @@ const AdminOrders = () => {
               />
             </FilterGroup>
           </FiltersContainer>
-          <StyledTable>
-            <thead>
-              <tr>
-                <th>Número Económico</th>
-                <th>Número de Orden</th>
-                <th>Sucursal</th>
-                <th>Estado</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders
-                .filter((order) =>
-                  branchFilter ? order.branch === branchFilter : true
-                )
-                .map((order) => (
-                  <tr key={order.id}>
-                    <td>{order.vehicle_economic_number}</td>
-                    <td>{order.id}</td>
-                    <td>{order.branch || "-"}</td>
-                    <td>
-                      <StatusIcon status={order.status}>
-                        <FontAwesomeIcon icon={faCircle} />
-                      </StatusIcon>
-                      {order.status}
-                    </td>
-                    <td className="actions">
-                      <ActionsContainer>
-                        <CustomButton
-                          onClick={() => handleViewDetails(order)}
-                          title="Ver Detalles"
-                        >
-                          <FontAwesomeIcon icon={faEye} />
-                        </CustomButton>
-                      </ActionsContainer>
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </StyledTable>
+          <TableWrapper>
+            <StyledTable>
+              <thead>
+                <tr>
+                  <th>Número Económico</th>
+                  <th>Número de Orden</th>
+                  <th>Sucursal</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {orders
+                  .filter((order) =>
+                    branchFilter ? order.branch === branchFilter : true
+                  )
+                  .map((order) => (
+                    <tr key={order.id}>
+                      <td>{order.vehicle_economic_number}</td>
+                      <td>{order.id}</td>
+                      <td>{order.branch || "-"}</td>
+                      <td>
+                        <StatusIcon status={order.status}>
+                          <FontAwesomeIcon icon={faCircle} />
+                        </StatusIcon>
+                        {order.status}
+                      </td>
+                      <td className="actions">
+                        <ActionsContainer>
+                          <CustomButton
+                            onClick={() => handleViewDetails(order)}
+                            title="Ver Detalles"
+                          >
+                            <FontAwesomeIcon icon={faEye} />
+                          </CustomButton>
+                        </ActionsContainer>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </StyledTable>
+          </TableWrapper>
           <Pagination>
             <Pagination.Prev
               onClick={() => handlePageChange(pagination.page - 1)}
