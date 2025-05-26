@@ -1,13 +1,36 @@
 import axiosInstance from "./apiConfig";
 
-export const getNotifications = async (userId) => {
+export const getNotifications = async (userIdOrParams) => {
   try {
-    const response = await axiosInstance.get("/api/notifications", {
-      params: { to_user_id: userId },
-    });
+    let params = {};
+    if (typeof userIdOrParams === "string") {
+      params = { to_user_id: userIdOrParams };
+    } else if (userIdOrParams && typeof userIdOrParams === "object") {
+      params = userIdOrParams;
+    } else {
+      console.error(
+        "[notificationService] Parámetro inválido en getNotifications:",
+        userIdOrParams
+      );
+      throw new Error("Parámetro inválido para obtener notificaciones");
+    }
+
+    console.log(
+      "[notificationService] Obteniendo notificaciones con params:",
+      params
+    );
+
+    const response = await axiosInstance.get("/api/notifications", { params });
+    console.log(
+      "[notificationService] Notificaciones obtenidas:",
+      response.data
+    );
     return response.data;
   } catch (error) {
-    console.error("Error en getNotifications:", error.response?.data || error);
+    console.error(
+      "[notificationService] Error al obtener notificaciones:",
+      error
+    );
     throw (
       error.response?.data || { message: "Error al obtener notificaciones" }
     );
@@ -24,7 +47,10 @@ export const getConversations = async (userId) => {
     );
     return response.data;
   } catch (error) {
-    console.error("Error en getConversations:", error.response?.data || error);
+    console.error(
+      "[notificationService] Error al obtener conversaciones:",
+      error.response?.data || error
+    );
     throw (
       error.response?.data || { message: "Error al obtener conversaciones" }
     );
@@ -42,7 +68,7 @@ export const getMessagesByOrderId = async (orderId, userId) => {
     return response.data;
   } catch (error) {
     console.error(
-      "Error en getMessagesByOrderId:",
+      "[notificationService] Error al obtener mensajes:",
       error.response?.data || error
     );
     throw error.response?.data || { message: "Error al obtener mensajes" };
@@ -64,13 +90,36 @@ export const createNotification = async (notificationData, files = []) => {
         "Content-Type": "multipart/form-data",
       },
     });
-    console.log("Respuesta de createNotification:", response.data);
+    console.log(
+      "[notificationService] Respuesta de createNotification:",
+      response.data
+    );
     return response.data;
   } catch (error) {
     console.error(
-      "Error en createNotification:",
+      "[notificationService] Error en createNotification:",
       error.response?.data || error
     );
     throw error.response?.data || { message: "Error al crear notificación" };
+  }
+};
+
+export const getAdminId = async () => {
+  try {
+    const response = await axiosInstance.get("/api/users/admin-id");
+    if (!response.data.id) {
+      throw new Error("No se encontró un administrador");
+    }
+    return response.data.id;
+  } catch (error) {
+    console.error(
+      "[notificationService] Error al obtener ID del administrador:",
+      error
+    );
+    throw (
+      error.response?.data || {
+        message: "Error al obtener ID del administrador",
+      }
+    );
   }
 };

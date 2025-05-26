@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Container, Table } from "react-bootstrap";
+import { Container } from "react-bootstrap";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import CustomButton from "../components/CustomButton";
@@ -9,6 +9,7 @@ import {
   updateOrderNumbers,
   updateOrderStatus,
 } from "../services/orderService";
+import { editInvoice, deleteInvoice } from "../services/invoicesService";
 import { toast } from "react-toastify";
 import {
   FiltersContainer,
@@ -18,7 +19,18 @@ import {
   FilterSelect,
   StyledTable,
   TableWrapper,
+  InvoiceDisplay,
+  DeleteIcon,
+  InvoiceNumber,
 } from "../styles/GlobalStyles";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faPen, faTrash } from "@fortawesome/free-solid-svg-icons";
+import styled from "styled-components";
+
+const ActionButton = styled(CustomButton)`
+  padding: 6px 12px;
+  font-size: 0.9rem;
+`;
 
 const secretaryMenu = [
   { label: "Inicio", path: "/secretary" },
@@ -53,12 +65,11 @@ const SecretaryBilling = () => {
         console.log("[SecretaryBilling] Respuesta de getOrders:", ordersData);
         setOrders(ordersData.orders || []);
 
-        // Extraer sucursales únicas
         const uniqueBranches = [
           ...new Set(
             (ordersData.orders || [])
               .map((order) => order.branch)
-              .filter((branch) => branch) // Excluir null o undefined
+              .filter((branch) => branch)
           ),
         ];
         setBranches(uniqueBranches);
@@ -104,36 +115,77 @@ const SecretaryBilling = () => {
       await updateOrderNumbers(orderId, { invoice_number: invoiceNumber });
       await updateOrderStatus(orderId, "Facturado");
       toast.success(`Factura registrada para orden #${orderId}`);
-      const updatedOrders = await getOrders({
+      refreshOrders();
+    } catch (error) {
+      console.error("[SecretaryBilling] Error al registrar factura:", error);
+      toast.error(error.message || "Error al registrar factura");
+    } finally {
+      setLoading((prev) => ({ ...prev, [orderId]: false }));
+    }
+  };
+
+  const handleEditInvoice = async (orderId) => {
+    setLoading((prev) => ({ ...prev, [orderId]: true }));
+    try {
+      const invoiceNumber = invoiceNumbers[orderId];
+      if (!invoiceNumber) {
+        toast.error("Por favor ingrese un número de factura");
+        return;
+      }
+      await editInvoice(orderId, {
+        invoice_number: invoiceNumber,
+        issued_by: user.id,
+      });
+      toast.success(`Factura actualizada para orden #${orderId}`);
+      refreshOrders();
+    } catch (error) {
+      console.error("[SecretaryBilling] Error al editar factura:", error);
+      toast.error(error.message || "Error al editar factura");
+    } finally {
+      setLoading((prev) => ({ ...prev, [orderId]: false }));
+    }
+  };
+
+  const handleDeleteInvoice = async (orderId) => {
+    setLoading((prev) => ({ ...prev, [orderId]: true }));
+    try {
+      await deleteInvoice(orderId);
+      await updateOrderStatus(orderId, "Pendiente de Facturación");
+      toast.success(`Factura eliminada para orden #${orderId}`);
+      refreshOrders();
+    } catch (error) {
+      console.error("[SecretaryBilling] Error al eliminar factura:", error);
+      toast.error(error.message || "Error al eliminar factura");
+    } finally {
+      setLoading((prev) => ({ ...prev, [orderId]: false }));
+    }
+  };
+
+  const refreshOrders = async () => {
+    try {
+      const ordersData = await getOrders({
         status: filters.status || undefined,
         orderNumber: filters.orderNumber || undefined,
         economicNumber: filters.economicNumber || undefined,
         branch: filters.branch || undefined,
       });
-      console.log("[SecretaryBilling] Órdenes actualizadas:", updatedOrders);
-      setOrders(updatedOrders.orders || []);
+      setOrders(ordersData.orders || []);
       const uniqueBranches = [
         ...new Set(
-          (updatedOrders.orders || [])
+          (ordersData.orders || [])
             .map((order) => order.branch)
             .filter((branch) => branch)
         ),
       ];
       setBranches(uniqueBranches);
       const updatedInvoiceNumbers = {};
-      (updatedOrders.orders || []).forEach((order) => {
+      (ordersData.orders || []).forEach((order) => {
         updatedInvoiceNumbers[order.id] = order.invoice?.invoice_number || "";
       });
       setInvoiceNumbers(updatedInvoiceNumbers);
     } catch (error) {
-      console.error("[SecretaryBilling] Error al registrar factura:", error);
-      const errorMessage =
-        error.message ||
-        error.response?.data?.message ||
-        "Error al registrar factura";
-      toast.error(errorMessage);
-    } finally {
-      setLoading((prev) => ({ ...prev, [orderId]: false }));
+      console.error("[SecretaryBilling] Error al recargar órdenes:", error);
+      toast.error("Error al recargar órdenes");
     }
   };
 
@@ -217,32 +269,57 @@ const SecretaryBilling = () => {
                       <td>{order.branch || "-"}</td>
                       <td>{order.status}</td>
                       <td>
-                        <FilterInput
-                          type="text"
-                          value={invoiceNumbers[order.id] || ""}
-                          onChange={(e) =>
-                            handleInvoiceNumberChange(order.id, e.target.value)
-                          }
-                          placeholder="Ej: FAC-12345"
-                          disabled={
-                            loading[order.id] || order.status === "Facturado"
-                          }
-                        />
+                        {order.status === "Facturado" ? (
+                          <InvoiceDisplay>
+                            <DeleteIcon
+                              onClick={() => handleDeleteInvoice(order.id)}
+                            >
+                              <FontAwesomeIcon icon={faTrash} />
+                            </DeleteIcon>
+                            <InvoiceNumber>
+                              {invoiceNumbers[order.id]}
+                            </InvoiceNumber>
+                          </InvoiceDisplay>
+                        ) : (
+                          <FilterInput
+                            type="text"
+                            value={invoiceNumbers[order.id] || ""}
+                            onChange={(e) =>
+                              handleInvoiceNumberChange(
+                                order.id,
+                                e.target.value
+                              )
+                            }
+                            placeholder="Ej: FAC-12345"
+                            disabled={loading[order.id]}
+                          />
+                        )}
                       </td>
                       <td>
-                        <CustomButton
-                          onClick={() => handleSaveInvoiceNumber(order.id)}
-                          disabled={
-                            !invoiceNumbers[order.id] ||
-                            loading[order.id] ||
-                            order.status === "Facturado"
-                          }
-                          loading={loading[order.id]}
-                        >
-                          {loading[order.id]
-                            ? "Registrando..."
-                            : "Registrar Factura"}
-                        </CustomButton>
+                        {order.status === "Facturado" ? (
+                          <ActionButton
+                            onClick={() => handleEditInvoice(order.id)}
+                            disabled={
+                              !invoiceNumbers[order.id] || loading[order.id]
+                            }
+                            loading={loading[order.id]}
+                            variant="warning"
+                          >
+                            <FontAwesomeIcon icon={faPen} /> Editar
+                          </ActionButton>
+                        ) : (
+                          <CustomButton
+                            onClick={() => handleSaveInvoiceNumber(order.id)}
+                            disabled={
+                              !invoiceNumbers[order.id] || loading[order.id]
+                            }
+                            loading={loading[order.id]}
+                          >
+                            {loading[order.id]
+                              ? "Registrando..."
+                              : "Registrar Factura"}
+                          </CustomButton>
+                        )}
                       </td>
                     </tr>
                   ))

@@ -64,6 +64,11 @@ const DashboardHeader = ({ title }) => {
 
   useEffect(() => {
     const fetchCounts = async () => {
+      if (!user?.id) {
+        console.warn("[DashboardHeader] No hay usuario, omitiendo fetchCounts");
+        return;
+      }
+
       try {
         const [countsData, notificationsData] = await Promise.all([
           getOrderCounts({ id: user.id }),
@@ -71,11 +76,17 @@ const DashboardHeader = ({ title }) => {
         ]);
         const activeOrders =
           (countsData.inProcess || 0) + (countsData.pending || 0);
-        const relevantNotifications = notificationsData.filter(
-          (notification) => notification.type !== "order_creation"
-        );
+        const pendingNotifications = notificationsData.filter(
+          (notification) =>
+            notification.status === "Pendiente" &&
+            notification.type !== "order_creation"
+        ).length;
         setActiveOrdersCount(activeOrders);
-        setNotificationsCount(relevantNotifications.length);
+        setNotificationsCount(pendingNotifications);
+        console.log("[DashboardHeader] Contadores cargados:", {
+          activeOrders,
+          pendingNotifications,
+        });
       } catch (err) {
         console.error("[DashboardHeader] Error al cargar contadores:", err);
         toast.error(err.message || "Error al cargar contadores");
@@ -84,9 +95,7 @@ const DashboardHeader = ({ title }) => {
       }
     };
 
-    if (user?.id) {
-      fetchCounts();
-    }
+    fetchCounts();
   }, [user]);
 
   useEffect(() => {
@@ -94,7 +103,9 @@ const DashboardHeader = ({ title }) => {
 
     const handleNewNotification = (notification) => {
       if (
-        notification.user_id === user.id &&
+        (notification.toUserId === user.id ||
+          notification.user_id === user.id) &&
+        notification.status === "Pendiente" &&
         notification.type !== "order_creation"
       ) {
         setNotificationsCount((prev) => prev + 1);
@@ -105,15 +116,19 @@ const DashboardHeader = ({ title }) => {
       }
     };
 
-    socket.on("new_notification", handleNewNotification);
+    socket.on("notification", handleNewNotification);
 
     return () => {
-      socket.off("new_notification", handleNewNotification);
+      socket.off("notification", handleNewNotification);
     };
   }, [socket, isConnected, user]);
 
   const handleNotificationClick = () => {
-    window.location.href = "../admin/notifications";
+    const path =
+      user?.role === "secretary"
+        ? "/secretary/notifications"
+        : "/admin/notifications";
+    window.location.href = path;
   };
 
   return (

@@ -9,8 +9,14 @@ const axiosInstance = axios.create({
 axiosInstance.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem("token");
+    console.log(
+      "[apiConfig] Token en solicitud:",
+      token ? `Presente (${token.slice(0, 10)}...)` : "Ausente"
+    );
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    } else {
+      console.warn("[apiConfig] No hay token disponible");
     }
     return config;
   },

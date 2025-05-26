@@ -938,3 +938,33 @@ export const RejectionReason = styled.span`
     display: block;
   }
 `;
+
+export const InvoiceDisplay = styled.div`
+  display: flex;
+  align-items: center;
+  background-color: #f0f0f0;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-family: Arial, sans-serif;
+  font-size: 0.9rem;
+  color: ${colors.backgroundDark};
+`;
+
+export const DeleteIcon = styled.span`
+  color: ${colors.danger};
+  margin-right: 8px;
+  cursor: pointer;
+  font-size: 0.9rem; /* Ajustado para Font Awesome */
+  padding-right: 8px;
+  border-right: 1px solid #ccc;
+  display: flex;
+  align-items: center;
+  transition: color 0.3s;
+  &:hover {
+    color: ${colors.primaryHover};
+  }
+`;
+
+export const InvoiceNumber = styled.span`
+  flex: 1;
+`;

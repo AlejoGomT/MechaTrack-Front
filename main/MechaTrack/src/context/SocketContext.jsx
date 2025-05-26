@@ -2,11 +2,12 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { io } from "socket.io-client";
 import { toast } from "react-toastify";
 import { useAuth } from "./AuthContext";
+import { API_URL } from "../services/apiConfig";
 
 export const SocketContext = createContext();
 
 export const SocketProvider = ({ children }) => {
-  const { user, token } = useAuth();
+  const { user, token, loading } = useAuth();
   const [socket, setSocket] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
@@ -15,14 +16,16 @@ export const SocketProvider = ({ children }) => {
   const [updateInvoiceCallback, setUpdateInvoiceCallback] = useState(null);
 
   useEffect(() => {
-    if (!user || !token) {
-      console.log(
-        "[SocketContext] No hay usuario o token, no se inicializa socket"
-      );
+    if (loading || !user || !token) {
+      console.log("[SocketContext] Esperando autenticación, loading:", loading);
       return;
     }
 
-    const newSocket = io("http://localhost:5000", {
+    console.log(
+      "[SocketContext] Inicializando socket con token:",
+      token.slice(0, 10) + "..."
+    );
+    const newSocket = io(API_URL, {
       query: { token },
       reconnection: true,
       reconnectionAttempts: 5,
@@ -104,17 +107,25 @@ export const SocketProvider = ({ children }) => {
       toast.success("Mensaje enviado");
     });
 
-    newSocket.on("typing", ({ userId, orderId, isTyping }) => {
+    newSocket.on("typing", ({ userId, room, isTyping }) => {
       setTypingUsers((prev) => ({
         ...prev,
-        [orderId]: isTyping ? userId : null,
+        [`${userId}_${room}`]: isTyping ? userId : null,
       }));
     });
 
     newSocket.on("disconnect", () => {
       console.log("[SocketContext] Desconectado del servidor Socket.IO");
       setIsConnected(false);
-      toast.warn("Conexión perdida con el servidor");
+      toast.warn("Conexión perdida con el servidor, intentando reconectar...");
+    });
+
+    newSocket.on("connect_error", (error) => {
+      console.error(
+        "[SocketContext] Error de conexión Socket.IO:",
+        error.message
+      );
+      toast.error("Error en la conexión en tiempo real");
     });
 
     newSocket.on("error", (error) => {
@@ -126,16 +137,22 @@ export const SocketProvider = ({ children }) => {
       newSocket.disconnect();
       setSocket(null);
     };
-  }, [user, token]);
+  }, [user, token, loading]);
 
   useEffect(() => {
     if (!socket || !user || !isConnected) return;
 
     const joinOrderRooms = async () => {
       try {
-        const response = await fetch("/api/notifications/conversations", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const response = await fetch(
+          `${API_URL}/api/notifications/conversations`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
         const conversations = await response.json();
         conversations.forEach((conv) => {
           socket.emit("joinOrder", conv.order_id);
@@ -153,41 +170,59 @@ export const SocketProvider = ({ children }) => {
     socket.on("connect", joinOrderRooms);
 
     return () => {
-      socket.off("connect");
+      socket.off("connect", joinOrderRooms);
     };
   }, [socket, user, token, isConnected]);
 
-  const sendMessage = async (orderId, message, toUserId) => {
+  const sendMessage = async (orderId, message, toUserId, files = []) => {
     if (!socket || !isConnected) {
       toast.error("No conectado al servidor en tiempo real");
       return;
     }
     try {
-      const response = await fetch("/api/notifications", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          orderId,
-          toUserId,
+      const notification = await createNotification(
+        {
+          order_id: orderId,
+          to_user_id: toUserId,
           message,
           type: "message",
-        }),
-      });
-      const notification = await response.json();
+        },
+        files
+      );
       socket.emit("message", { orderId, message, toUserId, userId: user.id });
       return notification;
     } catch (error) {
       console.error("[SocketContext] Error al enviar mensaje:", error);
       toast.error("Error al enviar mensaje");
+      throw error;
     }
   };
 
-  const sendTyping = (orderId, isTyping) => {
+  const sendTyping = (room, isTyping) => {
     if (!socket || !isConnected) return;
-    socket.emit("typing", { orderId, userId: user.id, isTyping });
+    socket.emit("typing", { room, userId: user.id, isTyping });
+  };
+
+  const createNotification = async (notificationData, files = []) => {
+    const formData = new FormData();
+    Object.entries(notificationData).forEach(([key, value]) => {
+      formData.append(key, value);
+    });
+    files.forEach((file) => {
+      formData.append("attachments", file);
+    });
+
+    const response = await fetch(`${API_URL}/api/notifications`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return response.json();
   };
 
   return (
@@ -200,7 +235,7 @@ export const SocketProvider = ({ children }) => {
         sendMessage,
         sendTyping,
         setUpdateOrderCallback,
-        setUpdateInvoiceCallback, // Exponer callback para facturas
+        setUpdateInvoiceCallback,
       }}
     >
       {children}

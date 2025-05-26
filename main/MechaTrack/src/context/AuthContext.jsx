@@ -36,6 +36,7 @@ export const AuthProvider = ({ children }) => {
   const loginUser = async (id, password) => {
     try {
       const response = await login(id, password);
+      console.log("[AuthContext] Login exitoso, token:", response.token);
       setUser(response.user);
       setToken(response.token);
       localStorage.setItem("token", response.token);
@@ -49,6 +50,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
+    console.log("[AuthContext] Cerrando sesión");
     setUser(null);
     setToken(null);
     localStorage.removeItem("token");
