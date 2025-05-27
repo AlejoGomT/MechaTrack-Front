@@ -648,46 +648,44 @@ const AdminNotifications = () => {
     if (!newMessage.trim() && files.length === 0) return;
 
     try {
-      const toUserId =
-        selectedConversation.to_user_id ||
-        allMessages.find((m) => m.from_user_id !== user.id)?.from_user_id ||
-        "technician";
-      const notification = await createNotification(
-        {
-          order_id:
-            selectedConversation.type === "direct" ||
-            selectedConversation.type === "client" ||
-            selectedConversation.type === "technician"
-              ? null
-              : selectedConversation.order_id,
-          to_user_id: toUserId,
-          message: newMessage || "Adjunto enviado",
-          type:
-            selectedConversation.type === "direct" ||
-            selectedConversation.type === "client" ||
-            selectedConversation.type === "technician"
-              ? "direct_message"
-              : "message",
-        },
-        files
+      // Determinar to_user_id
+      const toUserId = selectedConversation.to_user_id;
+      if (!toUserId) {
+        console.error(
+          "[AdminNotifications] No se encontró to_user_id para la conversación:",
+          selectedConversation
+        );
+        toast.error("Error: No se pudo determinar el destinatario");
+        return;
+      }
+
+      // Determinar order_id y type
+      const isDirectMessage = ["direct", "client", "technician"].includes(
+        selectedConversation.type
       );
-      const newNotification = {
-        id: notification.id,
-        order_id:
-          selectedConversation.type === "direct" ||
-          selectedConversation.type === "client" ||
-          selectedConversation.type === "technician"
-            ? null
-            : selectedConversation.order_id,
-        from_user_id: user.id,
+      const notificationData = {
+        order_id: isDirectMessage ? null : selectedConversation.order_id,
         to_user_id: toUserId,
         message: newMessage || "Adjunto enviado",
-        type:
-          selectedConversation.type === "direct" ||
-          selectedConversation.type === "client" ||
-          selectedConversation.type === "technician"
-            ? "direct_message"
-            : "message",
+        type: isDirectMessage ? "direct_message" : "message",
+        from_user_id: user.id,
+      };
+
+      console.log(
+        "[AdminNotifications] Enviando notificación:",
+        JSON.stringify(notificationData, null, 2),
+        "Archivos:",
+        files
+      );
+
+      const notification = await createNotification(notificationData, files);
+      const newNotification = {
+        id: notification.id,
+        order_id: notificationData.order_id,
+        from_user_id: user.id,
+        to_user_id: toUserId,
+        message: notificationData.message,
+        type: notificationData.type,
         status: "Pendiente",
         details: notification.details || {},
         created_at: new Date(),
@@ -719,7 +717,7 @@ const AdminNotifications = () => {
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (error) {
       console.error("[AdminNotifications] Error al enviar mensaje:", error);
-      toast.error("Error al enviar mensaje");
+      toast.error(`Error al enviar mensaje: ${error.message}`);
     }
   };
 
