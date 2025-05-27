@@ -38,14 +38,8 @@ const secretaryMenu = [
 
 const SecretaryNotifications = () => {
   const { user, token } = useAuth();
-  const {
-    socket,
-    notifications,
-    sendMessage,
-    sendTyping,
-    isConnected,
-    typingUsers,
-  } = useSocket();
+  const { socket, notifications, sendTyping, isConnected, typingUsers } =
+    useSocket();
   const [conversation, setConversation] = useState(null);
   const [allMessages, setAllMessages] = useState([]);
   const [filteredMessages, setFilteredMessages] = useState([]);
@@ -55,42 +49,69 @@ const SecretaryNotifications = () => {
   const [adminId, setAdminId] = useState(null);
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
-  const hasFetchedRef = useRef(false); // Evitar ejecuciones repetidas
+  const hasFetchedRef = useRef(false);
 
   // Debounce para fetchData
   const debounce = (func, wait) => {
     let timeout;
-    return (...args) => {
+    const debounced = (...args) => {
       clearTimeout(timeout);
       timeout = setTimeout(() => func(...args), wait);
     };
+    debounced.cancel = () => clearTimeout(timeout);
+    return debounced;
   };
 
   // Obtener ID del administrador y cargar notificaciones
   const fetchData = debounce(async () => {
-    if (!user?.id || !token || hasFetchedRef.current) {
+    if (!user?.id || !token) {
       console.log("[SecretaryNotifications] Condiciones no cumplidas:", {
         userId: user?.id,
         token: !!token,
-        hasFetched: hasFetchedRef.current,
       });
+      return;
+    }
+    if (hasFetchedRef.current) {
+      console.log("[SecretaryNotifications] fetchData ya ejecutado, omitiendo");
       return;
     }
 
     hasFetchedRef.current = true;
     try {
-      console.log("[SecretaryNotifications] Ejecutando fetchData");
-      // Obtener ID del administrador
+      console.log("[FetchData] Obteniendo adminId...");
       const adminId = await getAdminId();
+      console.log("[FetchData] adminId obtenido:", adminId);
       setAdminId(adminId);
 
-      // Obtener notificaciones
-      const notificationsData = await getNotifications({ user_id: user.id });
+      console.log(
+        "[FetchData] Obteniendo notificaciones para user_id:",
+        user.id
+      );
+      const notificationsData = await getNotifications({
+        user_id: user.id,
+        to_user_id: adminId,
+        type: [
+          "direct_message",
+          "invoice_complete",
+          "invoice_updated",
+          "invoice_deleted",
+        ],
+      });
+      console.log("[FetchData] Notificaciones cargadas:", notificationsData);
 
-      // Procesar notificaciones como una única conversación
       const processedMessages = notificationsData
-        .filter((n) =>
-          ["invoice_complete", "message", "direct_message"].includes(n.type)
+        .filter(
+          (n) =>
+            [
+              "direct_message",
+              "invoice_complete",
+              "invoice_updated",
+              "invoice_deleted",
+            ].includes(n.type) &&
+            (n.from_user_id === adminId ||
+              n.to_user_id === adminId ||
+              n.from_user_id === user.id ||
+              n.to_user_id === user.id)
         )
         .map((n) => ({
           ...n,
@@ -100,13 +121,12 @@ const SecretaryNotifications = () => {
       setAllMessages(processedMessages);
       setFilteredMessages(processedMessages);
 
-      // Simular una conversación con el administrador
       const unreadCount = processedMessages.filter(
         (m) => m.status === "Pendiente" && m.to_user_id === user.id
       ).length;
 
       setConversation({
-        id: "admin_conversation",
+        id: `DIRECT_MESSAGE_${adminId}`,
         title: "Conversación con Administrador",
         unread_messages: unreadCount,
         last_message_at: processedMessages.length
@@ -115,7 +135,6 @@ const SecretaryNotifications = () => {
         total_messages: processedMessages.length,
       });
 
-      // Marcar mensajes como leídos
       const unreadMessages = processedMessages.filter(
         (m) => m.status === "Pendiente" && m.to_user_id === user.id
       );
@@ -124,51 +143,87 @@ const SecretaryNotifications = () => {
           await axiosInstance.put(`/api/notifications/${message.id}`, {
             status: "Leída",
           });
+          console.log("[FetchData] Mensaje marcado como leído:", message.id);
         } catch (error) {
           console.warn(
-            `[SecretaryNotifications] Error al marcar mensaje ${message.id} como leído:`,
+            "[FetchData] Error al marcar mensaje como leído:",
+            message.id,
             error
           );
         }
       }
 
-      // Unir a la sala DIRECT
       if (socket && isConnected) {
-        socket.emit("joinOrder", "DIRECT");
-        console.log("[SecretaryNotifications] Unido a sala DIRECT");
+        socket.emit("joinDirectMessage", `DIRECT_MESSAGE_${adminId}`);
+        socket.emit("joinDirectMessage", `DIRECT_MESSAGE_${user.id}`);
+        console.log(
+          `[FetchData] Unido a salas DIRECT_MESSAGE_${adminId} y DIRECT_MESSAGE_${user.id}`
+        );
+      } else {
+        console.warn("[FetchData] Socket no conectado:", {
+          isConnected,
+          socket: !!socket,
+        });
       }
     } catch (error) {
-      console.error("[SecretaryNotifications] Error al cargar datos:", error);
+      console.error("[FetchData] Error al cargar datos:", error);
       toast.error("Error al cargar notificaciones");
       hasFetchedRef.current = false;
     }
   }, 500);
 
   useEffect(() => {
-    console.log("[SecretaryNotifications] useEffect ejecutado:", {
-      user,
-      token,
-      socket,
+    console.log("[SecretaryNotifications] useEffect inicial:", {
+      userId: user?.id,
+      token: !!token,
       isConnected,
     });
-    fetchData();
+    async function loadData() {
+      await fetchData();
+    }
+    loadData();
+    return () => {
+      fetchData.cancel();
+      console.log("[SecretaryNotifications] Cleanup: fetchData cancelado");
+    };
   }, [user?.id, token, socket, isConnected]);
 
+  // Polling para actualizar mensajes
   useEffect(() => {
-    if (isConnected) return;
+    if (!user?.id || !adminId) {
+      console.warn("[Polling] No hay usuario o adminId, omitiendo polling", {
+        userId: user?.id,
+        adminId,
+      });
+      return;
+    }
     const fetchNotifications = async () => {
-      if (!user?.id) {
-        console.warn(
-          "[SecretaryNotifications] No hay usuario, omitiendo fetchNotifications"
-        );
-        return;
-      }
-
       try {
-        const notificationsData = await getNotifications({ user_id: user.id });
+        console.log("[Polling] Ejecutando polling para user_id:", user.id);
+        const notificationsData = await getNotifications({
+          user_id: user.id,
+          to_user_id: adminId,
+          type: [
+            "direct_message",
+            "invoice_complete",
+            "invoice_updated",
+            "invoice_deleted",
+          ],
+        });
+        console.log("[Polling] Notificaciones cargadas:", notificationsData);
         const processedMessages = notificationsData
-          .filter((n) =>
-            ["invoice_complete", "message", "direct_message"].includes(n.type)
+          .filter(
+            (n) =>
+              [
+                "direct_message",
+                "invoice_complete",
+                "invoice_updated",
+                "invoice_deleted",
+              ].includes(n.type) &&
+              (n.from_user_id === adminId ||
+                n.to_user_id === adminId ||
+                n.from_user_id === user.id ||
+                n.to_user_id === user.id)
           )
           .map((n) => ({
             ...n,
@@ -180,7 +235,7 @@ const SecretaryNotifications = () => {
           (m) => m.status === "Pendiente" && m.to_user_id === user.id
         ).length;
         setConversation({
-          id: "admin_conversation",
+          id: `DIRECT_MESSAGE_${adminId}`,
           title: "Conversación con Administrador",
           unread_messages: unreadCount,
           last_message_at: processedMessages.length
@@ -188,27 +243,58 @@ const SecretaryNotifications = () => {
             : new Date(),
           total_messages: processedMessages.length,
         });
-      } catch (error) {
-        console.error(
-          "[SecretaryNotifications] Error al cargar notificaciones (polling):",
-          error
+        const unreadMessages = processedMessages.filter(
+          (m) => m.status === "Pendiente" && m.to_user_id === user.id
         );
+        for (const message of unreadMessages) {
+          try {
+            await axiosInstance.put(`/api/notifications/${message.id}`, {
+              status: "Leída",
+            });
+            console.log("[Polling] Mensaje marcado como leído:", message.id);
+          } catch (error) {
+            console.warn(
+              "[Polling] Error al marcar mensaje como leído:",
+              message.id,
+              error
+            );
+          }
+        }
+      } catch (error) {
+        console.error("[Polling] Error al cargar notificaciones:", error);
       }
     };
-    const interval = setInterval(fetchNotifications, 10000);
-    return () => clearInterval(interval);
-  }, [isConnected, user]);
+    const interval = setInterval(fetchNotifications, 5000);
+    return () => {
+      clearInterval(interval);
+      console.log("[SecretaryNotifications] Cleanup: Polling detenido");
+    };
+  }, [user?.id, adminId]);
 
   // Manejar notificaciones Socket.IO
   useEffect(() => {
-    if (!notifications.length) return;
-    const newMessages = notifications.filter((notif) =>
-      [
-        "invoice_complete",
-        "message",
-        "direct_message", // Incluir mensajes directos
-      ].includes(notif.type)
+    if (!notifications.length || !adminId) {
+      console.log("[Socket] No hay notificaciones o adminId:", {
+        notifications: notifications.length,
+        adminId,
+      });
+      return;
+    }
+    console.log("[Socket] Notificaciones recibidas:", notifications);
+
+    const newMessages = notifications.filter(
+      (notif) =>
+        [
+          "direct_message",
+          "invoice_complete",
+          "invoice_updated",
+          "invoice_deleted",
+        ].includes(notif.type) &&
+        ((notif.fromUserId === adminId && notif.toUserId === user.id) ||
+          (notif.fromUserId === user.id && notif.toUserId === adminId))
     );
+    console.log("[Socket] Mensajes filtrados:", newMessages);
+
     if (newMessages.length > 0) {
       setAllMessages((prev) => {
         const updatedMessages = [...prev];
@@ -216,13 +302,13 @@ const SecretaryNotifications = () => {
           if (!prev.some((m) => m.id === notif.id)) {
             updatedMessages.push({
               id: notif.id,
-              order_id: notif.orderId,
+              order_id: notif.orderId || null,
               from_user_id: notif.fromUserId,
               to_user_id: notif.toUserId,
               message: notif.message,
               type: notif.type,
-              status: notif.status,
-              details: notif.details,
+              status: notif.status || "Pendiente",
+              details: notif.details || {},
               created_at: new Date(notif.timestamp),
               attachments: notif.attachments || [],
             });
@@ -238,13 +324,13 @@ const SecretaryNotifications = () => {
           if (!prev.some((m) => m.id === notif.id)) {
             updatedMessages.push({
               id: notif.id,
-              order_id: notif.orderId,
+              order_id: notif.orderId || null,
               from_user_id: notif.fromUserId,
               to_user_id: notif.toUserId,
               message: notif.message,
               type: notif.type,
-              status: notif.status,
-              details: notif.details,
+              status: notif.status || "Pendiente",
+              details: notif.details || {},
               created_at: new Date(notif.timestamp),
               attachments: notif.attachments || [],
             });
@@ -274,13 +360,19 @@ const SecretaryNotifications = () => {
     e.preventDefault();
     if (!newMessage.trim() && files.length === 0) return;
 
+    if (!adminId) {
+      toast.error("No se pudo identificar al administrador");
+      return;
+    }
+
     try {
       const notification = await createNotification(
         {
-          order_id: null, // No se usa para mensajes directos
+          order_id: null,
           to_user_id: adminId,
           message: newMessage || "Adjunto enviado",
           type: "direct_message",
+          from_user_id: user.id,
         },
         files
       );
@@ -306,11 +398,29 @@ const SecretaryNotifications = () => {
       setNewMessage("");
       setFiles([]);
       if (fileInputRef.current) fileInputRef.current.value = "";
+      if (socket && isConnected) {
+        socket.emit("notification", {
+          ...newNotification,
+          toUserId: adminId,
+          fromUserId: user.id,
+          timestamp: new Date().toISOString(),
+          room: `DIRECT_MESSAGE_${adminId}`,
+        });
+        console.log(
+          "[SendMessage] Notificación emitida a sala:",
+          `DIRECT_MESSAGE_${adminId}`
+        );
+      } else {
+        console.warn(
+          "[SendMessage] Socket no conectado, mensaje enviado solo vía API"
+        );
+      }
     } catch (error) {
-      console.error("[SecretaryNotifications] Error al enviar mensaje:", error);
+      console.error("[SendMessage] Error al enviar mensaje:", error);
       toast.error("Error al enviar mensaje");
     }
   };
+
   // Manejar adjuntos
   const handleFileChange = (e) => {
     const selectedFiles = Array.from(e.target.files).filter((file) =>
@@ -323,9 +433,9 @@ const SecretaryNotifications = () => {
   const handleTyping = (e) => {
     setNewMessage(e.target.value);
     const isCurrentlyTyping = e.target.value.trim().length > 0;
-    if (isCurrentlyTyping !== isTyping) {
+    if (isCurrentlyTyping !== isTyping && adminId) {
       setIsTyping(isCurrentlyTyping);
-      sendTyping("secretary", isCurrentlyTyping);
+      sendTyping(`DIRECT_MESSAGE_${adminId}`, isCurrentlyTyping);
     }
   };
 
@@ -336,7 +446,8 @@ const SecretaryNotifications = () => {
 
   const chatMessages = useMemo(() => filteredMessages, [filteredMessages]);
 
-  const isAdminTyping = typingUsers[`${adminId}_secretary`];
+  const isAdminTyping =
+    adminId && typingUsers[`${adminId}_DIRECT_MESSAGE_${adminId}`];
 
   return (
     <MainContainer fluid>
@@ -456,8 +567,9 @@ const SecretaryNotifications = () => {
                         marginBottom: "0.5rem",
                       }}
                     >
-                      {message.type === "invoice_complete" ||
-                      message.type === "invoice_updated" ? (
+                      {["invoice_complete", "invoice_updated"].includes(
+                        message.type
+                      ) ? (
                         <div>
                           <ApprovedNotification>
                             {message.message}

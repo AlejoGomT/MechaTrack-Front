@@ -79,6 +79,7 @@ const TechnicianNotifications = () => {
         let adminId = null;
         try {
           adminId = await getAdminId();
+          console.log("[TechnicianNotifications] adminId obtenido:", adminId);
         } catch (error) {
           console.warn(
             "[TechnicianNotifications] No se encontró admin:",
@@ -95,9 +96,13 @@ const TechnicianNotifications = () => {
               type: "direct_message",
               order_id: null,
             });
+            console.log(
+              "[TechnicianNotifications] Mensajes directos cargados:",
+              directMessages.length
+            );
           } catch (error) {
             console.warn(
-              "[TechnicianNotifications] No se encontraron mensajes directos con admin:",
+              "[TechnicianNotifications] No se encontraron mensajes directos:",
               error
             );
           }
@@ -106,6 +111,10 @@ const TechnicianNotifications = () => {
         let orderConversations = [];
         try {
           orderConversations = await getConversations(user.id);
+          console.log(
+            "[TechnicianNotifications] Conversaciones de órdenes cargadas:",
+            orderConversations.length
+          );
         } catch (error) {
           console.error(
             "[TechnicianNotifications] Error al obtener conversaciones de órdenes:",
@@ -113,7 +122,6 @@ const TechnicianNotifications = () => {
           );
         }
 
-        // Procesar conversaciones de órdenes
         const processedOrderConversations = orderConversations
           .filter((conv) =>
             ["En Proceso", "Pendiente"].includes(conv.order_status)
@@ -125,11 +133,10 @@ const TechnicianNotifications = () => {
             senders: `${user.first_name} ${user.last_name}`,
           }));
 
-        // Conversación directa con admin
         const directConversation = adminId
           ? {
-              order_id: `DIRECT_${adminId}`,
-              conversation_id: `DIRECT_${adminId}`,
+              order_id: `DIRECT_MESSAGE_${adminId}`,
+              conversation_id: `DIRECT_MESSAGE_${adminId}`,
               vehicle_economic_number: null,
               order_status: null,
               last_message_at:
@@ -153,19 +160,29 @@ const TechnicianNotifications = () => {
         ];
 
         setConversations(allConversations);
+        console.log(
+          "[TechnicianNotifications] Conversaciones establecidas:",
+          allConversations.length
+        );
 
-        // Unirse a salas Socket.IO
         if (socket && isConnected) {
           allConversations.forEach((conv) => {
-            socket.emit("joinOrder", conv.order_id);
-            console.log(
-              "[TechnicianNotifications] Joined room:",
-              conv.order_id
-            );
+            const room =
+              conv.type === "direct"
+                ? `DIRECT_MESSAGE_${adminId}`
+                : conv.order_id;
+            const event =
+              conv.type === "direct" ? "joinDirectMessage" : "joinOrder";
+            socket.emit(event, room);
+            console.log(`[TechnicianNotifications] Unido a ${event}: ${room}`);
+          });
+        } else {
+          console.warn("[TechnicianNotifications] Socket no conectado:", {
+            isConnected,
+            socket: !!socket,
           });
         }
 
-        // Seleccionar conversación desde URL
         const params = new URLSearchParams(location.search);
         const orderId = params.get("orderId");
         if (orderId) {
@@ -185,78 +202,86 @@ const TechnicianNotifications = () => {
       }
     };
     if (token) fetchConversations();
-  }, [token, user.id, location.search, socket, isConnected]);
+  }, [token, user?.id, location.search, socket, isConnected]);
 
-  // Polling si Socket.IO está desconectado
+  // Polling para la conversación seleccionada
   useEffect(() => {
-    if (isConnected) return;
-    const fetchConversations = async () => {
+    const fetchMessages = async () => {
+      if (!selectedConversation) return;
       try {
-        let adminId = null;
-        try {
-          adminId = await getAdminId();
-        } catch (error) {
-          console.warn(
-            "[TechnicianNotifications] No se encontró admin:",
-            error
-          );
-        }
-
-        let directMessages = [];
-        if (adminId) {
-          directMessages = await getNotifications({
+        console.log(
+          "[TechnicianNotifications] Polling mensajes para conversación:",
+          selectedConversation.order_id
+        );
+        let messagesData = [];
+        if (selectedConversation.type === "direct") {
+          messagesData = await getNotifications({
             user_id: user.id,
-            to_user_id: adminId,
+            to_user_id: selectedConversation.to_user_id,
             type: "direct_message",
             order_id: null,
           });
+          messagesData = messagesData.filter(
+            (m) => m.type === "direct_message" && m.order_id === null
+          );
+        } else if (selectedConversation.type === "order") {
+          messagesData = await getMessagesByOrderId(
+            selectedConversation.order_id,
+            user.id
+          );
         }
-        const orderConversations = await getConversations(user.id);
-        const processedOrderConversations = orderConversations
-          .filter((conv) =>
-            ["En Proceso", "Pendiente"].includes(conv.order_status)
+        messagesData = messagesData.filter(
+          (m) => !["client_update", "invoice_complete"].includes(m.type)
+        );
+        setAllMessages(messagesData);
+        const filtered = messagesData.filter(
+          (m) => !["part_request", "order_creation"].includes(m.type)
+        );
+        setFilteredMessages(filtered);
+        const unreadMessages = filtered.filter(
+          (m) => m.status === "Pendiente" && m.to_user_id === user.id
+        );
+        for (const message of unreadMessages) {
+          try {
+            await axiosInstance.put(`/api/notifications/${message.id}`, {
+              status: "Leída",
+            });
+            console.log(
+              "[TechnicianNotifications] Mensaje marcado como leído (polling):",
+              message.id
+            );
+          } catch (error) {
+            console.warn(
+              "[TechnicianNotifications] Error al marcar mensaje como leído (polling):",
+              message.id,
+              error
+            );
+          }
+        }
+        setFilteredMessages((prev) =>
+          prev.map((m) =>
+            unreadMessages.some((um) => um.id === m.id)
+              ? { ...m, status: "Leído" }
+              : m
           )
-          .map((conv) => ({
-            ...conv,
-            type: "order",
-            recipients: "Admin",
-            senders: `${user.first_name} ${user.last_name}`,
-          }));
-        const directConversation = adminId
-          ? {
-              order_id: `DIRECT_${adminId}`,
-              conversation_id: `DIRECT_${adminId}`,
-              vehicle_economic_number: null,
-              order_status: null,
-              last_message_at:
-                directMessages.length > 0
-                  ? directMessages[directMessages.length - 1].created_at
-                  : null,
-              total_messages: directMessages.length,
-              unread_messages: directMessages.filter(
-                (m) => m.status === "Pendiente" && m.to_user_id === user.id
-              ).length,
-              senders: `${user.first_name} ${user.last_name}`,
-              recipients: "Admin",
-              type: "direct",
-              to_user_id: adminId,
-            }
-          : null;
-        const allConversations = [
-          ...(directConversation ? [directConversation] : []),
-          ...processedOrderConversations,
-        ];
-        setConversations(allConversations);
+        );
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.order_id === selectedConversation.order_id
+              ? { ...c, unread_messages: 0 }
+              : c
+          )
+        );
       } catch (error) {
         console.error(
-          "[TechnicianNotifications] Error al cargar conversaciones (polling):",
+          "[TechnicianNotifications] Error al cargar mensajes (polling):",
           error
         );
       }
     };
-    const interval = setInterval(fetchConversations, 10000);
+    const interval = setInterval(fetchMessages, 5000); // Polling cada 5 segundos
     return () => clearInterval(interval);
-  }, [isConnected, user.id]);
+  }, [selectedConversation, user?.id]);
 
   // Seleccionar conversación
   const handleSelectConversation = async (conversation) => {
@@ -272,19 +297,24 @@ const TechnicianNotifications = () => {
           type: "direct_message",
           order_id: null,
         });
+        messagesData = messagesData.filter(
+          (m) => m.type === "direct_message" && m.order_id === null
+        );
+        console.log(
+          "[TechnicianNotifications] Mensajes directos cargados:",
+          messagesData.length
+        );
       } else if (conversation.type === "order") {
         messagesData = await getMessagesByOrderId(
           conversation.order_id,
           user.id
         );
+        console.log(
+          "[TechnicianNotifications] Mensajes de orden cargados:",
+          messagesData.length
+        );
       }
-      console.log(
-        "[TechnicianNotifications] Mensajes cargados para",
-        conversation.order_id,
-        ":",
-        messagesData
-      );
-      // Filtrar mensajes no permitidos
+
       messagesData = messagesData.filter(
         (m) => !["client_update", "invoice_complete"].includes(m.type)
       );
@@ -299,11 +329,10 @@ const TechnicianNotifications = () => {
         const order = await getOrderById(conversation.order_id);
         orderStatus = order?.status || "En Proceso";
         setPartsList(order?.parts || []);
-        setAvailableParts([]); // Nota: getParts no está implementado
+        setAvailableParts([]);
       }
       setOrderStatus(orderStatus);
 
-      // Marcar mensajes como leídos
       const unreadMessages = filtered.filter(
         (m) => m.status === "Pendiente" && m.to_user_id === user.id
       );
@@ -312,6 +341,10 @@ const TechnicianNotifications = () => {
           await axiosInstance.put(`/api/notifications/${message.id}`, {
             status: "Leída",
           });
+          console.log(
+            "[TechnicianNotifications] Mensaje marcado como leído:",
+            message.id
+          );
         } catch (error) {
           console.warn(
             "[TechnicianNotifications] Error al marcar mensaje como leído:",
@@ -337,11 +370,14 @@ const TechnicianNotifications = () => {
 
       navigate(`?orderId=${conversation.order_id}`, { replace: true });
       if (socket && isConnected) {
-        socket.emit("joinOrder", conversation.order_id);
-        console.log(
-          "[TechnicianNotifications] Joined room:",
-          conversation.order_id
-        );
+        const room =
+          conversation.type === "direct"
+            ? `DIRECT_MESSAGE_${conversation.to_user_id}`
+            : conversation.order_id;
+        const event =
+          conversation.type === "direct" ? "joinDirectMessage" : "joinOrder";
+        socket.emit(event, room);
+        console.log(`[TechnicianNotifications] Unido a ${event}: ${room}`);
       }
     } catch (error) {
       console.error(
@@ -355,25 +391,44 @@ const TechnicianNotifications = () => {
 
   // Actualizar mensajes en tiempo real
   useEffect(() => {
-    if (!selectedConversation || !notifications.length) return;
+    if (!selectedConversation || !notifications.length) {
+      console.log(
+        "[TechnicianNotifications] No hay notificaciones o conversación seleccionada:",
+        {
+          notifications: notifications.length,
+          selectedConversation,
+        }
+      );
+      return;
+    }
+
+    console.log(
+      "[TechnicianNotifications] Nuevas notificaciones:",
+      JSON.stringify(notifications, null, 2)
+    );
+
     const newMessages = notifications.filter((notif) => {
       if (selectedConversation.type === "direct") {
         return (
           notif.type === "direct_message" &&
-          notif.orderId === null &&
-          ((notif.toUserId === selectedConversation.to_user_id &&
-            notif.fromUserId === user.id) ||
-            (notif.fromUserId === selectedConversation.to_user_id &&
-              notif.toUserId === user.id))
+          !notif.orderId &&
+          ((notif.to_user_id === user.id &&
+            notif.from_user_id === selectedConversation.to_user_id) ||
+            (notif.from_user_id === user.id &&
+              notif.to_user_id === selectedConversation.to_user_id))
         );
       } else if (selectedConversation.type === "order") {
         return (
-          notif.orderId === selectedConversation.order_id &&
-          !["client_update", "invoice_complete"].includes(notif.type)
+          (notif.orderId || notif.order_id) === selectedConversation.order_id &&
+          !["direct_message", "client_update", "invoice_complete"].includes(
+            notif.type
+          )
         );
       }
       return false;
     });
+
+    console.log("[TechnicianNotifications] Mensajes filtrados:", newMessages);
 
     if (newMessages.length > 0) {
       setAllMessages((prev) => {
@@ -382,14 +437,14 @@ const TechnicianNotifications = () => {
           if (!prev.some((m) => m.id === notif.id)) {
             updatedAllMessages.push({
               id: notif.id,
-              order_id: notif.orderId,
+              order_id: notif.orderId || notif.order_id || null,
               from_user_id: notif.fromUserId,
               to_user_id: notif.toUserId,
-              message: notif.message,
+              message: notif.message || "",
               type: notif.type,
-              status: notif.status,
-              details: notif.details,
-              created_at: new Date(notif.timestamp),
+              status: notif.status || "Pendiente",
+              details: notif.details || {},
+              created_at: new Date(notif.timestamp || Date.now()),
               attachments: notif.attachments || [],
             });
           }
@@ -409,14 +464,14 @@ const TechnicianNotifications = () => {
             if (!prev.some((m) => m.id === notif.id)) {
               updatedFilteredMessages.push({
                 id: notif.id,
-                order_id: notif.orderId,
+                order_id: notif.orderId || notif.order_id || null,
                 from_user_id: notif.fromUserId,
                 to_user_id: notif.toUserId,
-                message: notif.message,
+                message: notif.message || "",
                 type: notif.type,
-                status: notif.status,
-                details: notif.details,
-                created_at: new Date(notif.timestamp),
+                status: notif.status || "Pendiente",
+                details: notif.details || {},
+                created_at: new Date(notif.timestamp || Date.now()),
                 attachments: notif.attachments || [],
               });
             }
@@ -429,11 +484,13 @@ const TechnicianNotifications = () => {
       setConversations((prev) =>
         prev
           .map((c) => {
-            if (c.order_id === selectedConversation.order_id) {
+            const isSelectedConversation =
+              c.order_id === selectedConversation.order_id;
+            if (isSelectedConversation) {
               return {
                 ...c,
                 last_message_at: new Date(
-                  newMessages[newMessages.length - 1].timestamp
+                  newMessages[newMessages.length - 1].timestamp || Date.now()
                 ),
                 total_messages:
                   c.total_messages +
@@ -458,38 +515,51 @@ const TechnicianNotifications = () => {
               new Date(a.last_message_at || 0)
           )
       );
-
-      // Actualizar conversaciones para nuevas órdenes
-      const newOrders = notifications.filter(
-        (notif) => notif.type === "order_creation"
-      );
-      if (newOrders.length > 0) {
-        const fetchConversations = async () => {
-          try {
-            const data = await getConversations(user.id);
-            setConversations(
-              data
-                .filter((conv) =>
-                  ["En Proceso", "Pendiente"].includes(conv.order_status)
-                )
-                .map((conv) => ({
-                  ...conv,
-                  type: "order",
-                  recipients: "Admin",
-                  senders: `${user.first_name} ${user.last_name}`,
-                }))
-            );
-          } catch (error) {
-            console.error(
-              "[TechnicianNotifications] Error al actualizar conversaciones:",
-              error
-            );
-          }
-        };
-        fetchConversations();
-      }
     }
-  }, [notifications, selectedConversation, user.id]);
+
+    // Manejar nuevas órdenes
+    const newOrders = notifications.filter(
+      (notif) => notif.type === "order_creation"
+    );
+    if (newOrders.length > 0) {
+      async function fetchConversations() {
+        try {
+          const data = await getConversations(user.id);
+          const newConversations = data
+            .filter((conv) =>
+              ["En Proceso", "Pendiente"].includes(conv.order_status)
+            )
+            .map((conv) => ({
+              ...conv,
+              type: "order",
+              recipients: "Admin",
+              senders: `${user.first_name} ${user.last_name}`,
+            }));
+          setConversations((prev) => {
+            const existingIds = new Set(prev.map((c) => c.order_id));
+            return [
+              ...prev,
+              ...newConversations.filter((c) => !existingIds.has(c.order_id)),
+            ].sort(
+              (a, b) =>
+                new Date(b.last_message_at || 0) -
+                new Date(a.last_message_at || 0)
+            );
+          });
+          console.log(
+            "[TechnicianNotifications] Conversaciones actualizadas por nuevas órdenes:",
+            newConversations.length
+          );
+        } catch (error) {
+          console.error(
+            "[TechnicianNotifications] Error al actualizar conversaciones:",
+            error
+          );
+        }
+      }
+      fetchConversations();
+    }
+  }, [notifications, selectedConversation, user?.id]);
 
   // Enviar mensaje
   const handleSendMessage = async (e) => {
@@ -522,7 +592,7 @@ const TechnicianNotifications = () => {
         "[TechnicianNotifications] Enviando notificación:",
         JSON.stringify(notificationData, null, 2),
         "Archivos:",
-        files
+        files.length
       );
 
       const notification = await createNotification(notificationData, files);
@@ -565,6 +635,28 @@ const TechnicianNotifications = () => {
       setNewMessage("");
       setFiles([]);
       if (fileInputRef.current) fileInputRef.current.value = "";
+
+      if (socket && isConnected) {
+        const room = isDirectMessage
+          ? `DIRECT_MESSAGE_${toUserId}`
+          : selectedConversation.order_id;
+        socket.emit("notification", {
+          ...newNotification,
+          toUserId: toUserId,
+          fromUserId: user.id,
+          timestamp: new Date().toISOString(),
+          room,
+          orderId: notificationData.order_id, // Compatibilidad con AdminNotifications
+        });
+        console.log(
+          "[TechnicianNotifications] Notificación emitida a sala:",
+          room
+        );
+      } else {
+        console.warn(
+          "[TechnicianNotifications] Socket no conectado, mensaje enviado solo vía API"
+        );
+      }
     } catch (error) {
       console.error(
         "[TechnicianNotifications] Error al enviar mensaje:",
@@ -605,10 +697,14 @@ const TechnicianNotifications = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [filteredMessages]);
 
-  // Filtrar mensajes para el chat
-  const chatMessages = useMemo(() => filteredMessages, [filteredMessages]);
+  const chatMessages = useMemo(() => {
+    console.log(
+      "[TechnicianNotifications] Actualizando chatMessages:",
+      filteredMessages.length
+    );
+    return filteredMessages;
+  }, [filteredMessages]);
 
-  // Indicador de escritura
   const isAdminTyping = selectedConversation
     ? typingUsers[
         `${allMessages.find((m) => m.from_user_id !== user.id)?.from_user_id}_${
@@ -718,11 +814,7 @@ const TechnicianNotifications = () => {
               {selectedConversation ? (
                 <>
                   <div
-                    style={{
-                      padding: "0 24px",
-                      flex: "1",
-                      overflowY: "auto",
-                    }}
+                    style={{ padding: "0 24px", flex: "1", overflowY: "auto" }}
                   >
                     <div
                       style={{
@@ -836,8 +928,8 @@ const TechnicianNotifications = () => {
                                 {message.from_user_id === user.id && (
                                   <span style={{ marginLeft: "0.5rem" }}>
                                     {message.status === "Leída"
-                                      ? "✔️ Leído"
-                                      : "✔️ Enviado"}
+                                      ? "✓✓ Leído"
+                                      : "✓ Enviado"}
                                   </span>
                                 )}
                                 {message.status === "Pendiente" &&
@@ -895,8 +987,8 @@ const TechnicianNotifications = () => {
                                 {message.from_user_id === user.id && (
                                   <span style={{ marginLeft: "0.5rem" }}>
                                     {message.status === "Leída"
-                                      ? "✔️ Leído"
-                                      : "✔️ Enviado"}
+                                      ? "✓✓ Leído"
+                                      : "✓ Enviado"}
                                   </span>
                                 )}
                                 {message.status === "Pendiente" &&
@@ -972,8 +1064,8 @@ const TechnicianNotifications = () => {
                                 {message.from_user_id === user.id && (
                                   <span style={{ marginLeft: "0.5rem" }}>
                                     {message.status === "Leída"
-                                      ? "✔️ Leído"
-                                      : "✔️ Enviado"}
+                                      ? "✓✓ Leído"
+                                      : "✓ Enviado"}
                                   </span>
                                 )}
                                 {message.status === "Pendiente" &&
