@@ -1,72 +1,163 @@
-import { useState } from "react";
-import { Container, Table, Form } from "react-bootstrap";
+import { useState, useEffect } from "react";
+import { Container, Row, Col, Pagination } from "react-bootstrap";
 import { useAuth } from "../context/AuthContext";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import CustomButton from "../components/CustomButton";
-import { mockClientOrders, mockVehicles } from "../data/mock";
+import OrderReportModal from "../components/OrderReportModal";
+import {
+  getBranchReports,
+  getOrderReport,
+  downloadBranchReportsExcel,
+} from "../services/reportService";
+import { getOrders } from "../services/orderService";
+import { toast } from "react-toastify";
+import {
+  colors,
+  StyledTable,
+  FiltersContainer,
+  FilterGroup,
+  FilterLabel,
+  FilterInput,
+  FilterSelect,
+  TableWrapper,
+  ActionsContainer,
+} from "../styles/GlobalStyles";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faEye } from "@fortawesome/free-solid-svg-icons";
 
 const adminMenu = [
-  { label: "Inicio", path: "/admin" },
-  { label: "Órdenes de Servicio", path: "/admin/orders" },
-  { label: "Inventario", path: "/admin/inventory" },
-  { label: "Gestión de Usuarios", path: "/admin/users" },
-  { label: "Notificaciones", path: "/admin/notifications" },
-  { label: "Informes", path: "/admin/reports" },
+  { label: "Inicio", path: "../admin" },
+  { label: "Órdenes de Servicio", path: "../admin/orders" },
+  { label: "Inventario", path: "../admin/inventory" },
+  { label: "Vehiculos", path: "../admin/vehicles" },
+  { label: "Gestión de Usuarios", path: "../admin/users" },
+  { label: "Notificaciones", path: "../admin/notifications" },
+  { label: "Informes", path: "../admin/reports" },
   { label: "Cerrar Sesión", path: "/" },
 ];
 
 const AdminReports = () => {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
+  const [reportType, setReportType] = useState("order");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [branchFilter, setBranchFilter] = useState("");
-
-  const branches = [...new Set(mockVehicles.map((v) => v.Sucursal))];
-  const activeOrdersCount = mockClientOrders.filter(
-    (o) => o.status === "En Proceso"
-  ).length;
-  const notificationsCount = mockClientOrders.filter(
-    (o) => o.notifications?.length > 0
-  ).length;
-
-  const filteredOrders = mockClientOrders.filter((order) => {
-    const vehicle = mockVehicles.find(
-      (v) => v.Económico === order.vehicleEconomicNumber
-    );
-    const orderDate = new Date(order.createdAt);
-    return (
-      (!startDate || orderDate >= new Date(startDate)) &&
-      (!endDate || orderDate <= new Date(endDate)) &&
-      (!branchFilter || vehicle?.Sucursal === branchFilter)
-    );
+  const [statusFilter, setStatusFilter] = useState("");
+  const [orderNumberFilter, setOrderNumberFilter] = useState("");
+  const [branches, setBranches] = useState([]);
+  const [reports, setReports] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [orderReport, setOrderReport] = useState(null);
+  const [showOrderModal, setShowOrderModal] = useState(false);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 15,
+    totalPages: 1,
+    total: 0,
   });
 
-  const reports = branches
-    .map((branch) => {
-      const branchOrders = filteredOrders.filter((order) => {
-        const vehicle = mockVehicles.find(
-          (v) => v.Económico === order.vehicleEconomicNumber
-        );
-        return vehicle?.Sucursal === branch;
-      });
-      return {
-        branch,
-        active: branchOrders.filter((o) => o.status === "En Proceso").length,
-        completed: branchOrders.filter((o) => o.status === "Finalizado").length,
-        partsUsed: branchOrders.reduce(
-          (acc, o) => acc + (o.parts?.length || 0),
-          0
-        ),
+  useEffect(() => {
+    const fetchBranches = async () => {
+      try {
+        const response = await getBranchReports({});
+        const uniqueBranches = [...new Set(response.map((r) => r.branch))];
+        setBranches(uniqueBranches);
+      } catch (error) {
+        toast.error("Error al cargar sucursales");
+      }
+    };
+    fetchBranches();
+  }, []);
+
+  useEffect(() => {
+    if (reportType === "order" && token) {
+      const fetchOrders = async () => {
+        try {
+          const response = await getOrders({
+            status: statusFilter,
+            orderNumber: orderNumberFilter,
+            page: pagination.page,
+            limit: pagination.limit,
+          });
+          console.log("[AdminReports] Respuesta de getOrders:", response);
+          setOrders(response.orders || []);
+          setPagination({
+            ...pagination,
+            total: response.total || 0,
+            totalPages: response.totalPages || 1,
+          });
+        } catch (error) {
+          console.error("[AdminReports] Error al cargar órdenes:", error);
+          toast.error(error.message || "Error al cargar órdenes");
+          setOrders([]);
+          setPagination({
+            ...pagination,
+            total: 0,
+            totalPages: 1,
+          });
+        }
       };
-    })
-    .filter((r) => r.active > 0 || r.completed > 0);
+      fetchOrders();
+    }
+  }, [reportType, statusFilter, orderNumberFilter, pagination.page, token]);
+
+  const fetchBranchReports = async () => {
+    try {
+      const filters = {
+        startDate,
+        endDate,
+        branch: branchFilter,
+        status: statusFilter,
+      };
+      const data = await getBranchReports(filters);
+      setReports(data);
+    } catch (error) {
+      toast.error(error.message);
+    }
+  };
+
+  const fetchOrderReport = async (orderId) => {
+    console.log("Fetching order report for orderId:", orderId);
+    try {
+      if (!orderId) {
+        throw new Error("ID de orden no proporcionado");
+      }
+      const data = await getOrderReport(orderId);
+      setOrderReport(data);
+      setShowOrderModal(true);
+    } catch (error) {
+      toast.error(error.message || "Error al generar informe");
+      console.error("[AdminReports] Error en fetchOrderReport:", error);
+    }
+  };
+
+  const handleExportExcel = async () => {
+    try {
+      const filters = {
+        startDate,
+        endDate,
+        branch: branchFilter,
+        status: statusFilter,
+      };
+      await downloadBranchReportsExcel(filters);
+      toast.success("Excel descargado correctamente");
+    } catch (error) {
+      toast.error(error.message);
+    }
+  };
+
+  const handlePageChange = (newPage) => {
+    if (newPage >= 1 && newPage <= pagination.totalPages) {
+      setPagination({ ...pagination, page: newPage });
+    }
+  };
 
   const userData = {
     userId: user?.id,
     userName: user?.name,
-    activeOrdersCount,
-    notificationsCount,
+    activeOrdersCount: reports.reduce((acc, r) => acc + r.in_process, 0),
+    notificationsCount: 0,
   };
 
   return (
@@ -74,70 +165,236 @@ const AdminReports = () => {
       <Sidebar menuItems={adminMenu} title="Menú Administrador" />
       <div className="content" style={{ marginLeft: "270px", padding: "20px" }}>
         <DashboardHeader title="Generación de Informes" {...userData} />
-        <Container className="mt-4">
-          <div className="d-flex justify-content-between align-items-center mb-3">
-            <div className="d-flex gap-3">
-              <Form.Group>
-                <Form.Label>Fecha Inicio</Form.Label>
-                <Form.Control
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  style={{ width: "200px" }}
-                />
-              </Form.Group>
-              <Form.Group>
-                <Form.Label>Fecha Fin</Form.Label>
-                <Form.Control
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  style={{ width: "200px" }}
-                />
-              </Form.Group>
-              <Form.Group>
-                <Form.Label>Sucursal</Form.Label>
-                <Form.Select
-                  value={branchFilter}
-                  onChange={(e) => setBranchFilter(e.target.value)}
-                  style={{ width: "200px" }}
+        <Container className="mt-4" fluid>
+          <Row className="mb-3">
+            <Col>
+              <FilterGroup>
+                <FilterLabel>Tipo de Informe</FilterLabel>
+                <FilterSelect
+                  value={reportType}
+                  onChange={(e) => setReportType(e.target.value)}
                 >
-                  <option value="">Todas</option>
-                  {branches.map((branch) => (
-                    <option key={branch} value={branch}>
-                      {branch}
+                  <option value="order">Por Orden</option>
+                  <option value="branch">Por Sucursal</option>
+                </FilterSelect>
+              </FilterGroup>
+            </Col>
+          </Row>
+          {reportType === "branch" ? (
+            <>
+              <Row className="mb-3">
+                <Col md={3}>
+                  <FilterGroup>
+                    <FilterLabel>Fecha Inicio</FilterLabel>
+                    <FilterInput
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                    />
+                  </FilterGroup>
+                </Col>
+                <Col md={3}>
+                  <FilterGroup>
+                    <FilterLabel>Fecha Fin</FilterLabel>
+                    <FilterInput
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                    />
+                  </FilterGroup>
+                </Col>
+                <Col md={3}>
+                  <FilterGroup>
+                    <FilterLabel>Sucursal</FilterLabel>
+                    <FilterSelect
+                      value={branchFilter}
+                      onChange={(e) => setBranchFilter(e.target.value)}
+                    >
+                      <option value="">Todas</option>
+                      {branches.map((branch) => (
+                        <option key={branch} value={branch}>
+                          {branch}
+                        </option>
+                      ))}
+                    </FilterSelect>
+                  </FilterGroup>
+                </Col>
+                <Col md={3}>
+                  <FilterGroup>
+                    <FilterLabel>Estado</FilterLabel>
+                    <FilterSelect
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                    >
+                      <option value="">Todos</option>
+                      <option value="En Proceso">En Proceso</option>
+                      <option value="Pendiente">Pendiente</option>
+                      <option value="Finalizado">Finalizado</option>
+                      <option value="Pendiente de Facturación">
+                        Pendiente de Facturación
+                      </option>
+                      <option value="Facturado">Facturado</option>
+                    </FilterSelect>
+                  </FilterGroup>
+                </Col>
+              </Row>
+              <Row className="mb-3">
+                <Col className="d-flex justify-content-end gap-3">
+                  <CustomButton onClick={fetchBranchReports}>
+                    Generar Informe
+                  </CustomButton>
+                  <CustomButton onClick={handleExportExcel}>
+                    Descargar Excel
+                  </CustomButton>
+                </Col>
+              </Row>
+
+              <TableWrapper>
+                <StyledTable>
+                  <thead>
+                    <tr>
+                      <th>Sucursal</th>
+                      <th>Órdenes Totales</th>
+                      <th>En Proceso</th>
+                      <th>Pendiente</th>
+                      <th>Finalizado</th>
+                      <th>Pendiente de Facturación</th>
+                      <th>Facturado</th>
+                      <th>Costo Repuestos</th>
+                      <th>Total Facturado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reports.map((report, index) => (
+                      <tr key={index}>
+                        <td>{report.branch}</td>
+                        <td>{report.total_orders}</td>
+                        <td>{report.in_process}</td>
+                        <td>{report.pending}</td>
+                        <td>{report.finalized}</td>
+                        <td>{report.pending_billing}</td>
+                        <td>{report.invoiced}</td>
+                        <td>{report.total_parts_cost}</td>
+                        <td>{report.total_invoice_amount}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </StyledTable>
+              </TableWrapper>
+            </>
+          ) : (
+            <>
+              <FiltersContainer>
+                <FilterGroup>
+                  <FilterLabel>Sucursal</FilterLabel>
+                  <FilterSelect
+                    value={branchFilter}
+                    onChange={(e) => setBranchFilter(e.target.value)}
+                  >
+                    <option value="">Todas</option>
+                    {branches.map((branch) => (
+                      <option key={branch} value={branch}>
+                        {branch}
+                      </option>
+                    ))}
+                  </FilterSelect>
+                </FilterGroup>
+                <FilterGroup>
+                  <FilterLabel>Estado</FilterLabel>
+                  <FilterSelect
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                  >
+                    <option value="">Todos</option>
+                    <option value="En Proceso">En Proceso</option>
+                    <option value="Pendiente">Pendiente</option>
+                    <option value="Finalizado">Finalizado</option>
+                    <option value="Pendiente de Facturación">
+                      Pendiente de Facturación
                     </option>
+                    <option value="Facturado">Facturado</option>
+                  </FilterSelect>
+                </FilterGroup>
+                <FilterGroup>
+                  <FilterLabel>Número de Orden</FilterLabel>
+                  <FilterInput
+                    type="text"
+                    value={orderNumberFilter}
+                    onChange={(e) => setOrderNumberFilter(e.target.value)}
+                    placeholder="Filtrar por N° Orden"
+                  />
+                </FilterGroup>
+              </FiltersContainer>
+              <TableWrapper>
+                <StyledTable>
+                  <thead>
+                    <tr>
+                      <th>Número Económico</th>
+                      <th>Número de Orden</th>
+                      <th>Sucursal</th>
+                      <th>Estado</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {orders
+                      .filter((order) =>
+                        branchFilter ? order.branch === branchFilter : true
+                      )
+                      .map((order) => (
+                        <tr key={order.id}>
+                          <td>{order.vehicle_economic_number}</td>
+                          <td>{order.id}</td>
+                          <td>{order.branch || "-"}</td>
+                          <td>{order.status}</td>
+                          <td className="actions">
+                            <ActionsContainer>
+                              <CustomButton
+                                onClick={() => fetchOrderReport(order.id)}
+                                title="Generar Informe"
+                              >
+                                <FontAwesomeIcon icon={faEye} />
+                              </CustomButton>
+                            </ActionsContainer>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </StyledTable>
+              </TableWrapper>
+              <div className="pt-3 d-flex justify-content-center">
+                <Pagination>
+                  <Pagination.Prev
+                    onClick={() => handlePageChange(pagination.page - 1)}
+                    disabled={pagination.page === 1}
+                  />
+                  {[...Array(pagination.totalPages).keys()].map((i) => (
+                    <Pagination.Item
+                      key={i + 1}
+                      active={i + 1 === pagination.page}
+                      onClick={() => handlePageChange(i + 1)}
+                    >
+                      {i + 1}
+                    </Pagination.Item>
                   ))}
-                </Form.Select>
-              </Form.Group>
-            </div>
-            <CustomButton>Generar Informe</CustomButton>
-          </div>
-          <Table striped bordered hover>
-            <thead>
-              <tr>
-                <th>Sucursal</th>
-                <th>Órdenes Activas</th>
-                <th>Órdenes Finalizadas</th>
-                <th>Repuestos Utilizados</th>
-                <th>Descargar</th>
-              </tr>
-            </thead>
-            <tbody>
-              {reports.map((report, index) => (
-                <tr key={index}>
-                  <td>{report.branch}</td>
-                  <td>{report.active}</td>
-                  <td>{report.completed}</td>
-                  <td>{report.partsUsed}</td>
-                  <td>
-                    <CustomButton>PDF</CustomButton>{" "}
-                    <CustomButton>Excel</CustomButton>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
+                  <Pagination.Next
+                    onClick={() => handlePageChange(pagination.page + 1)}
+                    disabled={pagination.page === pagination.totalPages}
+                  />
+                </Pagination>
+              </div>
+            </>
+          )}
+          {orderReport && (
+            <OrderReportModal
+              show={showOrderModal}
+              onHide={() => {
+                setShowOrderModal(false);
+                setOrderReport(null);
+              }}
+              report={orderReport}
+            />
+          )}
         </Container>
       </div>
     </>

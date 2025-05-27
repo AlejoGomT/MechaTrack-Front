@@ -1,31 +1,26 @@
-import { useState } from "react";
-import { Container, Table, Button, Modal, Form } from "react-bootstrap";
-import Sidebar from "../components/Sidebar";
-import DashboardHeader from "../components/DashboardHeader";
-import CustomButton from "../components/CustomButton";
-import { mockClientOrders, mockVehicles } from "../data/mock";
+import { useState } from 'react';
+import { Container, Table, Button, Modal, Form } from 'react-bootstrap';
+import Sidebar from '../components/Sidebar';
+import DashboardHeader from '../components/DashboardHeader';
+import CustomButton from '../components/CustomButton';
+import { mockClientOrders, mockVehicles } from '../data/mock';
 
 const clientMenu = [
-  { label: "Inicio", path: "/client" },
-  { label: "Notificaciones", path: "/client/notifications" },
-  { label: "Cerrar Sesión", path: "/" },
+  { label: 'Consulta de Estado', path: '/client' },
+  { label: 'Cerrar Sesión', path: '/' },
 ];
 
 const ClientDashboard = () => {
   const [showModal, setShowModal] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState(null);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
 
   // Filtrar vehículos que tienen historial finalizado y orden pendiente
   const filteredVehicles = mockVehicles.filter((vehicle) => {
-    const hasFinalizedHistory = vehicle.history.some(
-      (item) => item.status === "Finalizado"
-    );
+    const hasFinalizedHistory = vehicle.history.some((item) => item.status === 'Finalizado');
     const hasActiveOrder = mockClientOrders.some(
-      (order) =>
-        order.economicNumber === vehicle.Económico &&
-        order.status === "En Proceso"
+      (order) => order.economicNumber === vehicle.Económico && order.status === 'En Proceso'
     );
     return hasFinalizedHistory && hasActiveOrder;
   });
@@ -33,15 +28,10 @@ const ClientDashboard = () => {
   // Filtrar por búsqueda y estado
   const filteredResults = filteredVehicles.filter((vehicle) => {
     const activeOrder = mockClientOrders.find(
-      (order) =>
-        order.economicNumber === vehicle.Económico &&
-        order.status === "En Proceso"
+      (order) => order.economicNumber === vehicle.Económico && order.status === 'En Proceso'
     );
-    const matchesSearch = vehicle.Económico.toString()
-      .toLowerCase()
-      .includes(searchTerm.toLowerCase());
-    const matchesStatus =
-      !statusFilter || (activeOrder && activeOrder.status === statusFilter);
+    const matchesSearch = vehicle.Económico.toString().toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStatus = !statusFilter || (activeOrder && activeOrder.status === statusFilter);
     return matchesSearch && matchesStatus;
   });
 
@@ -55,7 +45,7 @@ const ClientDashboard = () => {
   return (
     <>
       <Sidebar menuItems={clientMenu} title="Consulta de Cliente" />
-      <div className="content" style={{ marginLeft: "270px", padding: "20px" }}>
+      <div className="content" style={{ marginLeft: '270px', padding: '20px' }}>
         <DashboardHeader
           title="Consulta de Estado del Vehículo"
           subtitle="Verificar el estado y el historial de órdenes de servicio"
@@ -70,7 +60,7 @@ const ClientDashboard = () => {
                 placeholder="Ingrese Económico"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                style={{ width: "200px" }}
+                style={{ width: '200px' }}
               />
             </Form.Group>
             <Form.Group className="d-flex align-items-center">
@@ -78,7 +68,7 @@ const ClientDashboard = () => {
               <Form.Select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                style={{ width: "200px" }}
+                style={{ width: '200px' }}
               >
                 <option value="">Todos</option>
                 <option value="En Proceso">En Proceso</option>
@@ -100,34 +90,24 @@ const ClientDashboard = () => {
               {filteredResults.length > 0 ? (
                 filteredResults.map((vehicle) => {
                   const activeOrder = mockClientOrders.find(
-                    (order) =>
-                      order.economicNumber === vehicle.Económico &&
-                      order.status === "En Proceso"
+                    (order) => order.economicNumber === vehicle.Económico && order.status === 'En Proceso'
                   );
                   return (
                     <tr key={vehicle.Económico}>
-                      <td>
-                        {activeOrder
-                          ? activeOrder.orderNumber
-                          : "Sin orden activa"}
-                      </td>
+                      <td>{activeOrder ? activeOrder.orderNumber : 'Sin orden activa'}</td>
                       <td>
                         <CustomButton onClick={() => handleShowModal(vehicle)}>
                           {vehicle.Económico}
                         </CustomButton>
                       </td>
-                      <td>
-                        {activeOrder ? activeOrder.status : "Sin actividad"}
-                      </td>
-                      <td>{activeOrder ? activeOrder.entryDate : "-"}</td>
+                      <td>{activeOrder ? activeOrder.status : 'Sin actividad'}</td>
+                      <td>{activeOrder ? activeOrder.entryDate : '-'}</td>
                     </tr>
                   );
                 })
               ) : (
                 <tr>
-                  <td colSpan="4" className="text-center">
-                    No hay vehículos que cumplan los criterios.
-                  </td>
+                  <td colSpan="4" className="text-center">No hay vehículos que cumplan los criterios.</td>
                 </tr>
               )}
             </tbody>
@@ -142,18 +122,12 @@ const ClientDashboard = () => {
           <Modal.Body>
             {selectedVehicle && (
               <>
-                <p>
-                  <strong>Estado Actual:</strong>{" "}
-                  {selectedVehicle.activeOrder
-                    ? "En Proceso"
-                    : "Sin orden activa"}
-                </p>
+                <p><strong>Estado Actual:</strong> {selectedVehicle.activeOrder ? 'En Proceso' : 'Sin orden activa'}</p>
                 <h6>Historial de Órdenes de Servicio:</h6>
                 <ul>
                   {selectedVehicle.history.map((item, index) => (
                     <li key={index}>
-                      Orden {item.orderNumber} - {item.description} -{" "}
-                      {item.date} ({item.status}){" "}
+                      Orden {item.orderNumber} - {item.description} - {item.date} ({item.status}){' '}
                       <CustomButton>Ver Orden</CustomButton>
                     </li>
                   ))}

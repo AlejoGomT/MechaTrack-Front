@@ -3,12 +3,20 @@ import { toast } from "react-toastify";
 import { Navbar, Nav, Container, Badge } from "react-bootstrap";
 import styled from "@emotion/styled";
 import { useAuth } from "../context/AuthContext";
-import { getOrders, getNotifications } from "../services/orderService";
+import { useSocket } from "../context/SocketContext";
+import { getOrderCounts } from "../services/orderService";
+import { getNotifications } from "../services/notificationService";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faBell } from "@fortawesome/free-solid-svg-icons";
+import { library } from "@fortawesome/fontawesome-svg-core";
 import logo from "../assets/images/logo.jpeg";
 
+library.add(faBell);
+
 const HeaderContainer = styled(Navbar)`
-  background-color: #343a40;
+  background-color: rgb(18, 41, 48);
   padding: 10px 20px;
+  border-radius: 10px;
 `;
 
 const Logo = styled.img`
@@ -30,29 +38,92 @@ const Title = styled.h1`
 const UserInfo = styled.div`
   color: white;
   font-size: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+`;
+
+const NotificationContainer = styled.div`
+  position: relative;
+  cursor: pointer;
+`;
+
+const NotificationBadge = styled(Badge)`
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  font-size: 0.7rem;
+  padding: 3px 6px;
 `;
 
 const DashboardHeader = ({ title }) => {
   const { user } = useAuth();
+  const { socket, isConnected } = useSocket();
   const [activeOrdersCount, setActiveOrdersCount] = useState(0);
   const [notificationsCount, setNotificationsCount] = useState(0);
 
   useEffect(() => {
     const fetchCounts = async () => {
+      if (!user?.id) {
+        return;
+      }
+
       try {
-        const ordersData = await getOrders({ technician_id: user.id });
-        const notificationsData = await getNotifications(user.id);
-        setActiveOrdersCount(ordersData.length);
-        setNotificationsCount(notificationsData.length);
+        const [countsData, notificationsData] = await Promise.all([
+          getOrderCounts({ id: user.id }),
+          getNotifications(user.id),
+        ]);
+        const activeOrders =
+          (countsData.inProcess || 0) + (countsData.pending || 0);
+        const pendingNotifications = notificationsData.filter(
+          (notification) =>
+            notification.status === "Pendiente" &&
+            notification.type !== "order_creation"
+        ).length;
+        setActiveOrdersCount(activeOrders);
+        setNotificationsCount(pendingNotifications);
       } catch (err) {
-        console.error("Error al cargar contadores:", err);
         toast.error(err.message || "Error al cargar contadores");
+        setActiveOrdersCount(0);
+        setNotificationsCount(0);
       }
     };
-    if (user?.id) {
-      fetchCounts();
-    }
+
+    fetchCounts();
   }, [user]);
+
+  useEffect(() => {
+    if (!isConnected || !socket || !user?.id) return;
+
+    const handleNewNotification = (notification) => {
+      if (
+        (notification.toUserId === user.id ||
+          notification.user_id === user.id) &&
+        notification.status === "Pendiente" &&
+        notification.type !== "order_creation"
+      ) {
+        setNotificationsCount((prev) => prev + 1);
+        console.log(
+          "[DashboardHeader] Nueva notificación recibida:",
+          notification
+        );
+      }
+    };
+
+    socket.on("notification", handleNewNotification);
+
+    return () => {
+      socket.off("notification", handleNewNotification);
+    };
+  }, [socket, isConnected, user]);
+
+  const handleNotificationClick = () => {
+    const path =
+      user?.role === "secretary"
+        ? "/secretary/notifications"
+        : "/admin/notifications";
+    window.location.href = path;
+  };
 
   return (
     <HeaderContainer expand="lg">
@@ -67,10 +138,20 @@ const DashboardHeader = ({ title }) => {
             Usuario: {user ? `${user.first_name} ${user.last_name}` : "Usuario"}{" "}
             |{" "}
           </span>
-          <span>
-            Órdenes Activas: {activeOrdersCount} |{" "}
-            <Badge bg="danger">{notificationsCount} Notificaciones</Badge>
-          </span>
+          {user?.role !== "secretary" && user?.role !== "client" && (
+            <span>Órdenes Activas: {activeOrdersCount} | </span>
+          )}
+          <NotificationContainer onClick={handleNotificationClick}>
+            <FontAwesomeIcon
+              icon={faBell}
+              style={{ color: "white", fontSize: "1.2rem" }}
+            />
+            {notificationsCount > 0 && (
+              <NotificationBadge bg="danger">
+                {notificationsCount}
+              </NotificationBadge>
+            )}
+          </NotificationContainer>
         </UserInfo>
       </Container>
     </HeaderContainer>

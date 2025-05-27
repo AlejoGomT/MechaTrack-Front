@@ -1,11 +1,10 @@
 import styled from "@emotion/styled";
+import { createGlobalStyle } from "styled-components";
 import {
   Container,
-  Row,
   Col,
   Form,
   Button,
-  Alert,
   Carousel,
   Card,
   Nav,
@@ -13,7 +12,14 @@ import {
   Table,
 } from "react-bootstrap";
 
-// Exportamos colors para que pueda ser usado en otros archivos
+export const GlobalStyle = createGlobalStyle`
+  @keyframes blink {
+    0% { opacity: 1; }
+    50% { opacity: 0.3; }
+    100% { opacity: 1; }
+  }
+`;
+
 export const colors = {
   primary: "#d74a49",
   primaryHover: "#ff6b6b",
@@ -29,7 +35,6 @@ export const colors = {
   danger: "#dc3545",
 };
 
-// --- Estilos específicos para Login ---
 export const LoginWrapper = styled.div`
   background: url(${(props) => props.background}) no-repeat center center fixed;
   background-size: cover;
@@ -108,6 +113,9 @@ export const FormInput = styled(Form.Control)`
   &:blur {
     background: ${colors.inputBg};
   }
+  &.uppercase {
+    text-transform: uppercase;
+  }
 `;
 
 export const StyledButton = styled(Button)`
@@ -126,7 +134,24 @@ export const StyledButton = styled(Button)`
   }
 `;
 
-// --- Estilos comunes para las otras páginas (/admin, /technician, /secretary, /client) ---
+export const CustomButton = styled(Button)`
+  background-color: ${colors.backgroundLight};
+  border: none;
+  padding: 6px 12px;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.3s, transform 0.3s;
+  &:hover {
+    background-color: ${colors.primaryHover};
+    transform: scale(1.05);
+  }
+  &:active {
+    background-color: ${colors.backgroundLight};
+    transform: scale(1);
+  }
+`;
 
 export const MainContainer = styled(Container)`
   padding: 0;
@@ -187,10 +212,19 @@ export const StyledTable = styled.table`
     padding: 10px;
     border: 1px solid #ddd;
     text-align: left;
+    vertical-align: middle;
+    font-size: 0.9rem;
   }
   th {
     background-color: ${colors.backgroundLight};
     color: white;
+    font-weight: bold;
+    white-space: wrap;
+    text-align: center;
+  }
+  td {
+    line-height: 1.5;
+    white-space: nowrap;
   }
   tr:nth-of-type(even) {
     background-color: #f9f9f9;
@@ -198,19 +232,96 @@ export const StyledTable = styled.table`
   tr:hover {
     background-color: #f1f1f1;
   }
-`;
-
-export const ActionButton = styled(Button)`
-  background-color: ${colors.primary};
-  border: none;
-  padding: 8px 16px;
-  transition: background-color 0.3s;
-  &:hover {
-    background-color: ${colors.primaryHover};
+  td.actions {
+    white-space: nowrap;
+    min-width: 120px;
+  }
+  th:nth-of-type(1),
+  td:nth-of-type(1) {
+    min-width: 80px;
+  }
+  th:nth-of-type(2),
+  td:nth-of-type(2) {
+    min-width: 100px;
+  }
+  th:nth-of-type(3),
+  td:nth-of-type(3) {
+    min-width: 100px;
+  }
+  th:nth-of-type(4),
+  td:nth-of-type(4) {
+    min-width: 100px;
+  }
+  th:nth-of-type(5),
+  td:nth-of-type(5) {
+    min-width: 100px;
+  }
+  th:nth-of-type(6),
+  td:nth-of-type(6) {
+    min-width: 120px;
+  }
+  th:nth-of-type(7),
+  td:nth-of-type(7) {
+    min-width: 80px;
+  }
+  th:nth-of-type(8),
+  td:nth-of-type(8) {
+    min-width: 100px;
+  }
+  th:nth-of-type(9),
+  td:nth-of-type(9) {
+    min-width: 100px;
   }
 `;
 
-// --- Estilos para TechnicianDashboard ---
+export const StatusDiv = styled.div`
+  padding: 0.1rem;
+  border-radius: 15px;
+  font-family: "Arial, sans-serif";
+  font-weight: 550;
+  text-align: center;
+  background-color: ${({ variant }) =>
+    variant === "inProcess"
+      ? "#fae79c"
+      : variant === "pending"
+      ? "#B0E0E6"
+      : variant === "completed"
+      ? "#90EE90"
+      : "#DCDCDC"};
+  color: ${({ variant }) =>
+    variant === "inProcess"
+      ? "#B8860B"
+      : variant === "pending"
+      ? "#104E8B"
+      : variant === "completed"
+      ? "#228B22"
+      : "#696969"};
+`;
+
+export const ActionButton = styled(Button)(({ variant }) => ({
+  backgroundColor:
+    variant === "secondary"
+      ? colors.secondary
+      : variant === "primary"
+      ? colors.backgroundLight
+      : colors.primary,
+  border: "none",
+  padding: "8px 16px",
+  transition: "background-color 0.3s",
+  "&:hover": {
+    backgroundColor:
+      variant === "secondary" ? colors.secondaryHover : colors.primaryHover,
+  },
+}));
+
+export const ActionsContainer = styled.div`
+  display: flex;
+  flex-direction: row;
+  flex-shrink: 0;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+`;
 
 export const Sidebar = styled.aside`
   width: 250px;
@@ -354,22 +465,6 @@ export const StatusIcon = styled.span`
   font-size: 12px;
 `;
 
-export const CustomButton = styled(Button)`
-  background-color: ${colors.backgroundLight};
-  border: none;
-  padding: 8px 16px;
-  font-size: 1rem;
-  transition: background-color 0.3s, transform 0.3s;
-  &:hover {
-    background-color: ${colors.primaryHover};
-    transform: scale(1.05);
-  }
-  &:active {
-    background-color: ${colors.backgroundLight};
-    transform: scale(1);
-  }
-`;
-
 export const StatCard = styled(Card)`
   width: 48%;
   border: none;
@@ -417,7 +512,7 @@ export const Content = styled.div`
   margin-left: 250px;
   padding: 20px;
   min-height: 100vh;
-  overflow-y: auto; /* Añadimos overflow-y: auto para controlar el scroll */
+  overflow-y: auto;
   transition: margin-left 0.3s ease-in-out;
   @media (max-width: 768px) {
     margin-left: 0;
@@ -437,8 +532,6 @@ export const ContentBtn = styled.div`
   }
 `;
 
-// --- Nuevos estilos para TechnicianDashboard ---
-
 export const MobileToggleButton = styled(Button)`
   display: none;
   position: fixed;
@@ -454,18 +547,30 @@ export const MobileToggleButton = styled(Button)`
 
 export const StyledModal = styled(Modal)`
   .modal-dialog {
-    max-width: 900px;
+    max-width: ${(props) =>
+      props.variant === "alertModal"
+        ? "auto"
+        : props.variant === "detailsVehicle"
+        ? "500px"
+        : props.variant === "detailsParts"
+        ? "800px"
+        : props.variant === "createParts" || props.variant === "createVehicle"
+        ? "600px"
+        : "900px"};
   }
 `;
 
 export const ModalBody = styled(Modal.Body)`
   max-height: 60vh;
   overflow-y: auto;
-  padding: 1rem;
+  ${(props) =>
+    props.variant === "updateOrderModal" ? null : { padding: "1.5rem" }};
 `;
 
 export const TableWrapper = styled.div`
   overflow-x: auto;
+  width: 100%;
+  max-width: 100%;
 `;
 
 export const StyledTableModal = styled(Table)`
@@ -475,42 +580,37 @@ export const StyledTableModal = styled(Table)`
   }
   th:nth-of-type(1),
   td:nth-of-type(1) {
-    /* Núm. Económico */
     min-width: 100px;
   }
   th:nth-of-type(2),
   td:nth-of-type(2) {
-    /* Orden */
-    min-width: 100px;
+    min-width: 150px;
   }
   th:nth-of-type(3),
   td:nth-of-type(3) {
-    /* Fecha Ingreso */
-    min-width: 120px;
+    min-width: 150px;
   }
   th:nth-of-type(4),
   td:nth-of-type(4) {
-    /* Diagnóstico */
-    min-width: 200px;
-    max-width: 200px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    min-width: 80px;
+    text-align: center;
   }
   th:nth-of-type(5),
   td:nth-of-type(5) {
-    /* Notificación o Acción */
-    min-width: 80px;
+    min-width: 120px;
     text-align: center;
   }
   th:nth-of-type(6),
   td:nth-of-type(6) {
-    /* Acción (solo pending) */
-    min-width: 80px;
+    min-width: 120px;
     text-align: center;
   }
-  td:nth-of-type(4) {
-    /* Tooltip para Diagnóstico */
+  th:nth-of-type(7),
+  td:nth-of-type(7) {
+    min-width: 100px;
+    text-align: center;
+  }
+  td:nth-of-type(3) {
     cursor: pointer;
   }
 `;
@@ -523,12 +623,12 @@ export const OrderDetailsModal = styled(Modal)`
 
 export const OrderDetailsBody = styled(Modal.Body)`
   padding: 1.5rem;
+  max-height: 70vh;
+  overflow-y: auto;
 `;
 
-// --- Nuevos estilos para TechnicianCreateOrder ---
-
 export const FormContainer = styled(Container)`
-  margin-top: 0; /* Eliminamos margin-top para evitar desplazamiento */
+  margin-top: 0;
   padding: 1.5rem;
   background-color: white;
   border-radius: 8px;
@@ -544,11 +644,10 @@ export const FormSectionTitle = styled.h4`
 `;
 
 export const FormActions = styled.div`
-  text-align: center;
-  margin-top: 1.5rem;
   display: flex;
   justify-content: center;
   gap: 1rem;
+  margin-top: 1.5rem;
 `;
 
 export const HistoryButtonWrapper = styled(Col)`
@@ -556,8 +655,6 @@ export const HistoryButtonWrapper = styled(Col)`
   align-items: flex-end;
   margin-bottom: 1rem;
 `;
-
-// --- Nuevos estilos para los filtros en TechnicianDashboard ---
 
 export const FiltersContainer = styled.div`
   display: flex;
@@ -578,14 +675,313 @@ export const FilterGroup = styled(Form.Group)`
 `;
 
 export const FilterLabel = styled(Form.Label)`
-  margin-bottom: 0;
+  margin-bottom: ${(props) => (props.variant === "createPart" ? "5px" : "0")};
+  font-weight: ${(props) =>
+    props.variant === "createPart" ? "500" : "normal"};
   white-space: nowrap;
 `;
 
 export const FilterSelect = styled(Form.Select)`
   width: 100%;
+  &.uppercase {
+    text-transform: uppercase;
+  }
 `;
 
 export const FilterInput = styled(Form.Control)`
   width: 100%;
+`;
+
+export const DetailLabel = styled.p`
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin-bottom: 0.25rem;
+`;
+
+export const DetailValue = styled.p`
+  font-size: 1rem;
+  font-weight: 500;
+  color: ${colors.backgroundDark};
+  margin-bottom: 1rem;
+  border-radius: ${({ variant }) =>
+    variant === "pending"
+      ? "10px solid #ffc107"
+      : variant === "approved"
+      ? "10px solid #28a745"
+      : variant === "inProcess"
+      ? "10px solid #fae79c"
+      : ""};
+  background-color: ${({ variant }) =>
+    variant === "pending"
+      ? "#fffbe6"
+      : variant === "approved"
+      ? "#e6ffed"
+      : variant === "inProcess"
+      ? "#fffbe6"
+      : "transparent"};
+
+  &.price {
+    color: ${colors.success};
+  }
+`;
+
+export const ModelTag = styled.span`
+  display: inline-block;
+  background-color: ${(props) => (props.active ? colors.primary : "#f3f4f6")};
+  color: ${(props) => (props.active ? "white" : colors.backgroundDark)};
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  margin-right: 0.5rem;
+  margin-bottom: 0.5rem;
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s;
+  &:hover {
+    background-color: ${colors.primaryHover};
+    color: white;
+  }
+`;
+
+export const ImageContainer = styled.div`
+  width: 150px;
+  height: 150px;
+  background-color: #edf2f7;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+`;
+
+export const FormSection = styled.div`
+  margin-bottom: 1.5rem;
+`;
+
+export const ModelTagContainer = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  max-height: 150px;
+  overflow-y: auto;
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+`;
+
+export const AllModelsTag = styled(ModelTag)`
+  background-color: ${(props) => (props.active ? colors.success : "#f3f4f6")};
+  color: ${(props) => (props.active ? "white" : colors.backgroundDark)};
+  &:hover {
+    background-color: ${colors.success};
+    color: white;
+  }
+`;
+
+export const ConditionalInputContainer = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+`;
+
+export const ButtonDetails = styled(Button)(({ variant }) => ({
+  backgroundColor: "#17a2b8",
+  border: "none",
+  padding: "8px 16px",
+  transition: "background-color 0.3s",
+  "&:hover": {
+    backgroundColor:
+      variant === "secondary" ? colors.secondaryHover : colors.primaryHover,
+  },
+}));
+
+export const MessageBubble = styled.div`
+  padding: 1px 12px;
+  border-radius: 0.5rem;
+  margin-bottom: 0.5rem;
+  background-color: ${(props) =>
+    props.sender === "user" ? colors.primary : colors.backgroundLight};
+  color: ${(props) => (props.sender === "user" ? "white" : "white")};
+  align-self: ${(props) =>
+    props.sender === "user" ? "flex-end" : "flex-start"};
+  position: relative;
+`;
+
+export const MessageInputWrapper = styled.div`
+  border-top: 1px solid #ddd;
+  padding: 1rem;
+`;
+
+export const PartRequestBanner = styled.div`
+  width: 50%;
+  color: #333;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-left: 1rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+`;
+
+export const MessageContainer = styled.div`
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: row;
+  height: calc(100vh - 150px);
+  gap: 0.5rem;
+  @media (max-width: 768px) {
+    flex-direction: column;
+    height: auto;
+  }
+`;
+
+export const NotificationList = styled.div`
+  width: 33%;
+  border-radius: 8px 0 0 8px;
+  background-color: #f8f9fa;
+  border-right: 1px solid #ddd;
+  overflow-y: auto;
+  @media (max-width: 768px) {
+    width: 100%;
+    max-height: 50vh;
+  }
+`;
+
+export const NotificationHeader = styled.div`
+  padding: 1rem;
+  border-bottom: 1px solid #ddd;
+  background-color: ${colors.backgroundLight};
+  color: white;
+  font-size: 1.25rem;
+  font-weight: bold;
+`;
+
+export const NotificationItem = styled.div`
+  padding: 1rem;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  border-bottom: 1px solid #ddd;
+  &:hover {
+    background-color: #f1f1f1;
+  }
+  &.new {
+    background-color: #e7f3ff;
+  }
+`;
+
+export const MessageDetailContainer = styled.div`
+  width: 67%;
+  border-radius: 0 8px 8px 0;
+  background-color: white;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  @media (max-width: 768px) {
+    width: 100%;
+    min-height: 50vh;
+  }
+`;
+
+// Nuevos estilos para notificaciones
+export const NotificationMessage = styled.div`
+  padding: 10px;
+  margin: 10px 0;
+  border-radius: 5px;
+  font-family: Arial, sans-serif;
+  font-size: 16px;
+`;
+
+export const ApprovedNotification = styled(NotificationMessage)`
+  background-color: #e6f3e6;
+  border: 1px solid #28a745;
+  color: #28a745;
+`;
+
+export const RejectedNotification = styled(NotificationMessage)`
+  background-color: #f8d7da;
+  border: 1px solid #dc3545;
+  color: #dc3545;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+`;
+
+export const ToggleButton = styled.button`
+  background: none;
+  border: none;
+  color: #dc3545;
+  font-size: 16px;
+  cursor: pointer;
+`;
+
+export const RejectionReason = styled.span`
+  display: none;
+  background-color: #fff3cd;
+  border: 1px solid #ffc107;
+  padding: 8px;
+  margin-top: 5px;
+  border-radius: 5px;
+  color: #856404;
+  font-size: 14px;
+  width: 100%;
+  &.active {
+    display: block;
+  }
+`;
+
+export const InvoiceDisplay = styled.div`
+  display: flex;
+  align-items: center;
+  background-color: #f0f0f0;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-family: Arial, sans-serif;
+  font-size: 0.9rem;
+  color: ${colors.backgroundDark};
+`;
+
+export const DeleteIcon = styled.span`
+  color: ${colors.danger};
+  margin-right: 8px;
+  cursor: pointer;
+  font-size: 0.9rem; /* Ajustado para Font Awesome */
+  padding-right: 8px;
+  border-right: 1px solid #ccc;
+  display: flex;
+  align-items: center;
+  transition: color 0.3s;
+  &:hover {
+    color: ${colors.primaryHover};
+  }
+`;
+
+export const InvoiceNumber = styled.span`
+  flex: 1;
+`;
+
+export const InfoGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  & > div {
+    display: flex;
+    flex-direction: column;
+  }
+  & > div.full-width {
+    grid-column: 1 / -1;
+  }
+  @media (max-width: 768px) {
+    grid-template-columns: 1fr;
+  }
 `;

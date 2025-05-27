@@ -3,28 +3,29 @@ import { Container, Form, Pagination, Modal, ListGroup } from "react-bootstrap";
 import { useAuth } from "../context/AuthContext";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
+import VehicleForm from "../components/VehicleForm";
+import VehicleDetailsModal from "../components/VehicleDetailsModal";
 import CustomButton from "../components/CustomButton";
-import PartForm from "../components/PartForm";
-import PartDetailsModal from "../components/PartDetailsModal";
 import {
   FiltersContainer,
   FilterGroup,
   FilterLabel,
   FilterSelect,
+  FilterInput,
   StyledModal,
   ModalBody,
   StyledTable,
   ActionsContainer,
   TableWrapper,
 } from "../styles/GlobalStyles";
-import { API_URL } from "../services/apiConfig";
-import { getVehicleModels } from "../services/vehicleService";
 import {
-  getParts,
-  createPart,
-  updatePart,
-  deletePart,
-} from "../services/partService";
+  getVehicles,
+  getVehicleModels,
+  createVehicle,
+  updateVehicle,
+  deleteVehicle,
+  getBranches,
+} from "../services/vehicleService";
 import { toast } from "react-toastify";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faEye, faPencil, faTrashCan } from "@fortawesome/free-solid-svg-icons";
@@ -36,101 +37,116 @@ const adminMenu = [
   { label: "Inicio", path: "../admin" },
   { label: "Órdenes de Servicio", path: "../admin/orders" },
   { label: "Inventario", path: "../admin/inventory" },
-  { label: "Vehiculos", path: "../admin/vehicles" },
+  { label: "Vehículos", path: "../admin/vehicles" },
   { label: "Gestión de Usuarios", path: "../admin/users" },
   { label: "Notificaciones", path: "../admin/notifications" },
   { label: "Informes", path: "../admin/reports" },
   { label: "Cerrar Sesión", path: "/" },
 ];
 
-const AdminInventory = () => {
+const AdminVehicles = () => {
   const { user, token } = useAuth();
-  const [codeFilter, setCodeFilter] = useState("");
-  const [nameFilter, setNameFilter] = useState("");
+  const [branchFilter, setBranchFilter] = useState("");
+  const [economicNumberFilter, setEconomicNumberFilter] = useState("");
   const [modelFilter, setModelFilter] = useState("");
-  const [parts, setParts] = useState([]);
+  const [vehicles, setVehicles] = useState([]);
+  const [branches, setBranches] = useState([]);
   const [vehicleModels, setVehicleModels] = useState([]);
   const [pagination, setPagination] = useState({
     page: 1,
-    limit: 10,
+    limit: 20,
     totalPages: 1,
     total: 0,
   });
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
-  const [selectedPart, setSelectedPart] = useState(null);
+  const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [partsData, models] = await Promise.all([
-          getParts(modelFilter, pagination.page, pagination.limit),
-          getVehicleModels(),
-        ]);
-        setParts(partsData.parts);
-        setPagination({
-          ...pagination,
-          total: partsData.total,
-          totalPages: partsData.totalPages,
-        });
-        setVehicleModels(models);
-      } catch (error) {
-        toast.error("Error al cargar datos");
-        console.error("[AdminInventory] Error al cargar datos:", error);
-      }
-    };
-    if (token) fetchData();
-  }, [token, pagination.page, modelFilter]);
-
-  const filteredParts = parts.filter(
-    (part) =>
-      (!codeFilter ||
-        part.id.toLowerCase().includes(codeFilter.toLowerCase())) &&
-      (!nameFilter ||
-        part.name.toLowerCase().includes(nameFilter.toLowerCase())) &&
-      (!modelFilter ||
-        (part.compatible_models &&
-          part.compatible_models.includes(modelFilter)))
-  );
-
-  const handleCreatePart = async (partData) => {
+  const fetchData = async () => {
     try {
-      const newPart = await createPart(partData);
-      setParts([...parts, newPart]);
-      setShowCreateModal(false);
+      const [vehiclesData, models, branchesData] = await Promise.all([
+        getVehicles({
+          branch: branchFilter,
+          economicNumber: economicNumberFilter,
+          model: modelFilter,
+          page: pagination.page,
+          limit: pagination.limit,
+        }),
+        getVehicleModels(),
+        getBranches(),
+      ]);
+      setVehicles(vehiclesData.vehicles);
+      setPagination({
+        ...pagination,
+        total: vehiclesData.total,
+        totalPages: vehiclesData.totalPages,
+      });
+      setVehicleModels(models);
+      setBranches(branchesData);
     } catch (error) {
+      toast.error("Error al cargar datos");
+      console.error("[AdminVehicles] Error al cargar datos:", error);
+    }
+  };
+
+  useEffect(() => {
+    if (token) fetchData();
+  }, [token, branchFilter, economicNumberFilter, modelFilter, pagination.page]);
+
+  const handleCreateVehicle = async (vehicleData) => {
+    try {
+      const newVehicle = await createVehicle(vehicleData);
+      setVehicles([...vehicles, newVehicle]); // Actualización optimista
+      setShowCreateModal(false);
+      toast.success("Vehículo creado");
+      // Reiniciar paginación y recargar datos
+      setPagination((prev) => ({ ...prev, page: 1 }));
+      await fetchData(); // Recargar datos del servidor
+    } catch (error) {
+      toast.error(error.message || "Error al crear vehículo");
       throw error;
     }
   };
 
-  const handleEditPart = async (partData) => {
-    console.log(
-      "[AdminInventory] handleEditPart - selectedPart:",
-      selectedPart
-    );
+  const handleEditVehicle = async (vehicleData) => {
     setIsSubmitting(true);
     try {
-      const updatedPart = await updatePart(selectedPart.id, partData);
-      setParts(parts.map((p) => (p.id === updatedPart.id ? updatedPart : p)));
+      const updatedVehicle = await updateVehicle(
+        selectedVehicle.economic_number,
+        vehicleData
+      );
+      setVehicles(
+        vehicles.map((v) =>
+          v.economic_number === updatedVehicle.economic_number
+            ? updatedVehicle
+            : v
+        )
+      );
       setShowEditModal(false);
-      setSelectedPart(null);
+      setSelectedVehicle(null);
+      toast.success("Vehículo actualizado");
+      await fetchData(); // Recargar datos para asegurar consistencia
     } catch (error) {
+      toast.error(error.message || "Error al actualizar vehículo");
       throw error;
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleDeletePart = async (id) => {
-    if (window.confirm("¿Estás seguro de eliminar este repuesto?")) {
+  const handleDeleteVehicle = async (economic_number) => {
+    if (window.confirm("¿Estás seguro de eliminar este vehículo?")) {
       try {
-        await deletePart(id);
-        setParts(parts.filter((p) => p.id !== id));
-        toast.success("Repuesto eliminado");
+        await deleteVehicle(economic_number);
+        setVehicles(
+          vehicles.filter((v) => v.economic_number !== economic_number)
+        );
+        toast.success("Vehículo eliminado");
+        await fetchData(); // Recargar datos
       } catch (error) {
-        toast.error(error.message || "Error al eliminar repuesto");
+        toast.error(error.message || "Error al eliminar vehículo");
       }
     }
   };
@@ -152,29 +168,34 @@ const AdminInventory = () => {
     <>
       <Sidebar menuItems={adminMenu} title="Menú Administrador" />
       <div className="content" style={{ marginLeft: "270px", padding: "20px" }}>
-        <DashboardHeader title="Inventario" {...userData} />
+        <DashboardHeader title="Vehículos Registrados" {...userData} />
         <Container className="mt-4 d-flex flex-column align-items-center gap-3">
           <FiltersContainer>
             <FilterGroup>
-              <FilterLabel>Código</FilterLabel>
-              <Form.Control
+              <FilterLabel>Sucursal</FilterLabel>
+              <FilterSelect
+                value={branchFilter}
+                onChange={(e) => setBranchFilter(e.target.value)}
+              >
+                <option value="">Todas</option>
+                {branches.map((branch) => (
+                  <option key={branch} value={branch}>
+                    {branch}
+                  </option>
+                ))}
+              </FilterSelect>
+            </FilterGroup>
+            <FilterGroup>
+              <FilterLabel>Número Económico</FilterLabel>
+              <FilterInput
                 type="text"
-                value={codeFilter}
-                onChange={(e) => setCodeFilter(e.target.value)}
-                placeholder="Filtrar por código"
+                value={economicNumberFilter}
+                onChange={(e) => setEconomicNumberFilter(e.target.value)}
+                placeholder="Filtrar por número económico"
               />
             </FilterGroup>
             <FilterGroup>
-              <FilterLabel>Nombre</FilterLabel>
-              <Form.Control
-                type="text"
-                value={nameFilter}
-                onChange={(e) => setNameFilter(e.target.value)}
-                placeholder="Filtrar por nombre"
-              />
-            </FilterGroup>
-            <FilterGroup>
-              <FilterLabel>Modelo Compatible</FilterLabel>
+              <FilterLabel>Modelo</FilterLabel>
               <FilterSelect
                 value={modelFilter}
                 onChange={(e) => setModelFilter(e.target.value)}
@@ -188,47 +209,40 @@ const AdminInventory = () => {
               </FilterSelect>
             </FilterGroup>
             <CustomButton onClick={() => setShowCreateModal(true)}>
-              Agregar Repuesto
+              Nuevo Vehículo
             </CustomButton>
           </FiltersContainer>
           <TableWrapper>
             <StyledTable>
               <thead>
                 <tr>
-                  <th>Imagen</th>
-                  <th>Código</th>
-                  <th>Nombre</th>
-                  <th>Cantidad</th>
-                  <th>Precio</th>
+                  <th>Número Económico</th>
+                  <th className="col-2">Sucursal</th>
+                  <th>Marca</th>
+                  <th className="col-4">Modelo</th>
+                  <th>Año</th>
+                  <th>Kilometraje</th>
+                  <th className="col-3">VIN</th>
+                  <th>Placa</th>
                   <th>Acciones</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredParts.map((part) => (
-                  <tr key={part.id}>
-                    <td className="text-center">
-                      {part.image ? (
-                        <img
-                          src={`${API_URL}${part.image}`}
-                          alt={part.name}
-                          style={{ maxWidth: "50px", maxHeight: "50px" }}
-                          onError={(e) => {
-                            e.target.src = "/placeholder.png";
-                          }}
-                        />
-                      ) : (
-                        "Sin imagen"
-                      )}
-                    </td>
-                    <td>{part.id}</td>
-                    <td>{part.name}</td>
-                    <td>{part.quantity}</td>
-                    <td>${part.price}</td>
-                    <td>
+                {vehicles.map((vehicle) => (
+                  <tr key={vehicle.economic_number}>
+                    <td>{vehicle.economic_number}</td>
+                    <td>{vehicle.branch}</td>
+                    <td>{vehicle.brand}</td>
+                    <td>{vehicle.model}</td>
+                    <td>{vehicle.year}</td>
+                    <td>{vehicle.mileage} km</td>
+                    <td>{vehicle.vin}</td>
+                    <td>{vehicle.plate}</td>
+                    <td className="actions">
                       <ActionsContainer>
                         <CustomButton
                           onClick={() => {
-                            setSelectedPart(part);
+                            setSelectedVehicle(vehicle);
                             setShowDetailsModal(true);
                           }}
                           title="Ver Detalles"
@@ -237,15 +251,17 @@ const AdminInventory = () => {
                         </CustomButton>
                         <CustomButton
                           onClick={() => {
-                            setSelectedPart(part);
+                            setSelectedVehicle(vehicle);
                             setShowEditModal(true);
                           }}
-                          title="Actualizar"
+                          title="Editar"
                         >
                           <FontAwesomeIcon icon={faPencil} />
                         </CustomButton>
                         <CustomButton
-                          onClick={() => handleDeletePart(part.id)}
+                          onClick={() =>
+                            handleDeleteVehicle(vehicle.economic_number)
+                          }
                           title="Eliminar"
                         >
                           <FontAwesomeIcon icon={faTrashCan} />
@@ -286,11 +302,11 @@ const AdminInventory = () => {
         centered
       >
         <Modal.Header closeButton>
-          <Modal.Title>Crear Nuevo Repuesto</Modal.Title>
+          <Modal.Title>Crear Nuevo Vehículo</Modal.Title>
         </Modal.Header>
         <ModalBody>
-          <PartForm
-            onSubmit={handleCreatePart}
+          <VehicleForm
+            onSubmit={handleCreateVehicle}
             onCancel={() => setShowCreateModal(false)}
           />
         </ModalBody>
@@ -302,40 +318,41 @@ const AdminInventory = () => {
         onHide={() => {
           if (!isSubmitting) {
             setShowEditModal(false);
-            setSelectedPart(null);
+            setSelectedVehicle(null);
           }
         }}
         centered
       >
         <Modal.Header closeButton>
-          <Modal.Title>Editar Repuesto</Modal.Title>
+          <Modal.Title>Editar Vehículo</Modal.Title>
         </Modal.Header>
         <ModalBody>
-          {selectedPart && (
-            <PartForm
-              initialData={selectedPart}
-              onSubmit={handleEditPart}
+          {selectedVehicle && (
+            <VehicleForm
+              initialData={selectedVehicle}
+              onSubmit={handleEditVehicle}
               onCancel={() => {
                 if (!isSubmitting) {
                   setShowEditModal(false);
-                  setSelectedPart(null);
+                  setSelectedVehicle(null);
                 }
               }}
+              isEdit
             />
           )}
         </ModalBody>
       </StyledModal>
 
-      <PartDetailsModal
+      <VehicleDetailsModal
         show={showDetailsModal}
         onHide={() => {
           setShowDetailsModal(false);
-          setSelectedPart(null);
+          setSelectedVehicle(null);
         }}
-        part={selectedPart}
+        vehicle={selectedVehicle}
       />
     </>
   );
 };
 
-export default AdminInventory;
+export default AdminVehicles;
