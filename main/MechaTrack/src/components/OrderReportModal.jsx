@@ -17,25 +17,27 @@ const OrderReportModal = ({ show, onHide, report }) => {
       await downloadOrderReportPdf(report.id);
       toast.success("PDF descargado correctamente");
     } catch (error) {
-      toast.error(error.message);
+      console.error("[OrderReportModal] Error al descargar PDF:", error);
+      if (
+        error.response?.data instanceof Blob &&
+        error.response.data.type === "application/json"
+      ) {
+        const text = await error.response.data.text();
+        const errorData = JSON.parse(text);
+        console.error("[OrderReportModal] Detalles del error:", errorData);
+        toast.error(errorData.message || "Error al descargar el informe PDF");
+      } else {
+        toast.error(error.message || "Error al descargar el informe PDF");
+      }
     }
   };
 
-  // Depurar datos recibidos
-  console.log("[OrderReportModal] report.parts:", report?.parts);
-  console.log(
-    "[OrderReportModal] report.notifications:",
-    report?.notifications
-  );
-
-  // Eliminar duplicados de repuestos usando part_id
   const uniqueParts = report?.parts
     ? Array.from(
         new Map(report.parts.map((part) => [part.part_id, part])).values()
       )
     : [];
 
-  // Eliminar duplicados de notificaciones usando message y created_at
   const uniqueNotifications = report?.notifications
     ? Array.from(
         new Map(
@@ -178,7 +180,7 @@ const OrderReportModal = ({ show, onHide, report }) => {
           <div>
             <DetailLabel>Total</DetailLabel>
             <DetailValue className="price">
-              {report?.total ? report.total.toFixed(2) : "N/A"}
+              {report?.total ? report.total : "N/A"}
             </DetailValue>
           </div>
           <div>
@@ -220,7 +222,7 @@ const OrderReportModal = ({ show, onHide, report }) => {
                   <tr key={part.part_id || index}>
                     <td>{part.name}</td>
                     <td>{part.quantity}</td>
-                    <td>{part.price ? part.price.toFixed(2) : "N/A"}</td>
+                    <td>{part.price ? part.price : "N/A"}</td>
                     <td>{part.status}</td>
                     <td>{part.requested_by || "N/A"}</td>
                     <td>{part.authorized_by || "N/A"}</td>

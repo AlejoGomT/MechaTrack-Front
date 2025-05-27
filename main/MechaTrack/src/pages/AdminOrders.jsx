@@ -15,7 +15,6 @@ import {
   ModalBody,
   StyledTable,
   ActionsContainer,
-  colors,
   TableWrapper,
 } from "../styles/GlobalStyles";
 import styled from "@emotion/styled";
@@ -45,6 +44,7 @@ import {
   updateAdminOrder,
   deleteAdminPart,
 } from "../services/adminOrderService";
+import { downloadOrderReportPdf } from "../services/reportService";
 
 library.add(faCircle, faCheck, faTimes, faEye, faHistory);
 
@@ -505,26 +505,24 @@ const AdminOrders = () => {
     setShowConfirmModal(true);
   };
 
-  const handleDownloadReport = () => {
-    const report = {
-      order: selectedOrder,
-      invoice: selectedOrder.invoice,
-      parts: editedParts,
-      total: editedParts
-        .filter((part) => part.status === "Aprobado")
-        .reduce((sum, part) => sum + part.quantity * (part.price || 0), 0)
-        .toFixed(2),
-    };
-    const blob = new Blob([JSON.stringify(report, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `order_${selectedOrder.id}_report.json`;
-    link.click();
-    URL.revokeObjectURL(url);
-    toast.success("Informe descargado");
+  const handleDownloadReport = async () => {
+    try {
+      await downloadOrderReportPdf(selectedOrder.id);
+      toast.success("Informe PDF descargado");
+    } catch (error) {
+      console.error("[AdminOrders] Error al descargar informe PDF:", error);
+      if (
+        error.response?.data instanceof Blob &&
+        error.response.data.type === "application/json"
+      ) {
+        const text = await error.response.data.text();
+        const errorData = JSON.parse(text);
+        console.error("[AdminOrders] Detalles del error:", errorData);
+        toast.error(errorData.message || "Error al descargar el informe PDF");
+      } else {
+        toast.error(error.message || "Error al descargar el informe PDF");
+      }
+    }
   };
 
   const handlePageChange = (newPage) => {

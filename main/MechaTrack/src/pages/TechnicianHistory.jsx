@@ -1,6 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
-import { Container, Table, Button, Modal, Pagination } from "react-bootstrap";
+import { useSocket } from "../context/SocketContext";
+import {
+  Container,
+  Table,
+  Button,
+  Modal,
+  Pagination,
+  Spinner,
+} from "react-bootstrap";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import CustomButton from "../components/CustomButton";
@@ -24,8 +32,9 @@ import {
 } from "../styles/GlobalStyles";
 import styled from "@emotion/styled";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faEye, faBell } from "@fortawesome/free-solid-svg-icons";
+import { faEye } from "@fortawesome/free-solid-svg-icons";
 import { toast } from "react-toastify";
+import debounce from "lodash/debounce";
 
 const NotificationIcon = styled.span`
   position: relative;
@@ -77,6 +86,7 @@ const technicianMenu = [
 
 const TechnicianHistory = () => {
   const { user } = useAuth();
+  const { socket, isConnected } = useSocket();
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [economicNumberFilter, setEconomicNumberFilter] = useState("");
@@ -86,44 +96,61 @@ const TechnicianHistory = () => {
   const [orders, setOrders] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [isLoading, setIsLoading] = useState(false);
   const pageSize = 10;
+  const allowedStatuses = ["En Proceso", "Pendiente", "Finalizado"];
 
-  useEffect(() => {
-    const fetchOrders = async () => {
-      try {
-        const ordersData = await getOrders({
-          technician_id: user.id,
-          page: currentPage,
-          limit: pageSize,
-          economicNumber: economicNumberFilter,
-          status: statusFilter || undefined,
-          orderNumber: orderNumberFilter,
-          serviceType: serviceTypeFilter || undefined,
-        });
-        console.log("[TechnicianHistory] Respuesta de getOrders:", ordersData);
+  // Función para cargar órdenes
+  const fetchOrders = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const ordersData = await getOrders({
+        technician_id: user.id,
+        page: currentPage,
+        limit: pageSize,
+        economicNumber: economicNumberFilter,
+        status: statusFilter || undefined,
+        orderNumber: orderNumberFilter,
+        serviceType: serviceTypeFilter || undefined,
+        statuses: allowedStatuses, // Filtrar solo estados permitidos
+      });
+      console.log("[TechnicianHistory] Respuesta de getOrders:", ordersData);
 
-        if (!Array.isArray(ordersData.orders)) {
-          console.error(
-            "[TechnicianHistory] Respuesta inválida de getOrders, se esperaba un arreglo en orders:",
-            ordersData
-          );
-          setOrders([]);
-          toast.error("Respuesta inválida al cargar órdenes");
-          return;
-        }
-
-        setOrders(ordersData.orders);
-        setTotalPages(
-          Math.ceil((ordersData.total || ordersData.orders.length) / pageSize)
+      if (!Array.isArray(ordersData.orders)) {
+        console.error(
+          "[TechnicianHistory] Respuesta inválida de getOrders, se esperaba un arreglo en orders:",
+          ordersData
         );
-      } catch (err) {
-        console.error("[TechnicianHistory] Error al cargar órdenes:", err);
-        toast.error(err.message || "Error al cargar órdenes");
         setOrders([]);
+        toast.error("Respuesta inválida al cargar órdenes");
         setTotalPages(1);
+        return;
       }
-    };
-    fetchOrders();
+
+      // Asegurar que cada orden tenga notifications inicializado
+      const processedOrders = ordersData.orders
+        .filter((order) => allowedStatuses.includes(order.status))
+        .map((order) => ({
+          ...order,
+          notifications: order.notifications || [],
+        }));
+
+      setOrders(processedOrders);
+      setTotalPages(
+        Math.ceil((ordersData.total || ordersData.orders.length) / pageSize)
+      );
+      console.log(
+        "[TechnicianHistory] Órdenes establecidas:",
+        processedOrders.length
+      );
+    } catch (err) {
+      console.error("[TechnicianHistory] Error al cargar órdenes:", err);
+      toast.error(err.message || "Error al cargar órdenes");
+      setOrders([]);
+      setTotalPages(1);
+    } finally {
+      setIsLoading(false);
+    }
   }, [
     user.id,
     currentPage,
@@ -133,7 +160,192 @@ const TechnicianHistory = () => {
     serviceTypeFilter,
   ]);
 
+  // Cargar órdenes iniciales
+  useEffect(() => {
+    fetchOrders();
+  }, [fetchOrders]);
+
+  // Debounce para filtros de texto
+  const debouncedSetEconomicNumberFilter = useCallback(
+    debounce((value) => {
+      setEconomicNumberFilter(value);
+      setCurrentPage(1);
+    }, 500),
+    []
+  );
+
+  const debouncedSetOrderNumberFilter = useCallback(
+    debounce((value) => {
+      setOrderNumberFilter(value);
+      setCurrentPage(1);
+    }, 500),
+    []
+  );
+
+  // Configurar Socket.IO
+  useEffect(() => {
+    if (!socket || !isConnected || !user?.id) {
+      console.log(
+        "[TechnicianHistory] Socket no conectado o usuario no disponible:",
+        {
+          socket: !!socket,
+          isConnected,
+          userId: user?.id,
+        }
+      );
+      return;
+    }
+
+    // Unirse a sala de usuario
+    const userRoom = `USER_${user.id}`;
+    socket.emit("joinUser", userRoom);
+    console.log(`[TechnicianHistory] Unido a sala de usuario: ${userRoom}`);
+
+    // Unirse a salas de órdenes
+    orders.forEach((order) => {
+      const orderRoom = order.id;
+      socket.emit("joinOrder", orderRoom);
+      console.log(`[TechnicianHistory] Unido a sala de orden: ${orderRoom}`);
+    });
+
+    // Escuchar nuevas órdenes
+    socket.on("order_creation", (newOrder) => {
+      console.log("[TechnicianHistory] Nueva orden recibida:", newOrder);
+      if (
+        newOrder.technician_id === user.id &&
+        allowedStatuses.includes(newOrder.status)
+      ) {
+        setOrders((prev) => {
+          if (prev.some((o) => o.id === newOrder.id)) return prev;
+
+          const updatedOrders = [
+            { ...newOrder, notifications: newOrder.notifications || [] },
+            ...prev,
+          ].filter((o) => {
+            const matchesEconomic = economicNumberFilter
+              ? o.vehicle_economic_number
+                  ?.toLowerCase()
+                  .includes(economicNumberFilter.toLowerCase())
+              : true;
+            const matchesOrder = orderNumberFilter
+              ? o.id.toString().includes(orderNumberFilter)
+              : true;
+            const matchesStatus = statusFilter
+              ? o.status === statusFilter
+              : true;
+            const matchesService = serviceTypeFilter
+              ? o.type === serviceTypeFilter
+              : true;
+            return (
+              matchesEconomic && matchesOrder && matchesStatus && matchesService
+            );
+          });
+
+          const newTotalItems = prev.length + 1;
+          setTotalPages(Math.ceil(newTotalItems / pageSize));
+          return updatedOrders.slice(0, pageSize);
+        });
+        toast.info(`Nueva orden creada: #${newOrder.id}`);
+      }
+    });
+
+    // Escuchar actualizaciones de órdenes
+    socket.on("order_update", (updatedOrder) => {
+      console.log(
+        "[TechnicianHistory] Actualización de orden recibida:",
+        updatedOrder
+      );
+      setOrders((prev) => {
+        let updatedOrders = prev;
+        if (allowedStatuses.includes(updatedOrder.status)) {
+          updatedOrders = prev.map((order) =>
+            order.id === updatedOrder.id
+              ? {
+                  ...order,
+                  status: updatedOrder.status,
+                  finalized_at: updatedOrder.finalized_at,
+                }
+              : order
+          );
+        } else {
+          updatedOrders = prev.filter((order) => order.id !== updatedOrder.id);
+        }
+        return updatedOrders.filter((o) => {
+          return statusFilter ? o.status === statusFilter : true;
+        });
+      });
+      if (
+        updatedOrder.technician_id === user.id &&
+        allowedStatuses.includes(updatedOrder.status)
+      ) {
+        toast.info(
+          `Orden #${updatedOrder.id} actualizada a: ${updatedOrder.status}`
+        );
+      }
+    });
+
+    // Escuchar nuevas notificaciones
+    socket.on("notification", (notification) => {
+      console.log(
+        "[TechnicianHistory] Nueva notificación recibida:",
+        notification
+      );
+      if (
+        notification.toUserId === user.id &&
+        (notification.orderId || notification.order_id)
+      ) {
+        const orderId = notification.orderId || notification.order_id;
+        setOrders((prev) => {
+          const updatedOrders = prev.map((order) => {
+            if (order.id === orderId) {
+              const newNotification = {
+                id: notification.id,
+                order_id: orderId,
+                from_user_id: notification.fromUserId,
+                to_user_id: notification.toUserId,
+                message: notification.message,
+                type: notification.type,
+                status: notification.status || "Pendiente",
+                created_at: notification.timestamp,
+              };
+              const updatedNotifications = order.notifications.some(
+                (n) => n.id === notification.id
+              )
+                ? order.notifications
+                : [...order.notifications, newNotification];
+              return { ...order, notifications: updatedNotifications };
+            }
+            return order;
+          });
+          return updatedOrders;
+        });
+        toast.info(`Nueva notificación para orden #${orderId}`);
+      }
+    });
+
+    return () => {
+      socket.off("order_creation");
+      socket.off("order_update");
+      socket.off("notification");
+      socket.emit("leaveUser", userRoom);
+      orders.forEach((order) => socket.emit("leaveOrder", order.id));
+      console.log(
+        "[TechnicianHistory] Listeners removidos y salas abandonadas"
+      );
+    };
+  }, [
+    socket,
+    isConnected,
+    user?.id,
+    orders,
+    economicNumberFilter,
+    orderNumberFilter,
+    statusFilter,
+    serviceTypeFilter,
+  ]);
+
   const formatDate = (dateStr) => {
+    if (!dateStr) return "-";
     const date = new Date(dateStr);
     return date.toLocaleDateString("es-ES", {
       day: "2-digit",
@@ -200,8 +412,8 @@ const TechnicianHistory = () => {
               <FilterLabel>Número de Orden</FilterLabel>
               <FilterInput
                 type="text"
-                value={orderNumberFilter}
-                onChange={(e) => setOrderNumberFilter(e.target.value)}
+                defaultValue={orderNumberFilter}
+                onChange={(e) => debouncedSetOrderNumberFilter(e.target.value)}
                 placeholder="Filtrar por N° Orden"
               />
             </FilterGroup>
@@ -209,8 +421,10 @@ const TechnicianHistory = () => {
               <FilterLabel>Número Económico</FilterLabel>
               <FilterInput
                 type="text"
-                value={economicNumberFilter}
-                onChange={(e) => setEconomicNumberFilter(e.target.value)}
+                defaultValue={economicNumberFilter}
+                onChange={(e) =>
+                  debouncedSetEconomicNumberFilter(e.target.value)
+                }
                 placeholder="Filtrar por N° Económico"
               />
             </FilterGroup>
@@ -218,35 +432,47 @@ const TechnicianHistory = () => {
               <FilterLabel>Tipo de Servicio</FilterLabel>
               <FilterSelect
                 value={serviceTypeFilter}
-                onChange={(e) => setServiceTypeFilter(e.target.value)}
+                onChange={(e) => {
+                  setServiceTypeFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
               >
                 <option value="">Todos</option>
-                {orders
-                  .map((order) => order.type)
-                  .filter(
-                    (type, index, self) => type && self.indexOf(type) === index
-                  )
-                  .map((type) => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
+                {[
+                  ...new Set(
+                    orders.map((order) => order.type).filter((type) => type)
+                  ),
+                ].map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
               </FilterSelect>
             </FilterGroup>
             <FilterGroup>
               <FilterLabel>Estado</FilterLabel>
               <FilterSelect
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
               >
                 <option value="">Todos</option>
-                <option value="En Proceso">En Proceso</option>
-                <option value="Pendiente">Pendiente</option>
-                <option value="Finalizado">Finalizado</option>
+                {allowedStatuses.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
               </FilterSelect>
             </FilterGroup>
           </StyledFiltersContainer>
-          {orders.length > 0 ? (
+          {isLoading ? (
+            <div className="text-center my-4">
+              <Spinner animation="border" variant="primary" />
+              <p>Cargando órdenes...</p>
+            </div>
+          ) : orders.length > 0 ? (
             <>
               <TableWrapper>
                 <StyledTable>
@@ -265,13 +491,11 @@ const TechnicianHistory = () => {
                     {orders.map((order) => (
                       <tr key={order.id}>
                         <td>{order.id}</td>
-                        <td>{order.vehicle_economic_number}</td>
+                        <td>{order.vehicle_economic_number || "-"}</td>
                         <td>{order.type || "-"}</td>
                         <td>
                           {formatDate(order.created_at)} /{" "}
-                          {order.status === "Finalizado"
-                            ? formatDate(order.finalized_at)
-                            : "-"}
+                          {formatDate(order.finalized_at)}
                         </td>
                         <td>
                           <StatusDiv
@@ -293,7 +517,7 @@ const TechnicianHistory = () => {
                             href={`/technician/notifications?orderId=${order.id}`}
                           >
                             <NotificationIcon>
-                              <FontAwesomeIcon icon={faBell} />
+                              <FontAwesomeIcon icon={faEye} />
                               {order.notifications?.length > 0 && (
                                 <NotificationCount>
                                   {order.notifications.length}
