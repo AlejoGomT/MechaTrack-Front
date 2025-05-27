@@ -83,7 +83,10 @@ export const createNotification = async (notificationData, files = []) => {
     const formData = new FormData();
     const cleanedData = { ...notificationData };
     if (cleanedData.type === "direct_message") {
-      cleanedData.orderId = null;
+      cleanedData.order_id = null;
+      if (notificationData.order_id) {
+        throw new Error("Mensajes directos no pueden tener order_id");
+      }
     }
     Object.entries(cleanedData).forEach(([key, value]) => {
       if (value !== undefined && value !== "null") {

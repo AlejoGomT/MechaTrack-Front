@@ -17,9 +17,6 @@ export const SocketProvider = ({ children }) => {
 
   useEffect(() => {
     if (!user || !token) {
-      console.log(
-        "[SocketContext] No hay usuario o token, no se inicializa socket"
-      );
       return;
     }
 
@@ -34,16 +31,10 @@ export const SocketProvider = ({ children }) => {
     setSocket(newSocket);
 
     newSocket.on("connect", () => {
-      console.log("[SocketContext] Conectado al servidor Socket.IO");
       setIsConnected(true);
     });
 
-    newSocket.on("welcome", (msg) => {
-      console.log("[SocketContext] Mensaje de bienvenida:", msg);
-    });
-
     newSocket.on("notification", (notification) => {
-      console.log("[SocketContext] Notificación recibida:", notification);
       const roles = ["admin", "secretary"];
       if (
         notification.toUserId === user.id ||
@@ -64,10 +55,6 @@ export const SocketProvider = ({ children }) => {
     });
 
     newSocket.on("orderUpdated", ({ orderId, updatedOrder }) => {
-      console.log("[SocketContext] orderUpdated recibido:", {
-        orderId,
-        updatedOrder,
-      });
       toast.info(`Orden ${orderId} actualizada`);
       if (updateOrderCallback) {
         updateOrderCallback(orderId, updatedOrder);
@@ -75,21 +62,18 @@ export const SocketProvider = ({ children }) => {
     });
 
     newSocket.on("invoice_created", (newInvoice) => {
-      console.log("[SocketContext] invoice_created recibido:", newInvoice);
       if (updateInvoiceCallback) {
         updateInvoiceCallback("created", newInvoice);
       }
     });
 
     newSocket.on("invoice_updated", (updatedInvoice) => {
-      console.log("[SocketContext] invoice_updated recibido:", updatedInvoice);
       if (updateInvoiceCallback) {
         updateInvoiceCallback("updated", updatedInvoice);
       }
     });
 
     newSocket.on("invoice_deleted", (deletedInvoice) => {
-      console.log("[SocketContext] invoice_deleted recibido:", deletedInvoice);
       if (updateInvoiceCallback) {
         updateInvoiceCallback("deleted", deletedInvoice);
       }
@@ -147,18 +131,10 @@ export const SocketProvider = ({ children }) => {
         const validConversations = Array.isArray(conversations)
           ? conversations
           : [];
-        console.log(
-          "[SocketContext] Conversaciones recibidas:",
-          validConversations
-        );
         validConversations.forEach((conv) => {
           socket.emit("joinOrder", conv.conversation_id);
         });
       } catch (error) {
-        console.error(
-          "[SocketContext] Error al unirse a salas de órdenes:",
-          error
-        );
         toast.error("Error al unirse a salas de órdenes");
       }
     };
