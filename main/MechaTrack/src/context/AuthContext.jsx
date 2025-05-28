@@ -16,13 +16,29 @@ export const AuthProvider = ({ children }) => {
     const verifyToken = async () => {
       if (token) {
         try {
+          console.log(
+            "[AuthContext] Enviando solicitud a /auth/verify con token:",
+            token
+          );
           const response = await fetch(`${API_URL}/auth/verify`, {
             headers: { Authorization: `Bearer ${token}` },
           });
-          if (!response.ok) throw new Error("Token inválido");
+          if (!response.ok) {
+            console.error(
+              "[AuthContext] Error en /auth/verify:",
+              response.status,
+              await response.text()
+            );
+            throw new Error("Token inválido");
+          }
           const data = await response.json();
+          console.log("[AuthContext] Respuesta de /auth/verify:", data);
           setUser(data.user);
         } catch (error) {
+          console.error(
+            "[AuthContext] Error verificando token:",
+            error.message
+          );
           logout();
         }
       } else {

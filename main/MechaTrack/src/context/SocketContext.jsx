@@ -31,7 +31,13 @@ export const SocketProvider = ({ children }) => {
     setSocket(newSocket);
 
     newSocket.on("connect", () => {
+      console.log("[SocketContext] Conectado al WebSocket");
       setIsConnected(true);
+    });
+
+    newSocket.on("connect_error", (error) => {
+      console.error("[SocketContext] Error de conexión:", error.message);
+      setIsConnected(false);
     });
 
     newSocket.on("notification", (notification) => {
