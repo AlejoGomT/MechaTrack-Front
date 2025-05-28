@@ -20,7 +20,7 @@ export const AuthProvider = ({ children }) => {
             "[AuthContext] Enviando solicitud a /auth/verify con token:",
             token
           );
-          const response = await fetch(`${API_URL}/auth/verify`, {
+          const response = await fetch(`${API_URL}/api/auth/verify`, {
             headers: { Authorization: `Bearer ${token}` },
           });
           if (!response.ok) {
