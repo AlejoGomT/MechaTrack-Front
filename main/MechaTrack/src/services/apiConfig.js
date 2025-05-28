@@ -1,6 +1,6 @@
 import axios from "axios";
 
-export const API_URL = import.meta.env.VITE_API_URL;
+export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 const axiosInstance = axios.create({
   baseURL: API_URL,
@@ -21,10 +21,10 @@ axiosInstance.interceptors.request.use(
 axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
-    // if (error.response && error.response.status === 401) {
-    //    localStorage.removeItem("token");
-    //    window.location.href = "/";
-    //  }
+    if (error.response && error.response.status === 401) {
+      localStorage.removeItem("token");
+      window.location.href = "/";
+    }
     console.error(
       "[Axios] Error en solicitud:",
       error.response?.status,

@@ -6,6 +6,7 @@ import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import StatCard from "../components/StatCard";
 import axios from "axios";
+import { API_URL } from "../services/apiConfig";
 import { toast } from "react-toastify";
 
 const adminMenu = [
@@ -36,17 +37,17 @@ const AdminDashboard = () => {
       try {
         const [ordersResponse, notificationsResponse, vehiclesResponse] =
           await Promise.all([
-            axios.get("/api/orders", {
+            axios.get(`${API_URL}/api/orders`, {
               headers: { Authorization: `Bearer ${token}` },
-              params: { limit: 1000 }, // Añadir límite para consistencia
+              params: { limit: 1000 },
             }),
-            axios.get("/api/notifications", {
+            axios.get(`${API_URL}/api/notifications`, {
               headers: { Authorization: `Bearer ${token}` },
               params: { to_user_id: user.id, status: "Pendiente" },
             }),
-            axios.get("/api/vehicles", {
+            axios.get(`${API_URL}/api/vehicles`, {
               headers: { Authorization: `Bearer ${token}` },
-              params: { limit: 1000 }, // Obtener todos los vehículos
+              params: { limit: 1000 },
             }),
           ]);
 
