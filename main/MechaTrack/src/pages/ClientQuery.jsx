@@ -12,7 +12,7 @@ import {
 } from "react-bootstrap";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faSort, faDownload } from "@fortawesome/free-solid-svg-icons";
-import Papa from "papaparse";
+import * as Papa from "papaparse"; // Importación corregida
 import { debounce } from "lodash";
 import {
   BarChart,
@@ -73,7 +73,8 @@ const ClientQuery = () => {
   const [showModal, setShowModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [filters, setFilters] = useState({
-    orderNumber: "",
+    orderId: "", // Nuevo filtro para Número de Orden (id)
+    orderNumber: "", // Filtro para Número de Pedido
     economicNumber: "",
     status: "",
     branch: "",
@@ -95,11 +96,22 @@ const ClientQuery = () => {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
+      // Mapear estado para el backend
+      let statusFilter;
+      if (filters.status === "En Proceso") {
+        statusFilter = ["En Proceso", "Pendiente", "Finalizado"];
+      } else if (filters.status === "Pendiente de Facturación") {
+        statusFilter = ["Pendiente de Facturación"];
+      } else if (filters.status === "Finalizado") {
+        statusFilter = ["Facturado"];
+      }
+
       // Cargar órdenes
       const { orders, totalPages } = await getOrders({
+        orderId: filters.orderId || undefined, // Filtrar por id
         orderNumber: filters.orderNumber || undefined,
         economicNumber: filters.economicNumber || undefined,
-        status: filters.status || undefined,
+        status: statusFilter || undefined,
         branch: filters.branch || undefined,
         startDate: filters.startDate || undefined,
         endDate: filters.endDate || undefined,
@@ -111,7 +123,11 @@ const ClientQuery = () => {
 
       // Cargar estadísticas
       const counts = await getOrderCounts();
-      setStats(counts);
+      setStats({
+        inProcess: counts.inProcess + counts.pending + counts.finalized, // Agrupar
+        pending: counts.pendingBilling,
+        completed: counts.billed,
+      });
     } catch (error) {
       console.error("Error cargando datos:", error);
     } finally {
@@ -155,7 +171,7 @@ const ClientQuery = () => {
 
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
-    if (["orderNumber", "economicNumber"].includes(name)) {
+    if (["orderId", "orderNumber", "economicNumber"].includes(name)) {
       debouncedFilterChange(name, value);
     } else {
       setFilters((prev) => ({ ...prev, [name]: value, page: 1 }));
@@ -184,21 +200,46 @@ const ClientQuery = () => {
 
   // Exportar a CSV
   const handleExportCSV = () => {
-    const csvData = orders.map((order) => ({
-      "Número de Orden": order.order_number || order.id,
-      "Número Económico": order.vehicle_economic_number,
-      Estado: order.status === "Facturado" ? "Orden Finalizada" : order.status,
-      "Fecha de Ingreso": order.created_at,
-      Sucursal: order.vehicle?.branch || "",
-    }));
-    const csv = Papa.unparse(csvData);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.setAttribute("download", "ordenes_vehiculos.csv");
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+      const csvData = orders.map((order) => ({
+        "Número de Orden": order.id,
+        "Número de Pedido": order.order_number || "N/A",
+        "Número Económico": order.vehicle_economic_number,
+        Estado: getStatusDisplay(order.status, filters.status),
+        "Fecha de Ingreso": order.created_at,
+        Sucursal: order.vehicle?.branch || "N/A",
+      }));
+      const csv = Papa.unparse(csvData);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.setAttribute("download", "ordenes_vehiculos.csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error("Error al exportar CSV:", error);
+      // Fallback manual
+      const csvData = orders.map(
+        (order) =>
+          `"${order.id}","${order.order_number || "N/A"}","${
+            order.vehicle_economic_number
+          }","${getStatusDisplay(order.status, filters.status)}","${
+            order.created_at
+          }","${order.vehicle?.branch || "N/A"}"`
+      );
+      const csv = [
+        "Número de Orden,Número de Pedido,Número Económico,Estado,Fecha de Ingreso,Sucursal",
+        ...csvData,
+      ].join("\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.setAttribute("download", "ordenes_vehiculos_fallback.csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
   };
 
   // Mostrar modal con detalles
@@ -217,23 +258,52 @@ const ClientQuery = () => {
 
   const handleCloseModal = () => setShowModal(false);
 
-  // Mapeo de estados
-  const getStatusDisplay = (status) => {
-    if (status === "Facturado") return "Orden Finalizada";
+  // Mapeo de estados según filtro
+  const getStatusDisplay = (status, filterStatus) => {
+    if (
+      filterStatus === "En Proceso" &&
+      ["En Proceso", "Pendiente", "Finalizado"].includes(status)
+    ) {
+      return "En Proceso";
+    }
+    if (
+      filterStatus === "Pendiente de Facturación" &&
+      status === "Pendiente de Facturación"
+    ) {
+      return "Pendiente de Facturación";
+    }
+    if (filterStatus === "Finalizado" && status === "Facturado") {
+      return "Orden Finalizada";
+    }
+    // Sin filtro específico
+    if (["En Proceso", "Pendiente", "Finalizado"].includes(status)) {
+      return "En Proceso";
+    }
+    if (status === "Pendiente de Facturación") {
+      return "Pendiente de Facturación";
+    }
+    if (status === "Facturado") {
+      return "Orden Finalizada";
+    }
     return status;
   };
 
-  const getStatusVariant = (status) => {
-    if (status === "Facturado") return "completed";
-    if (status === "En Proceso") return "inProcess";
-    if (status === "Pendiente de Facturación") return "pending";
+  const getStatusVariant = (status, filterStatus) => {
+    const displayStatus = getStatusDisplay(status, filterStatus);
+    if (displayStatus === "Orden Finalizada") return "completed";
+    if (displayStatus === "En Proceso") return "inProcess";
+    if (displayStatus === "Pendiente de Facturación") return "pending";
     return "";
   };
 
   // Datos para el gráfico
   const chartData = [
     { name: "En Proceso", value: stats.inProcess, fill: colors.yellow },
-    { name: "Pendiente", value: stats.pending, fill: colors.blue },
+    {
+      name: "Pendiente de Facturación",
+      value: stats.pending,
+      fill: colors.blue,
+    },
     { name: "Finalizadas", value: stats.completed, fill: colors.green },
   ];
 
@@ -336,7 +406,7 @@ const ClientQuery = () => {
                 <option value="Pendiente de Facturación">
                   Pendiente de Facturación
                 </option>
-                <option value="Facturado">Orden Finalizada</option>
+                <option value="Finalizado">Orden Finalizada</option>
               </FilterSelect>
             </FilterGroup>
             <FilterGroup>
@@ -396,12 +466,20 @@ const ClientQuery = () => {
                 <thead>
                   <tr>
                     <th
-                      onClick={() => handleSort("order_number")}
+                      onClick={() => handleSort("id")}
                       role="button"
                       tabIndex={0}
                       aria-label="Ordenar por número de orden"
                     >
                       Número de Orden <FontAwesomeIcon icon={faSort} />
+                    </th>
+                    <th
+                      onClick={() => handleSort("order_number")}
+                      role="button"
+                      tabIndex={0}
+                      aria-label="Ordenar por número de pedido"
+                    >
+                      Número de Pedido <FontAwesomeIcon icon={faSort} />
                     </th>
                     <th
                       onClick={() => handleSort("vehicle_economic_number")}
@@ -434,21 +512,25 @@ const ClientQuery = () => {
                 <tbody>
                   {sortedOrders.map((order) => (
                     <tr key={order.id}>
-                      <td>{order.order_number || order.id}</td>
+                      <td>{order.id}</td>
+                      <td>{order.order_number || "N/A"}</td>
                       <td>{order.vehicle_economic_number}</td>
                       <td>
-                        <StatusDiv variant={getStatusVariant(order.status)}>
-                          {getStatusDisplay(order.status)}
+                        <StatusDiv
+                          variant={getStatusVariant(
+                            order.status,
+                            filters.status
+                          )}
+                        >
+                          {getStatusDisplay(order.status, filters.status)}
                         </StatusDiv>
                       </td>
                       <td>{new Date(order.created_at).toLocaleDateString()}</td>
-                      <td>{order.vehicle?.branch || ""}</td>
+                      <td>{order.vehicle?.branch || "N/A"}</td>
                       <td>
                         <CustomButton
                           onClick={() => handleShowModal(order)}
-                          aria-label={`Ver detalles de la orden ${
-                            order.order_number || order.id
-                          }`}
+                          aria-label={`Ver detalles de la orden ${order.id}`}
                         >
                           Ver Detalles
                         </CustomButton>
@@ -457,7 +539,7 @@ const ClientQuery = () => {
                   ))}
                 </tbody>
               </StyledTable>
-              <div className="d-flex justify-content-between mt-3">
+              <div className="d-flex justify-content-between mt-3 w-100">
                 <Button
                   disabled={filters.page === 1}
                   onClick={() =>
@@ -529,12 +611,15 @@ const ClientQuery = () => {
                   </p>
                   <h6>Detalles de la Orden</h6>
                   <p>
-                    <strong>Número de Orden:</strong>{" "}
-                    {selectedOrder.order_number || selectedOrder.id}
+                    <strong>Número de Orden:</strong> {selectedOrder.id}
+                  </p>
+                  <p>
+                    <strong>Número de Pedido:</strong>{" "}
+                    {selectedOrder.order_number || "N/A"}
                   </p>
                   <p>
                     <strong>Estado:</strong>{" "}
-                    {getStatusDisplay(selectedOrder.status)}
+                    {getStatusDisplay(selectedOrder.status, filters.status)}
                   </p>
                   <p>
                     <strong>Fecha de Ingreso:</strong>{" "}
