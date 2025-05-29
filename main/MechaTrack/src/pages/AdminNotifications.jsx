@@ -67,6 +67,8 @@ const AdminNotifications = () => {
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
+    let isMounted = true;
+
     const fetchConversations = async () => {
       try {
         let secretaryId;
@@ -196,7 +198,14 @@ const AdminNotifications = () => {
                 if (!technician) {
                   technician = technicians.find((t) =>
                     orderMessages.some(
-                      (m) => m.from_user_id === t.id || m.to_user_id === t.id
+                      (m) =>
+                        m.from_user_id === (t.id || m.to_user_id) &&
+                        [
+                          "direct_message",
+                          "client_update",
+                          "message",
+                          "part_request",
+                        ].includes(m.type)
                     )
                   );
                 }
@@ -356,7 +365,10 @@ const AdminNotifications = () => {
           ...technicianConversations,
         ];
 
-        setConversations(allConversations);
+        if (isMounted) {
+          setConversations(allConversations);
+        }
+
         if (socket && isConnected) {
           allConversations.forEach((conv) => {
             if (conv.type === "order") {
@@ -377,14 +389,15 @@ const AdminNotifications = () => {
             }
           });
         }
+
         const params = new URLSearchParams(location.search);
         const orderId = params.get("orderId");
-        if (orderId) {
+        if (orderId && isMounted) {
           const conversation = allConversations.find(
             (c) => c.order_id === orderId
           );
           if (conversation) {
-            handleSelectConversation(conversation);
+            await handleSelectConversation(conversation);
           }
         }
       } catch (error) {
@@ -392,15 +405,28 @@ const AdminNotifications = () => {
           "[AdminNotifications] Error al cargar conversaciones:",
           error
         );
-        toast.error("Error al cargar conversaciones");
+        if (isMounted) {
+          toast.error("Error al cargar conversaciones");
+        }
       }
     };
-    if (token) fetchConversations();
-  }, [token, user.id, location.search, socket, isConnected]);
+
+    if (token) {
+      fetchConversations();
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [token, user.id, socket, isConnected]);
 
   useEffect(() => {
+    if (!selectedConversation) return;
+
+    let isMounted = true;
+    let intervalId = null;
+
     const fetchMessages = async () => {
-      if (!selectedConversation) return;
       try {
         console.log(
           "[AdminNotifications] Polling messages for conversation:",
@@ -431,17 +457,22 @@ const AdminNotifications = () => {
             messagesData = [];
           }
         }
+
+        if (!isMounted) return;
+
         messagesData = messagesData.filter((m) =>
           ["direct", "client", "technician"].includes(selectedConversation.type)
             ? m.order_id === null &&
               ["direct_message", "client_update"].includes(m.type)
             : m.order_id === selectedConversation.order_id
         );
+
         setAllMessages(messagesData);
         const filtered = messagesData.filter(
           (m) => !["part_request", "order_creation"].includes(m.type)
         );
         setFilteredMessages(filtered);
+
         const unreadMessages = messagesData.filter(
           (m) =>
             m.status === "Pendiente" &&
@@ -457,6 +488,7 @@ const AdminNotifications = () => {
                 ].includes(m.type)
               : ["direct_message", "client_update"].includes(m.type))
         );
+
         for (const message of unreadMessages) {
           try {
             await axiosInstance.put(`/api/notifications/${message.id}`, {
@@ -474,6 +506,9 @@ const AdminNotifications = () => {
             );
           }
         }
+
+        if (!isMounted) return;
+
         setFilteredMessages((prev) =>
           prev.map((m) =>
             unreadMessages.some((um) => um.id === m.id)
@@ -481,6 +516,7 @@ const AdminNotifications = () => {
               : m
           )
         );
+
         setConversations((prev) =>
           prev.map((c) =>
             c.conversation_id === selectedConversation.conversation_id
@@ -495,8 +531,14 @@ const AdminNotifications = () => {
         );
       }
     };
-    const interval = setInterval(fetchMessages, 5000);
-    return () => clearInterval(interval);
+
+    fetchMessages(); // Ejecutar inmediatamente al montar
+    intervalId = setInterval(fetchMessages, 5000);
+
+    return () => {
+      isMounted = false;
+      if (intervalId) clearInterval(intervalId);
+    };
   }, [selectedConversation, user.id, isConnected]);
 
   const handleSelectConversation = async (conversation) => {
@@ -637,16 +679,19 @@ const AdminNotifications = () => {
     if (!selectedConversation || !notifications.length) {
       console.log(
         "[AdminNotifications] No notifications or selected conversation:",
-        { notifications: notifications.length, selectedConversation }
+        {
+          notifications: notifications.length,
+          selectedConversation,
+        }
       );
       return;
     }
+
     console.log("[AdminNotifications] Nuevas notificaciones:", notifications);
+
     const newMessages = notifications.filter((notif) => {
       if (
-        selectedConversation.type === "direct" ||
-        selectedConversation.type === "client" ||
-        selectedConversation.type === "technician"
+        ["direct", "client", "technician"].includes(selectedConversation.type)
       ) {
         return (
           ["direct_message", "client_update"].includes(notif.type) &&
@@ -664,7 +709,9 @@ const AdminNotifications = () => {
       }
       return false;
     });
+
     console.log("[AdminNotifications] Mensajes filtrados:", newMessages);
+
     if (newMessages.length > 0) {
       setAllMessages((prev) => {
         const updatedAllMessages = [...prev];
@@ -688,6 +735,7 @@ const AdminNotifications = () => {
           (a, b) => new Date(a.created_at) - new Date(b.created_at)
         );
       });
+
       setFilteredMessages((prev) => {
         const updatedFilteredMessages = [...prev];
         newMessages
@@ -714,43 +762,40 @@ const AdminNotifications = () => {
           (a, b) => new Date(a.created_at) - new Date(b.created_at)
         );
       });
-      setConversations((prev) =>
-        prev
-          .map((c) => {
-            const isSelectedConversation =
-              c.order_id === selectedConversation.order_id ||
-              c.orders?.some(
-                (o) => o.order_id === selectedConversation.order_id
-              );
-            if (isSelectedConversation) {
-              return {
-                ...c,
-                last_message_at: new Date(
-                  newMessages[newMessages.length - 1].timestamp
-                ),
-                total_messages:
-                  c.total_messages +
-                  newMessages.filter(
-                    (n) => !["part_request", "order_creation"].includes(n.type)
-                  ).length,
-                unread_messages:
-                  c.unread_messages +
-                  newMessages.filter(
-                    (n) =>
-                      n.toUserId === user.id &&
-                      n.status === "Pendiente" &&
-                      !["part_request", "order_creation"].includes(n.type)
-                  ).length,
-              };
-            }
-            return c;
-          })
-          .sort(
-            (a, b) =>
-              new Date(b.last_message_at || 0) -
-              new Date(a.last_message_at || 0)
-          )
-      );
+
+      setConversations((prev) => {
+        const updatedConversations = prev.map((c) => {
+          const isSelectedConversation =
+            c.order_id === selectedConversation.order_id ||
+            c.orders?.some((o) => o.order_id === selectedConversation.order_id);
+          if (isSelectedConversation) {
+            return {
+              ...c,
+              last_message_at: new Date(
+                newMessages[newMessages.length - 1].timestamp
+              ),
+              total_messages:
+                c.total_messages +
+                newMessages.filter(
+                  (n) => !["part_request", "order_creation"].includes(n.type)
+                ).length,
+              unread_messages:
+                c.unread_messages +
+                newMessages.filter(
+                  (n) =>
+                    n.toUserId === user.id &&
+                    n.status === "Pendiente" &&
+                    !["part_request", "order_creation"].includes(n.type)
+                ).length,
+            };
+          }
+          return c;
+        });
+        return updatedConversations.sort(
+          (a, b) =>
+            new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0)
+        );
+      });
     }
   }, [notifications, selectedConversation, user.id]);
 

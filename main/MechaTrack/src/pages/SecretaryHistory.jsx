@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { Container, Pagination } from "react-bootstrap";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
-import CustomButton from "../components/CustomButton";
 import { useAuth } from "../context/AuthContext";
 import { useSocket } from "../context/SocketContext";
 import { getInvoices } from "../services/invoicesService";

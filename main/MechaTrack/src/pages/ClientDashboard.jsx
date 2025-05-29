@@ -7,6 +7,7 @@ import { mockClientOrders, mockVehicles } from "../data/mock";
 
 const clientMenu = [
   { label: "Inicio", path: "/client" },
+  { label: "Consultas Vehículo", path: "/client/query" },
   { label: "Notificaciones", path: "/client/notifications" },
   { label: "Cerrar Sesión", path: "/" },
 ];

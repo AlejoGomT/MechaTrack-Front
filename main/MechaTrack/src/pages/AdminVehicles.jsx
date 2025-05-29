@@ -126,7 +126,6 @@ const AdminVehicles = () => {
       );
       setShowEditModal(false);
       setSelectedVehicle(null);
-      toast.success("Vehículo actualizado");
       await fetchData(); // Recargar datos para asegurar consistencia
     } catch (error) {
       toast.error(error.message || "Error al actualizar vehículo");

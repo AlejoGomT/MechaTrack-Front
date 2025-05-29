@@ -28,7 +28,8 @@ import { toast } from "react-toastify";
 import { API_URL } from "../services/apiConfig";
 
 const clientMenu = [
-  { label: "Consulta de Estado", path: "/client" },
+  { label: "Inicio", path: "/client" },
+  { label: "Consultas Vehículo", path: "/client/query" },
   { label: "Notificaciones", path: "/client/notifications" },
   { label: "Cerrar Sesión", path: "/" },
 ];
