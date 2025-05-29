@@ -4,7 +4,8 @@ import { faPlus } from "@fortawesome/free-solid-svg-icons";
 import { toast } from "react-toastify";
 import PartsModal from "./PartsModal";
 import { CustomButton } from "../styles/GlobalStyles";
-import { getOrderById, getParts } from "../services/orderService";
+import { getParts } from "../services/partService";
+import { getOrderById } from "../services/orderService";
 
 const AddPartButton = ({
   orderId,
@@ -46,9 +47,8 @@ const AddPartButton = ({
         }
 
         // Obtener repuestos disponibles basados en el modelo
-        console.log("Obteniendo repuestos para el modelo:", model);
-        const partsData = await getParts(model);
-        console.log("Repuestos recibidos:", partsData);
+        const partsResponse = await getParts(model);
+        const partsData = partsResponse.parts || [];
         if (!Array.isArray(partsData) || partsData.length === 0) {
           throw new Error(
             "No se encontraron repuestos para el modelo del vehículo"

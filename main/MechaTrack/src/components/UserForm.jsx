@@ -78,7 +78,12 @@ const UserForm = ({ initialData = {}, onSubmit, onCancel, isEdit = false }) => {
       </Form.Group>
       <Form.Group as={Col} className="mb-3">
         <Form.Label>Rol</Form.Label>
-        <Form.Select name="role" value={formData.role} onChange={handleChange}>
+        <Form.Select
+          name="role"
+          value={formData.role}
+          onChange={handleChange}
+          disabled={formData.role === "admin"}
+        >
           <option value="technician">Técnico</option>
           <option value="secretary">Secretario</option>
           <option value="client">Cliente</option>

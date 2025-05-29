@@ -15,6 +15,7 @@ import {
   ModalBody,
   StyledTable,
   ActionsContainer,
+  TableWrapper,
 } from "../styles/GlobalStyles";
 import styled from "@emotion/styled";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -23,21 +24,29 @@ import {
   faCheck,
   faTimes,
   faEye,
+  faHistory,
 } from "@fortawesome/free-solid-svg-icons";
 import { library } from "@fortawesome/fontawesome-svg-core";
 import { toast } from "react-toastify";
+import {
+  requestPart,
+  updatePartAdmin,
+  processPartReturn,
+} from "../services/partService";
 import {
   getOrders,
   getOrderById,
   updateOrderNumbers,
   updateOrderStatus,
-  updateOrder,
-  updatePartQuantity,
-  requestPart,
-  updatePartAdmin,
+  finalizeOrder,
 } from "../services/orderService";
+import {
+  updateAdminOrder,
+  deleteAdminPart,
+} from "../services/adminOrderService";
+import { downloadOrderReportPdf } from "../services/reportService";
 
-library.add(faCircle, faCheck, faTimes, faEye);
+library.add(faCircle, faCheck, faTimes, faEye, faHistory);
 
 const adminMenu = [
   { label: "Inicio", path: "../admin" },
@@ -79,6 +88,13 @@ const ActionSection = styled.div`
   border-radius: 5px;
 `;
 
+const HeaderContainer = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+`;
+
 const AdminOrders = () => {
   const { user, token } = useAuth();
   const [branchFilter, setBranchFilter] = useState("");
@@ -87,6 +103,7 @@ const AdminOrders = () => {
   const [orderNumberFilter, setOrderNumberFilter] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [rejectionNote, setRejectionNote] = useState("");
@@ -97,6 +114,7 @@ const AdminOrders = () => {
   const [orderNumber, setOrderNumber] = useState("");
   const [deliveryNoteNumber, setDeliveryNoteNumber] = useState("");
   const [isEditingNumbers, setIsEditingNumbers] = useState(false);
+  const isAdmin = user?.role === "admin";
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 15,
@@ -173,53 +191,76 @@ const AdminOrders = () => {
     }
   };
 
-  const handlePartAction = async (partIndex, action, note) => {
-    const part = editedParts[partIndex];
+  const handlePartAction = async (partId, action, note) => {
+    const part = editedParts.find((p) => p.part_id === partId);
+    if (!part) {
+      toast.error("Repuesto no encontrado");
+      return;
+    }
     try {
-      const status = action === "accept" ? "Aprobado" : "Rechazado";
-      const authorizedBy =
-        action === "accept" ? `${user.first_name} ${user.last_name}` : null;
-      await updatePartAdmin(
-        selectedOrder.id,
-        part.part_id,
-        {
-          quantity: part.quantity,
-          status,
-          price: part.price || null,
-          note: action === "reject" ? note : "",
-        },
-        authorizedBy
-      );
-      const updatedOrder = await getOrderById(selectedOrder.id);
-      setSelectedOrder(updatedOrder);
-      setEditedParts(updatedOrder.parts || []);
-      toast.success(
-        `Repuesto ${part.name} ${
-          action === "accept" ? "aprobado" : "rechazado"
-        }`
-      );
+      if (action === "acceptReturn" || action === "rejectReturn") {
+        const status =
+          action === "acceptReturn"
+            ? "Devolución Aprobada"
+            : "Devolución Rechazada";
+        await processPartReturn(selectedOrder.id, partId, status, note || "");
+        const updatedOrder = await getOrderById(selectedOrder.id);
+        setSelectedOrder(updatedOrder);
+        setEditedParts(updatedOrder.parts || []);
+        toast.success(
+          `Devolución de ${part.name} ${
+            action === "acceptReturn" ? "aprobada" : "rechazada"
+          }`
+        );
+      } else {
+        const status = action === "accept" ? "Aprobado" : "Rechazado";
+        if (action === "reject" && (!note || note.trim().length < 5)) {
+          toast.error("El motivo de rechazo debe tener al menos 5 caracteres");
+          return;
+        }
+        await updatePartAdmin(
+          selectedOrder.id,
+          part.part_id,
+          {
+            quantity: part.quantity,
+            status,
+            price: part.price || null,
+            note: action === "reject" ? note : "",
+          },
+          user.id
+        );
+        const updatedOrder = await getOrderById(selectedOrder.id);
+        setSelectedOrder(updatedOrder);
+        setEditedParts(updatedOrder.parts || []);
+        toast.success(
+          `Repuesto ${part.name} ${
+            action === "accept" ? "aprobado" : "rechazado"
+          }`
+        );
+      }
     } catch (error) {
-      toast.error("Error al procesar repuesto");
+      toast.error(error.message || "Error al procesar repuesto");
       console.error("[AdminOrders] Error al procesar repuesto:", error);
     }
   };
 
-  const handleEditPart = (index, field, value) => {
-    const updatedParts = [...editedParts];
-    updatedParts[index] = { ...updatedParts[index], [field]: value };
+  const handleEditPartById = (partId, updates) => {
+    const updatedParts = editedParts.map((part) =>
+      part.part_id === partId ? { ...part, ...updates } : part
+    );
     setEditedParts(updatedParts);
   };
 
-  const handleDeletePart = async (index) => {
-    const part = editedParts[index];
+  const handleDeletePart = async (partId) => {
     try {
-      await updatePartQuantity(selectedOrder.id, part.part_id, 0);
-      const updatedParts = editedParts.filter((_, i) => i !== index);
-      setEditedParts(updatedParts);
-      toast.success(`Repuesto ${part.name} eliminado`);
+      await deleteAdminPart(selectedOrder.id, partId, user.id);
+      setEditedParts(editedParts.filter((part) => part.part_id !== partId));
+      toast.success("Repuesto eliminado");
     } catch (error) {
-      toast.error("Error al eliminar repuesto");
       console.error("[AdminOrders] Error al eliminar repuesto:", error);
+      toast.error(
+        error.message || error.details || "Error al eliminar repuesto"
+      );
     }
   };
 
@@ -235,28 +276,147 @@ const AdminOrders = () => {
   };
 
   const handleEditOrderField = (field, value) => {
-    setEditedOrder({ ...editedOrder, [field]: value });
+    if (field === "parts") {
+      setEditedParts(value);
+    } else if (typeof field === "string" && typeof value === "object") {
+      handleEditPartById(field, value);
+    } else {
+      setEditedOrder({ ...editedOrder, [field]: value });
+    }
   };
 
   const saveEditedOrder = async () => {
     try {
-      await updateOrder(selectedOrder.id, {
-        ...editedOrder,
-        parts: editedParts,
-      });
-      const updatedOrder = await getOrderById(selectedOrder.id);
-      setSelectedOrder(updatedOrder);
-      setEditedOrder(updatedOrder);
-      setEditedParts(updatedOrder.parts || []);
-      toast.success("Orden actualizada");
+      if (isAdmin && selectedOrder.status === "Finalizado") {
+        if (!editedOrder.type || !editedOrder.description) {
+          toast.error("Tipo y descripción son obligatorios");
+          return;
+        }
+        const refreshedOrder = await getOrderById(selectedOrder.id);
+        const updatedParts = refreshedOrder.parts.map((part) => {
+          const editedPart = editedParts.find(
+            (p) => p.part_id === part.part_id
+          );
+          return editedPart
+            ? {
+                ...part,
+                quantity: Number(editedPart.quantity),
+                price: editedPart.price ? Number(editedPart.price) : null,
+                status: editedPart.status || "Aprobado",
+                requested_by:
+                  editedPart.requested_by_id || editedPart.requested_by,
+                authorized_by:
+                  editedPart.authorized_by_id ||
+                  editedPart.authorized_by ||
+                  null,
+              }
+            : part;
+        });
+
+        const response = await updateAdminOrder(selectedOrder.id, {
+          ...editedOrder,
+          parts: updatedParts,
+          existingImages: editedOrder.images || [],
+          vehicle_economic_number: editedOrder.vehicle_economic_number,
+          plate: editedOrder.plate,
+          brand: editedOrder.brand,
+          model: editedOrder.model,
+          year: editedOrder.year,
+          branch: editedOrder.branch,
+          mileage: editedOrder.mileage,
+        });
+
+        console.log("[AdminOrders] Respuesta de updateAdminOrder:", {
+          response,
+          vehicleData: {
+            vehicle_economic_number: response.vehicle_economic_number,
+            plate: response.plate,
+            brand: response.brand,
+            model: response.model,
+            year: response.year,
+            branch: response.branch,
+            mileage: response.mileage,
+          },
+        });
+
+        // Refrescar nuevamente después de guardar
+        const finalOrder = await getOrderById(selectedOrder.id);
+        console.log("[AdminOrders] Orden refrescada después de guardar:", {
+          finalOrder,
+          vehicleData: {
+            vehicle_economic_number: finalOrder.vehicle_economic_number,
+            plate: finalOrder.plate,
+            brand: finalOrder.brand,
+            model: finalOrder.model,
+            year: finalOrder.year,
+            branch: finalOrder.branch,
+            mileage: finalOrder.mileage,
+          },
+        });
+
+        setSelectedOrder(finalOrder);
+        setEditedOrder(finalOrder);
+        setEditedParts(
+          finalOrder.parts.map((part) => ({
+            ...part,
+            requested_by_id: part.requested_by_id,
+            requested_by: part.requested_by,
+            authorized_by_id: part.authorized_by_id,
+            authorized_by: part.authorized_by,
+          }))
+        );
+        setOrders((prev) =>
+          prev.map((o) => (o.id === finalOrder.id ? finalOrder : o))
+        );
+        toast.success("Orden actualizada");
+      } else {
+        const response = await getOrderById(selectedOrder.id);
+        console.log("[AdminOrders] Orden refrescada:", {
+          response,
+          vehicleData: {
+            vehicle_economic_number: response.vehicle_economic_number,
+            plate: response.plate,
+            brand: response.brand,
+            model: response.model,
+            year: response.year,
+            branch: response.branch,
+            mileage: response.mileage,
+          },
+        });
+        setSelectedOrder(response);
+        setEditedOrder(response);
+        setEditedParts(
+          response.parts.map((part) => ({
+            ...part,
+            requested_by_id: part.requested_by_id,
+            authorized_by_id: part.authorized_by_id,
+          }))
+        );
+        setOrders((prev) =>
+          prev.map((o) => (o.id === response.id ? response : o))
+        );
+        toast.success("Orden refrescada");
+      }
     } catch (error) {
-      toast.error("Error al guardar orden");
+      toast.error(error.message || error.details || "Error al guardar orden");
       console.error("[AdminOrders] Error al guardar orden:", error);
     }
   };
 
   const handleFinalizeAction = async (action) => {
     try {
+      if (action === "accept") {
+        const pendingParts = editedParts.filter(
+          (part) => part.status === "Solicitado"
+        );
+        if (pendingParts.length > 0) {
+          toast.error(
+            "No se puede aceptar la orden con repuestos pendientes. Por favor, apruebe o rechace todos los repuestos."
+          );
+          return;
+        }
+      }
+
       const newStatus = action === "accept" ? "Finalizado" : "En Proceso";
       await finalizeOrder(selectedOrder.id, {
         action,
@@ -280,7 +440,7 @@ const AdminOrders = () => {
         setShowModal(false);
       }
     } catch (error) {
-      toast.error("Error al procesar finalización");
+      toast.error(error.message || "Error al procesar finalización");
       console.error("[AdminOrders] Error al procesar finalización:", error);
     }
   };
@@ -307,6 +467,7 @@ const AdminOrders = () => {
   const handleSendToBilling = () => {
     setConfirmAction(() => async () => {
       try {
+        await saveEditedOrder();
         await updateOrderStatus(selectedOrder.id, "Pendiente de Facturación");
         const updatedOrder = await getOrderById(selectedOrder.id);
         setSelectedOrder(updatedOrder);
@@ -344,31 +505,44 @@ const AdminOrders = () => {
     setShowConfirmModal(true);
   };
 
-  const handleDownloadReport = () => {
-    const report = {
-      order: selectedOrder,
-      invoice: selectedOrder.invoice,
-      parts: editedParts,
-      total: editedParts
-        .reduce((sum, part) => sum + part.quantity * (part.price || 0), 0)
-        .toFixed(2),
-    };
-    const blob = new Blob([JSON.stringify(report, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `order_${selectedOrder.id}_report.json`;
-    link.click();
-    URL.revokeObjectURL(url);
-    toast.success("Informe descargado");
+  const handleDownloadReport = async () => {
+    try {
+      await downloadOrderReportPdf(selectedOrder.id);
+      toast.success("Informe PDF descargado");
+    } catch (error) {
+      console.error("[AdminOrders] Error al descargar informe PDF:", error);
+      if (
+        error.response?.data instanceof Blob &&
+        error.response.data.type === "application/json"
+      ) {
+        const text = await error.response.data.text();
+        const errorData = JSON.parse(text);
+        console.error("[AdminOrders] Detalles del error:", errorData);
+        toast.error(errorData.message || "Error al descargar el informe PDF");
+      } else {
+        toast.error(error.message || "Error al descargar el informe PDF");
+      }
+    }
   };
 
   const handlePageChange = (newPage) => {
     if (newPage >= 1 && newPage <= pagination.totalPages) {
       setPagination({ ...pagination, page: newPage });
     }
+  };
+
+  // Función para formatear fechas
+  const formatDate = (dateString) => {
+    if (!dateString) return "-";
+    const date = new Date(dateString);
+    return date.toLocaleString("es-MX", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
   };
 
   const userData = {
@@ -441,46 +615,48 @@ const AdminOrders = () => {
               />
             </FilterGroup>
           </FiltersContainer>
-          <StyledTable>
-            <thead>
-              <tr>
-                <th>Número Económico</th>
-                <th>Número de Orden</th>
-                <th>Sucursal</th>
-                <th>Estado</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders
-                .filter((order) =>
-                  branchFilter ? order.branch === branchFilter : true
-                )
-                .map((order) => (
-                  <tr key={order.id}>
-                    <td>{order.vehicle_economic_number}</td>
-                    <td>{order.id}</td>
-                    <td>{order.branch || "-"}</td>
-                    <td>
-                      <StatusIcon status={order.status}>
-                        <FontAwesomeIcon icon={faCircle} />
-                      </StatusIcon>
-                      {order.status}
-                    </td>
-                    <td className="actions">
-                      <ActionsContainer>
-                        <CustomButton
-                          onClick={() => handleViewDetails(order)}
-                          title="Ver Detalles"
-                        >
-                          <FontAwesomeIcon icon={faEye} />
-                        </CustomButton>
-                      </ActionsContainer>
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </StyledTable>
+          <TableWrapper>
+            <StyledTable>
+              <thead>
+                <tr>
+                  <th>Número Económico</th>
+                  <th>Número de Orden</th>
+                  <th>Sucursal</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {orders
+                  .filter((order) =>
+                    branchFilter ? order.branch === branchFilter : true
+                  )
+                  .map((order) => (
+                    <tr key={order.id}>
+                      <td>{order.vehicle_economic_number}</td>
+                      <td>{order.id}</td>
+                      <td>{order.branch || "-"}</td>
+                      <td>
+                        <StatusIcon status={order.status}>
+                          <FontAwesomeIcon icon={faCircle} />
+                        </StatusIcon>
+                        {order.status}
+                      </td>
+                      <td className="actions">
+                        <ActionsContainer>
+                          <CustomButton
+                            onClick={() => handleViewDetails(order)}
+                            title="Ver Detalles"
+                          >
+                            <FontAwesomeIcon icon={faEye} />
+                          </CustomButton>
+                        </ActionsContainer>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </StyledTable>
+          </TableWrapper>
           <Pagination>
             <Pagination.Prev
               onClick={() => handlePageChange(pagination.page - 1)}
@@ -510,7 +686,21 @@ const AdminOrders = () => {
         centered
       >
         <Modal.Header closeButton>
-          <Modal.Title>Detalles de la Orden #{selectedOrder?.id}</Modal.Title>
+          <HeaderContainer>
+            <Modal.Title>Detalles de la Orden #{selectedOrder?.id}</Modal.Title>
+            {selectedOrder?.notifications?.length > 0 && (
+              <CustomButton
+                onClick={() => {
+                  setShowModal(false);
+                  setShowHistoryModal(true);
+                }}
+                title="Ver Historial de Notificaciones"
+                style={{ marginLeft: "10px", color: "white" }}
+              >
+                <FontAwesomeIcon icon={faHistory} /> Historial
+              </CustomButton>
+            )}
+          </HeaderContainer>
         </Modal.Header>
         <ModalBody>
           {selectedOrder && (
@@ -584,6 +774,7 @@ const AdminOrders = () => {
 
               <OrderDetails
                 order={editedOrder}
+                setOrder={setEditedOrder}
                 isReadOnly={isReadOnly}
                 onPartAction={handlePartAction}
                 onEditPart={handleEditOrderField}
@@ -593,13 +784,26 @@ const AdminOrders = () => {
                 setEditedParts={setEditedParts}
                 canEditParts={canEditParts}
                 userId={user.id}
+                isAdmin={user?.role === "admin"}
               />
 
               {selectedOrder.status === "Pendiente" && (
                 <ActionSection>
                   <h6>Revisión de Finalización</h6>
-                  <Row className="mt-3">
-                    <Col>
+                  <div className="d-flex justify-content-around">
+                    <Form.Group className="mt-2" style={{ width: "60%" }}>
+                      <FilterLabel>
+                        Observaciones (obligatorio para rechazar)
+                      </FilterLabel>
+                      <FilterInput
+                        as="textarea"
+                        rows={2}
+                        value={rejectionNote}
+                        onChange={(e) => setRejectionNote(e.target.value)}
+                        placeholder="Motivo del rechazo"
+                      />
+                    </Form.Group>
+                    <div className="d-flex flex-column justify-content-around">
                       <CustomButton
                         variant="success"
                         onClick={() => handleFinalizeAction("accept")}
@@ -615,20 +819,8 @@ const AdminOrders = () => {
                       >
                         <FontAwesomeIcon icon={faTimes} /> Rechazar Finalización
                       </CustomButton>
-                    </Col>
-                  </Row>
-                  <Form.Group className="mt-2">
-                    <FilterLabel>
-                      Observaciones (obligatorio para rechazar)
-                    </FilterLabel>
-                    <FilterInput
-                      as="textarea"
-                      rows={2}
-                      value={rejectionNote}
-                      onChange={(e) => setRejectionNote(e.target.value)}
-                      placeholder="Motivo del rechazo"
-                    />
-                  </Form.Group>
+                    </div>
+                  </div>
                 </ActionSection>
               )}
 
@@ -647,7 +839,7 @@ const AdminOrders = () => {
                       variant="success"
                       onClick={handleSendToBilling}
                     >
-                      Enviar a Facturación
+                      Guardar y Enviar a Facturación
                     </CustomButton>
                   </ActionsContainer>
                 </ActionSection>
@@ -655,22 +847,30 @@ const AdminOrders = () => {
 
               {selectedOrder.status === "Pendiente de Facturación" && (
                 <ActionSection>
-                  <h6>Acciones</h6>
-                  <CustomButton variant="danger" onClick={handleCancelBilling}>
-                    Cancelar Solicitud de Facturación
-                  </CustomButton>
+                  <div className="d-flex justify-content-around align-items-center">
+                    <h6>Acciones</h6>
+                    <CustomButton
+                      variant="danger"
+                      onClick={handleCancelBilling}
+                      className="w-25"
+                    >
+                      Cancelar Solicitud de Facturación
+                    </CustomButton>
+                  </div>
                 </ActionSection>
               )}
 
               {selectedOrder.status === "Facturado" && (
                 <ActionSection>
-                  <h6>Acciones</h6>
-                  <CustomButton
-                    variant="primary"
-                    onClick={handleDownloadReport}
-                  >
-                    Descargar Informe
-                  </CustomButton>
+                  <div className="d-flex justify-content-around align-items-center">
+                    <h6>Acciones</h6>
+                    <CustomButton
+                      variant="primary"
+                      onClick={handleDownloadReport}
+                    >
+                      Descargar Informe
+                    </CustomButton>
+                  </div>
                 </ActionSection>
               )}
             </>
@@ -684,6 +884,73 @@ const AdminOrders = () => {
       </StyledModal>
 
       <StyledModal
+        show={showHistoryModal}
+        onHide={() => {
+          setShowHistoryModal(false);
+          setShowModal(true);
+        }}
+        size="lg"
+        centered
+      >
+        <Modal.Header closeButton>
+          <Modal.Title>
+            Historial de Notificaciones - Orden #{selectedOrder?.id}
+          </Modal.Title>
+        </Modal.Header>
+        <ModalBody>
+          {selectedOrder?.notifications?.length > 0 ? (
+            <StyledTable>
+              <thead>
+                <tr>
+                  <th>Mensaje</th>
+                  <th>Fecha de Creación</th>
+                  <th>Detalles</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedOrder.notifications.map((notification) => (
+                  <tr key={notification.id}>
+                    <td className="text-wrap">{notification.message || "-"}</td>
+                    <td>{formatDate(notification.created_at)}</td>
+                    <td>
+                      {notification.details ? (
+                        <ul style={{ margin: 0, paddingLeft: "20px" }}>
+                          {notification.details.vehicle_economic_number && (
+                            <li>
+                              Número Económico:{" "}
+                              {notification.details.vehicle_economic_number}
+                            </li>
+                          )}
+                          {notification.details.branch && (
+                            <li>Sucursal: {notification.details.branch}</li>
+                          )}
+                        </ul>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </StyledTable>
+          ) : (
+            <p>No hay notificaciones para esta orden.</p>
+          )}
+        </ModalBody>
+        <Modal.Footer>
+          <CustomButton
+            onClick={() => {
+              setShowHistoryModal(false);
+              setShowModal(true);
+            }}
+          >
+            Cerrar
+          </CustomButton>
+        </Modal.Footer>
+      </StyledModal>
+
+      <StyledModal
+        variant="alertModal"
         show={showConfirmModal}
         onHide={() => setShowConfirmModal(false)}
         size="sm"

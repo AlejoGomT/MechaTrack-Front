@@ -2,13 +2,14 @@ import { useState, useEffect, useCallback } from "react";
 import { Button, Modal, Table, InputGroup, Form } from "react-bootstrap";
 import { toast } from "react-toastify";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faTrash } from "@fortawesome/free-solid-svg-icons";
+import { faTrash, faUndo } from "@fortawesome/free-solid-svg-icons";
+import { getOrderById } from "../services/orderService";
 import {
-  getOrderById,
   requestPart,
   updatePartQuantity,
   requestPartReturn,
-} from "../services/orderService";
+} from "../services/partService";
+import { addAdminPart } from "../services/adminOrderService";
 import {
   TableWrapper,
   StyledTableModal,
@@ -16,6 +17,7 @@ import {
   ModalBody,
   ActionButton,
   ActionsContainer,
+  colors,
 } from "../styles/GlobalStyles";
 
 const PartsModal = ({
@@ -65,6 +67,7 @@ const PartsModal = ({
         setPartsList(orderParts);
       }
     } catch (err) {
+      console.error("[PartsModal] Error al cargar repuestos:", err);
       toast.error("Error al cargar repuestos de la orden");
     } finally {
       setIsLoading(false);
@@ -110,49 +113,66 @@ const PartsModal = ({
       }
 
       let updatedList;
-      const existingPartIndex = localPartsList.findIndex(
-        (p) => p.part_id === part.id
-      );
-      if (existingPartIndex !== -1) {
-        updatedList = localPartsList.map((p, i) =>
-          i === existingPartIndex
-            ? { ...p, quantity: p.quantity + quantity }
-            : p
-        );
-        if (orderId) {
-          await updatePartQuantity(
-            orderId,
-            part.id,
-            updatedList[existingPartIndex].quantity
+      const existingPart = localPartsList.find((p) => p.part_id === part.id);
+
+      if (isFinalized) {
+        // Administrador en orden finalizada: usar addAdminPart
+        const partData = {
+          part_id: part.id,
+          quantity,
+          price: part.price,
+        };
+        console.log("[PartsModal] Enviando a addAdminPart:", partData);
+        const response = await addAdminPart(orderId, partData);
+        const newPart = response.part;
+
+        if (existingPart) {
+          // Actualizar cantidad si el repuesto ya existe
+          updatedList = localPartsList.map((p) =>
+            p.part_id === part.id
+              ? { ...p, quantity: p.quantity + quantity }
+              : p
           );
+        } else {
+          updatedList = [...localPartsList, newPart];
         }
       } else {
-        const newPart = {
-          part_id: part.id,
-          name: part.name,
-          quantity,
-          status: isFinalized ? "Aprobado" : "Solicitado",
-          requested_by: String(userId),
-          authorized_by: isFinalized ? String(userId) : null,
-        };
-        updatedList = [...localPartsList, newPart];
-        if (orderId) {
-          await requestPart(orderId, newPart);
+        // Técnico en orden no finalizada: usar requestPart
+        if (existingPart) {
+          const newQuantity = existingPart.quantity + quantity;
+          updatedList = localPartsList.map((p) =>
+            p.part_id === part.id ? { ...p, quantity: newQuantity } : p
+          );
+          if (orderId) {
+            await updatePartQuantity(orderId, part.id, newQuantity);
+          }
+        } else {
+          const newPart = {
+            part_id: part.id,
+            name: part.name,
+            quantity,
+            price: part.price,
+            status: "Solicitado",
+            requested_by: String(userId),
+            authorized_by: null,
+          };
+          updatedList = [...localPartsList, newPart];
+          if (orderId) {
+            await requestPart(orderId, newPart);
+          }
         }
       }
 
       setLocalPartsList(updatedList);
       setPartsList(updatedList);
-
       toast.success(
         `Repuesto ${part.name} ${isFinalized ? "añadido" : "solicitado"}`
       );
-
       setShowPartsModal(false);
       setSelectedPartQuantities((prev) => ({ ...prev, [part.id]: 1 }));
     } catch (err) {
-      console.error("Error en handleRequestPart:", err);
-      toast.error(err.message || "Error al solicitar repuesto");
+      console.error("[PartsModal] Error en handleRequestPart:", err);
+      toast.error(err.message || "Error al añadir/solicitar repuesto");
     }
   };
 
@@ -167,8 +187,10 @@ const PartsModal = ({
     try {
       const part = localPartsList[partIndex];
       console.log("[PartsModal] Actualizando cantidad:", { part, newQuantity });
-      if (part.status !== "Solicitado") {
-        toast.error("Solo se pueden editar repuestos en estado Solicitado");
+      if (part.status !== "Solicitado" && part.status !== "Rechazado") {
+        toast.error(
+          "Solo se pueden editar repuestos en estado Solicitado o Rechazado"
+        );
         return;
       }
       const availablePart = availableParts.find((p) => p.id === part.part_id);
@@ -183,12 +205,7 @@ const PartsModal = ({
       let updatedPartsList;
       if (newQuantity === 0) {
         if (orderId) {
-          const response = await updatePartQuantity(orderId, part.part_id, 0);
-          if (!response.deleted) {
-            throw new Error(
-              "El backend no confirmó la eliminación del repuesto"
-            );
-          }
+          await updatePartQuantity(orderId, part.part_id, 0);
           const updatedOrder = await getOrderById(orderId);
           updatedPartsList = updatedOrder.parts || [];
         } else {
@@ -207,10 +224,6 @@ const PartsModal = ({
       }
       setLocalPartsList(updatedPartsList);
       setPartsList(updatedPartsList);
-      console.log(
-        "[PartsModal] partsList después de actualizar:",
-        updatedPartsList
-      );
       toast.success(
         newQuantity === 0
           ? `Repuesto ${part.name} eliminado`
@@ -225,8 +238,13 @@ const PartsModal = ({
   const handleRequestPartReturn = async (partIndex) => {
     try {
       const part = localPartsList[partIndex];
-      if (part.status !== "Aprobado") {
-        toast.error("Solo se pueden devolver repuestos aprobados");
+      if (
+        part.status !== "Aprobado" &&
+        part.status !== "Devolución Rechazada"
+      ) {
+        toast.error(
+          "Solo se pueden devolver repuestos aprobados o con devolución rechazada"
+        );
         return;
       }
       if (!orderId) {
@@ -239,13 +257,9 @@ const PartsModal = ({
       );
       setLocalPartsList(updatedPartsList);
       setPartsList(updatedPartsList);
-      console.log(
-        "partsList después de solicitar devolución:",
-        updatedPartsList
-      );
       toast.success(`Solicitud de devolución enviada para ${part.name}`);
     } catch (err) {
-      console.error("Error en handleRequestPartReturn:", err);
+      console.error("[PartsModal] Error en handleRequestPartReturn:", err);
       toast.error(err.message || "Error al solicitar devolución");
     }
   };
@@ -283,8 +297,8 @@ const PartsModal = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredAvailableParts.map((part) => (
-                    <tr key={part.id}>
+                  {filteredAvailableParts.map((part, index) => (
+                    <tr key={`${part.id}-${index}`}>
                       <td>{part.id}</td>
                       <td>{part.name}</td>
                       <td>{part.compatible_models?.join(", ") || "N/A"}</td>
@@ -299,7 +313,7 @@ const PartsModal = ({
                             onChange={(e) =>
                               handleQuantityChange(part.id, e.target.value)
                             }
-                            disabled={part.quantity === 0}
+                            disabled={part.quantity === 0 || isReadOnly}
                           />
                         </InputGroup>
                       </td>
@@ -309,7 +323,7 @@ const PartsModal = ({
                             variant="primary"
                             size="sm"
                             onClick={() => handleRequestPart(part)}
-                            disabled={part.quantity === 0}
+                            disabled={part.quantity === 0 || isReadOnly}
                           >
                             {isFinalized ? "Añadir" : "Solicitar"}
                           </ActionButton>
@@ -362,7 +376,7 @@ const PartsModal = ({
                     {Array.isArray(localPartsList) &&
                     localPartsList.length > 0 ? (
                       localPartsList.map((part, index) => (
-                        <tr key={index}>
+                        <tr key={`${part.part_id}-${index}`}>
                           <td>{part.name || "Desconocido"}</td>
                           <td>{part.part_id}</td>
                           <td>
@@ -395,32 +409,47 @@ const PartsModal = ({
                             )}
                           </td>
                           <td>
-                            {part.status === "Devolución Aprobada"
-                              ? "Eliminado (Devolución Aprobada)"
-                              : part.status}
+                            {part.status === "Devolución Rechazada" ? (
+                              <>
+                                {part.status} <br />
+                                Estado Actual:{" "}
+                                <strong style={{ color: "#66CD66" }}>
+                                  Aprobado
+                                </strong>
+                              </>
+                            ) : (
+                              part.status
+                            )}
                           </td>
                           <td>
                             <ActionsContainer>
-                              {part.status === "Solicitado" && !isReadOnly && (
-                                <ActionButton
-                                  variant="danger"
-                                  size="sm"
-                                  onClick={() =>
-                                    handleUpdatePartQuantity(index, 0)
-                                  }
-                                >
-                                  <FontAwesomeIcon icon={faTrash} />
-                                </ActionButton>
-                              )}
-                              {part.status === "Aprobado" && !isReadOnly && (
-                                <ActionButton
-                                  variant="warning"
-                                  size="sm"
-                                  onClick={() => handleRequestPartReturn(index)}
-                                >
-                                  Solicitar Devolución
-                                </ActionButton>
-                              )}
+                              {(part.status === "Solicitado" ||
+                                part.status === "Rechazado") &&
+                                !isReadOnly && (
+                                  <ActionButton
+                                    variant="danger"
+                                    size="sm"
+                                    onClick={() =>
+                                      handleUpdatePartQuantity(index, 0)
+                                    }
+                                  >
+                                    <FontAwesomeIcon icon={faTrash} />
+                                  </ActionButton>
+                                )}
+                              {(part.status === "Aprobado" ||
+                                part.status === "Devolución Rechazada") &&
+                                !isReadOnly && (
+                                  <ActionButton
+                                    variant="warning"
+                                    size="sm"
+                                    onClick={() =>
+                                      handleRequestPartReturn(index)
+                                    }
+                                    title="Solicitar Devolución"
+                                  >
+                                    <FontAwesomeIcon icon={faUndo} />
+                                  </ActionButton>
+                                )}
                             </ActionsContainer>
                           </td>
                         </tr>

@@ -6,15 +6,15 @@ import DashboardHeader from "../components/DashboardHeader";
 import CustomButton from "../components/CustomButton";
 import PartsModal from "../components/PartsModal";
 import OrderImagesModal from "../components/OrderImagesModal";
+import { API_URL } from "../services/apiConfig";
+import { getVehicles } from "../services/vehicleService";
+import { getParts } from "../services/partService";
 import {
   createOrder,
-  getVehicles,
-  getParts,
   updateOrder,
   getOrders,
   getOrderById,
   deleteOrderImage,
-  API_URL,
 } from "../services/orderService";
 import {
   MainContainer,
@@ -69,7 +69,7 @@ const StatusIndicator = styled.span`
       case "Solicitado":
         return "#ffc107";
       default:
-        return "#6c757d";
+        return "#ff6961";
     }
   }};
 `;
@@ -175,10 +175,6 @@ const OrderForm = memo(
       const fetchVehicles = async () => {
         try {
           const data = await getVehicles({ limit: 1000 });
-          console.log(
-            "[TechnicianCreateOrder] Respuesta de getVehicles:",
-            data
-          );
 
           const vehiclesData = Array.isArray(data.vehicles)
             ? data.vehicles
@@ -287,10 +283,6 @@ const OrderForm = memo(
                 branch: vehicle.branch,
                 limit: 1000,
               });
-              console.log(
-                "[TechnicianCreateOrder] Respuesta de getOrders para historial:",
-                historyData
-              );
 
               if (!Array.isArray(historyData.orders)) {
                 console.error(
@@ -319,20 +311,11 @@ const OrderForm = memo(
             }
             try {
               const partsData = await getParts(vehicle.model, 1, 1000);
-              console.log(
-                "[TechnicianCreateOrder] Respuesta de getParts:",
-                partsData
-              );
-
               const partsArray = Array.isArray(partsData.parts)
                 ? partsData.parts
                 : [];
               setParts(partsArray);
             } catch (err) {
-              console.error(
-                "[TechnicianCreateOrder] Error al cargar repuestos:",
-                err
-              );
               toast.error(err.message || "Error al cargar repuestos");
               setParts([]);
             }
@@ -504,7 +487,12 @@ const OrderForm = memo(
       (v) => v.branch === formData.branch
     );
     const requestedParts = formData.partsList.filter(
-      (part) => part.status === "Aprobado" || part.status === "Solicitado"
+      (part) =>
+        part.status === "Aprobado" ||
+        part.status === "Solicitado" ||
+        part.status === "Rechazado" ||
+        part.status === "Devolución Solicitada" ||
+        part.status === "Devolución Rechazada"
     );
 
     return (
@@ -716,9 +704,7 @@ const OrderForm = memo(
                           <StatusIndicator status={part.status}>
                             <FontAwesomeIcon icon={faCircle} />
                           </StatusIndicator>
-                          {part.status === "Devolución Aprobada"
-                            ? "Eliminado (Devolución Aprobada)"
-                            : part.status}
+                          {part.status}
                         </td>
                       </tr>
                     ))}
@@ -947,7 +933,6 @@ const OrderForm = memo(
                     authorized_by: part.authorized_by_id || null,
                   }))
                 : [];
-              console.log("formData.partsList actualizado:", updatedPartsList);
               return {
                 ...prev,
                 partsList: updatedPartsList,

@@ -16,6 +16,7 @@ import {
   ModalBody,
   StyledTable,
   ActionsContainer,
+  TableWrapper,
 } from "../styles/GlobalStyles";
 import {
   getVehicles,
@@ -24,7 +25,7 @@ import {
   updateVehicle,
   deleteVehicle,
   getBranches,
-} from "../services/orderService";
+} from "../services/vehicleService";
 import { toast } from "react-toastify";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faEye, faPencil, faTrashCan } from "@fortawesome/free-solid-svg-icons";
@@ -125,7 +126,6 @@ const AdminVehicles = () => {
       );
       setShowEditModal(false);
       setSelectedVehicle(null);
-      toast.success("Vehículo actualizado");
       await fetchData(); // Recargar datos para asegurar consistencia
     } catch (error) {
       toast.error(error.message || "Error al actualizar vehículo");
@@ -211,7 +211,7 @@ const AdminVehicles = () => {
               Nuevo Vehículo
             </CustomButton>
           </FiltersContainer>
-          <ListGroup.Item className="w-100">
+          <TableWrapper>
             <StyledTable>
               <thead>
                 <tr>
@@ -271,7 +271,7 @@ const AdminVehicles = () => {
                 ))}
               </tbody>
             </StyledTable>
-          </ListGroup.Item>
+          </TableWrapper>
           <Pagination>
             <Pagination.Prev
               onClick={() => handlePageChange(pagination.page - 1)}

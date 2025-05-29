@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useAuth } from "../context/AuthContext";
+import { useSocket } from "../context/SocketContext";
 import { Container, Form, Image, Button } from "react-bootstrap";
 import { useLocation, useNavigate } from "react-router-dom";
+import axiosInstance from "../services/apiConfig";
+import { toast } from "react-toastify";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import CustomButton from "../components/CustomButton";
@@ -11,37 +14,52 @@ import {
   Content,
   MessageContainer,
   NotificationList,
-  NotificationHeader,
   NotificationItem,
+  NotificationHeader,
   MessageDetailContainer,
   MessageBubble,
   MessageInputWrapper,
   FormInput,
   PartRequestBanner,
+  ApprovedNotification,
+  RejectedNotification,
+  ToggleButton,
+  RejectionReason,
 } from "../styles/GlobalStyles";
+
+import { getOrderById } from "../services/orderService";
 import {
   getConversations,
+  getNotifications,
   getMessagesByOrderId,
-  getOrderById,
   createNotification,
-} from "../services/orderService";
-import { toast } from "react-toastify";
+  getAdminId,
+} from "../services/notificationService";
 
 const technicianMenu = [
-  { label: "Inicio", path: "../technician" },
-  { label: "Crear Orden de Servicio", path: "../technician/create-order" },
-  { label: "Historial de Órdenes", path: "../technician/history" },
-  { label: "Notificaciones", path: "../technician/notifications" },
+  { label: "Inicio", path: "/technician" },
+  { label: "Crear Orden de Servicio", path: "/technician/create-order" },
+  { label: "Historial de Órdenes", path: "/technician/history" },
+  { label: "Notificaciones", path: "/technician/notifications" },
   { label: "Cerrar Sesión", path: "/" },
 ];
 
 const TechnicianNotifications = () => {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
+  const {
+    socket,
+    notifications,
+    sendMessage,
+    sendTyping,
+    isConnected,
+    typingUsers,
+  } = useSocket();
   const location = useLocation();
   const navigate = useNavigate();
   const [conversations, setConversations] = useState([]);
   const [selectedConversation, setSelectedConversation] = useState(null);
-  const [messages, setMessages] = useState([]);
+  const [allMessages, setAllMessages] = useState([]);
+  const [filteredMessages, setFilteredMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [orderStatus, setOrderStatus] = useState(null);
   const [files, setFiles] = useState([]);
@@ -49,6 +67,8 @@ const TechnicianNotifications = () => {
     useState(false);
   const [partsList, setPartsList] = useState([]);
   const [availableParts, setAvailableParts] = useState([]);
+  const [isTyping, setIsTyping] = useState(false);
+  const [expandedRejections, setExpandedRejections] = useState({});
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
 
@@ -56,89 +76,287 @@ const TechnicianNotifications = () => {
   useEffect(() => {
     const fetchConversations = async () => {
       try {
-        const data = await getConversations(user.id);
+        let adminId = null;
+        try {
+          adminId = await getAdminId();
+          console.log("[TechnicianNotifications] adminId obtenido:", adminId);
+        } catch (error) {
+          console.warn(
+            "[TechnicianNotifications] No se encontró admin:",
+            error
+          );
+        }
+
+        let directMessages = [];
+        if (adminId) {
+          try {
+            directMessages = await getNotifications({
+              user_id: user.id,
+              to_user_id: adminId,
+              type: "direct_message",
+              order_id: null,
+            });
+            console.log(
+              "[TechnicianNotifications] Mensajes directos cargados:",
+              directMessages.length
+            );
+          } catch (error) {
+            console.warn(
+              "[TechnicianNotifications] No se encontraron mensajes directos:",
+              error
+            );
+          }
+        }
+
+        let orderConversations = [];
+        try {
+          orderConversations = await getConversations(user.id);
+          console.log(
+            "[TechnicianNotifications] Conversaciones de órdenes cargadas:",
+            orderConversations.length
+          );
+        } catch (error) {
+          console.error(
+            "[TechnicianNotifications] Error al obtener conversaciones de órdenes:",
+            error
+          );
+        }
+
+        const processedOrderConversations = orderConversations
+          .filter((conv) =>
+            ["En Proceso", "Pendiente"].includes(conv.order_status)
+          )
+          .map((conv) => ({
+            ...conv,
+            type: "order",
+            recipients: "Admin",
+            senders: `${user.first_name} ${user.last_name}`,
+          }));
+
+        const directConversation = adminId
+          ? {
+              order_id: `DIRECT_MESSAGE_${adminId}`,
+              conversation_id: `DIRECT_MESSAGE_${adminId}`,
+              vehicle_economic_number: null,
+              order_status: null,
+              last_message_at:
+                directMessages.length > 0
+                  ? directMessages[directMessages.length - 1].created_at
+                  : null,
+              total_messages: directMessages.length,
+              unread_messages: directMessages.filter(
+                (m) => m.status === "Pendiente" && m.to_user_id === user.id
+              ).length,
+              senders: `${user.first_name} ${user.last_name}`,
+              recipients: "Admin",
+              type: "direct",
+              to_user_id: adminId,
+            }
+          : null;
+
+        const allConversations = [
+          ...(directConversation ? [directConversation] : []),
+          ...processedOrderConversations,
+        ];
+
+        setConversations(allConversations);
         console.log(
-          "[TechnicianNotifications] Conversaciones recibidas:",
-          data
+          "[TechnicianNotifications] Conversaciones establecidas:",
+          allConversations.length
         );
-        setConversations(data);
+
+        if (socket && isConnected) {
+          allConversations.forEach((conv) => {
+            const room =
+              conv.type === "direct"
+                ? `DIRECT_MESSAGE_${adminId}`
+                : conv.order_id;
+            const event =
+              conv.type === "direct" ? "joinDirectMessage" : "joinOrder";
+            socket.emit(event, room);
+            console.log(`[TechnicianNotifications] Unido a ${event}: ${room}`);
+          });
+        } else {
+          console.warn("[TechnicianNotifications] Socket no conectado:", {
+            isConnected,
+            socket: !!socket,
+          });
+        }
+
         const params = new URLSearchParams(location.search);
         const orderId = params.get("orderId");
         if (orderId) {
-          const conversation = data.find((c) => c.order_id === orderId);
+          const conversation = allConversations.find(
+            (c) => c.order_id === orderId
+          );
           if (conversation) {
             handleSelectConversation(conversation);
           }
         }
       } catch (error) {
-        console.error("Error al cargar conversaciones:", error);
+        console.error(
+          "[TechnicianNotifications] Error al cargar conversaciones:",
+          error
+        );
         toast.error("Error al cargar conversaciones");
       }
     };
-    fetchConversations();
-    const interval = setInterval(fetchConversations, 10000);
-    return () => clearInterval(interval);
-  }, [location.search, user.id]);
+    if (token) fetchConversations();
+  }, [token, user?.id, location.search, socket, isConnected]);
 
-  // Cargar mensajes al seleccionar una conversación
+  // Polling para la conversación seleccionada
+  useEffect(() => {
+    const fetchMessages = async () => {
+      if (!selectedConversation) return;
+      try {
+        console.log(
+          "[TechnicianNotifications] Polling mensajes para conversación:",
+          selectedConversation.order_id
+        );
+        let messagesData = [];
+        if (selectedConversation.type === "direct") {
+          messagesData = await getNotifications({
+            user_id: user.id,
+            to_user_id: selectedConversation.to_user_id,
+            type: "direct_message",
+            order_id: null,
+          });
+          messagesData = messagesData.filter(
+            (m) => m.type === "direct_message" && m.order_id === null
+          );
+        } else if (selectedConversation.type === "order") {
+          messagesData = await getMessagesByOrderId(
+            selectedConversation.order_id,
+            user.id
+          );
+        }
+        messagesData = messagesData.filter(
+          (m) => !["client_update", "invoice_complete"].includes(m.type)
+        );
+        setAllMessages(messagesData);
+        const filtered = messagesData.filter(
+          (m) => !["part_request", "order_creation"].includes(m.type)
+        );
+        setFilteredMessages(filtered);
+        const unreadMessages = filtered.filter(
+          (m) => m.status === "Pendiente" && m.to_user_id === user.id
+        );
+        for (const message of unreadMessages) {
+          try {
+            await axiosInstance.put(`/api/notifications/${message.id}`, {
+              status: "Leída",
+            });
+            console.log(
+              "[TechnicianNotifications] Mensaje marcado como leído (polling):",
+              message.id
+            );
+          } catch (error) {
+            console.warn(
+              "[TechnicianNotifications] Error al marcar mensaje como leído (polling):",
+              message.id,
+              error
+            );
+          }
+        }
+        setFilteredMessages((prev) =>
+          prev.map((m) =>
+            unreadMessages.some((um) => um.id === m.id)
+              ? { ...m, status: "Leído" }
+              : m
+          )
+        );
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.order_id === selectedConversation.order_id
+              ? { ...c, unread_messages: 0 }
+              : c
+          )
+        );
+      } catch (error) {
+        console.error(
+          "[TechnicianNotifications] Error al cargar mensajes (polling):",
+          error
+        );
+      }
+    };
+    const interval = setInterval(fetchMessages, 5000); // Polling cada 5 segundos
+    return () => clearInterval(interval);
+  }, [selectedConversation, user?.id]);
+
+  // Seleccionar conversación
   const handleSelectConversation = async (conversation) => {
-    console.log(
-      "[TechnicianNotifications] Seleccionando conversación:",
-      conversation
-    );
     setSelectedConversation(conversation);
-    setMessages([]);
+    setAllMessages([]);
+    setFilteredMessages([]);
     try {
-      const messagesData = await getMessagesByOrderId(
-        conversation.order_id,
-        user.id
+      let messagesData = [];
+      if (conversation.type === "direct") {
+        messagesData = await getNotifications({
+          user_id: user.id,
+          to_user_id: conversation.to_user_id,
+          type: "direct_message",
+          order_id: null,
+        });
+        messagesData = messagesData.filter(
+          (m) => m.type === "direct_message" && m.order_id === null
+        );
+        console.log(
+          "[TechnicianNotifications] Mensajes directos cargados:",
+          messagesData.length
+        );
+      } else if (conversation.type === "order") {
+        messagesData = await getMessagesByOrderId(
+          conversation.order_id,
+          user.id
+        );
+        console.log(
+          "[TechnicianNotifications] Mensajes de orden cargados:",
+          messagesData.length
+        );
+      }
+
+      messagesData = messagesData.filter(
+        (m) => !["client_update", "invoice_complete"].includes(m.type)
       );
-      console.log(
-        "[TechnicianNotifications] Mensajes recibidos para order_id",
-        conversation.order_id,
-        ":",
-        messagesData.map((m) => ({
-          id: m.id,
-          message: m.message,
-          type: m.type,
-          from_user_id: m.from_user_id,
-          to_user_id: m.to_user_id,
-          created_at: m.created_at,
-        }))
+      setAllMessages(messagesData);
+      const filtered = messagesData.filter(
+        (m) => !["part_request", "order_creation"].includes(m.type)
       );
-      // Log adicional para verificar tipos de mensajes
-      console.log(
-        "[TechnicianNotifications] Tipos de mensajes:",
-        messagesData.map((m) => m.type)
-      );
-      setMessages(messagesData);
-      const order = await getOrderById(conversation.order_id);
-      setOrderStatus(order.status);
-      setPartsList(order.parts || []);
-      setAvailableParts([]); // Nota: getParts no está en orderService.jsx
-      // Log para verificar partRequestNotifications
-      const partRequests = messagesData.filter(
-        (m) => m.type === "part_request"
-      );
-      console.log(
-        "[TechnicianNotifications] Notificaciones de part_request:",
-        partRequests
-      );
-      // Marcar mensajes como leídos
-      const unreadMessages = messagesData.filter(
+      setFilteredMessages(filtered);
+
+      let orderStatus = "Activo";
+      if (conversation.type === "order") {
+        const order = await getOrderById(conversation.order_id);
+        orderStatus = order?.status || "En Proceso";
+        setPartsList(order?.parts || []);
+        setAvailableParts([]);
+      }
+      setOrderStatus(orderStatus);
+
+      const unreadMessages = filtered.filter(
         (m) => m.status === "Pendiente" && m.to_user_id === user.id
       );
       for (const message of unreadMessages) {
-        await fetch(`/api/notifications/${message.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: "Leída" }),
-        });
+        try {
+          await axiosInstance.put(`/api/notifications/${message.id}`, {
+            status: "Leída",
+          });
+          console.log(
+            "[TechnicianNotifications] Mensaje marcado como leído:",
+            message.id
+          );
+        } catch (error) {
+          console.warn(
+            "[TechnicianNotifications] Error al marcar mensaje como leído:",
+            message.id,
+            error
+          );
+        }
       }
-      setMessages((prev) =>
+      setFilteredMessages((prev) =>
         prev.map((m) =>
           unreadMessages.some((um) => um.id === m.id)
-            ? { ...m, status: "Leída" }
+            ? { ...m, status: "Leído" }
             : m
         )
       );
@@ -149,12 +367,199 @@ const TechnicianNotifications = () => {
             : c
         )
       );
+
       navigate(`?orderId=${conversation.order_id}`, { replace: true });
+      if (socket && isConnected) {
+        const room =
+          conversation.type === "direct"
+            ? `DIRECT_MESSAGE_${conversation.to_user_id}`
+            : conversation.order_id;
+        const event =
+          conversation.type === "direct" ? "joinDirectMessage" : "joinOrder";
+        socket.emit(event, room);
+        console.log(`[TechnicianNotifications] Unido a ${event}: ${room}`);
+      }
     } catch (error) {
-      console.error("Error al cargar mensajes o marcar como leídos:", error);
+      console.error(
+        "[TechnicianNotifications] Error en handleSelectConversation:",
+        error
+      );
       toast.error("Error al cargar mensajes");
+      setSelectedConversation(null);
     }
   };
+
+  // Actualizar mensajes en tiempo real
+  useEffect(() => {
+    if (!selectedConversation || !notifications.length) {
+      console.log(
+        "[TechnicianNotifications] No hay notificaciones o conversación seleccionada:",
+        {
+          notifications: notifications.length,
+          selectedConversation,
+        }
+      );
+      return;
+    }
+
+    console.log(
+      "[TechnicianNotifications] Nuevas notificaciones:",
+      JSON.stringify(notifications, null, 2)
+    );
+
+    const newMessages = notifications.filter((notif) => {
+      if (selectedConversation.type === "direct") {
+        return (
+          notif.type === "direct_message" &&
+          !notif.orderId &&
+          ((notif.to_user_id === user.id &&
+            notif.from_user_id === selectedConversation.to_user_id) ||
+            (notif.from_user_id === user.id &&
+              notif.to_user_id === selectedConversation.to_user_id))
+        );
+      } else if (selectedConversation.type === "order") {
+        return (
+          (notif.orderId || notif.order_id) === selectedConversation.order_id &&
+          !["direct_message", "client_update", "invoice_complete"].includes(
+            notif.type
+          )
+        );
+      }
+      return false;
+    });
+
+    console.log("[TechnicianNotifications] Mensajes filtrados:", newMessages);
+
+    if (newMessages.length > 0) {
+      setAllMessages((prev) => {
+        const updatedAllMessages = [...prev];
+        newMessages.forEach((notif) => {
+          if (!prev.some((m) => m.id === notif.id)) {
+            updatedAllMessages.push({
+              id: notif.id,
+              order_id: notif.orderId || notif.order_id || null,
+              from_user_id: notif.fromUserId,
+              to_user_id: notif.toUserId,
+              message: notif.message || "",
+              type: notif.type,
+              status: notif.status || "Pendiente",
+              details: notif.details || {},
+              created_at: new Date(notif.timestamp || Date.now()),
+              attachments: notif.attachments || [],
+            });
+          }
+        });
+        return updatedAllMessages.sort(
+          (a, b) => new Date(a.created_at) - new Date(b.created_at)
+        );
+      });
+
+      setFilteredMessages((prev) => {
+        const updatedFilteredMessages = [...prev];
+        newMessages
+          .filter(
+            (notif) => !["part_request", "order_creation"].includes(notif.type)
+          )
+          .forEach((notif) => {
+            if (!prev.some((m) => m.id === notif.id)) {
+              updatedFilteredMessages.push({
+                id: notif.id,
+                order_id: notif.orderId || notif.order_id || null,
+                from_user_id: notif.fromUserId,
+                to_user_id: notif.toUserId,
+                message: notif.message || "",
+                type: notif.type,
+                status: notif.status || "Pendiente",
+                details: notif.details || {},
+                created_at: new Date(notif.timestamp || Date.now()),
+                attachments: notif.attachments || [],
+              });
+            }
+          });
+        return updatedFilteredMessages.sort(
+          (a, b) => new Date(a.created_at) - new Date(b.created_at)
+        );
+      });
+
+      setConversations((prev) =>
+        prev
+          .map((c) => {
+            const isSelectedConversation =
+              c.order_id === selectedConversation.order_id;
+            if (isSelectedConversation) {
+              return {
+                ...c,
+                last_message_at: new Date(
+                  newMessages[newMessages.length - 1].timestamp || Date.now()
+                ),
+                total_messages:
+                  c.total_messages +
+                  newMessages.filter(
+                    (n) => !["part_request", "order_creation"].includes(n.type)
+                  ).length,
+                unread_messages:
+                  c.unread_messages +
+                  newMessages.filter(
+                    (n) =>
+                      n.toUserId === user.id &&
+                      n.status === "Pendiente" &&
+                      !["part_request", "order_creation"].includes(n.type)
+                  ).length,
+              };
+            }
+            return c;
+          })
+          .sort(
+            (a, b) =>
+              new Date(b.last_message_at || 0) -
+              new Date(a.last_message_at || 0)
+          )
+      );
+    }
+
+    // Manejar nuevas órdenes
+    const newOrders = notifications.filter(
+      (notif) => notif.type === "order_creation"
+    );
+    if (newOrders.length > 0) {
+      async function fetchConversations() {
+        try {
+          const data = await getConversations(user.id);
+          const newConversations = data
+            .filter((conv) =>
+              ["En Proceso", "Pendiente"].includes(conv.order_status)
+            )
+            .map((conv) => ({
+              ...conv,
+              type: "order",
+              recipients: "Admin",
+              senders: `${user.first_name} ${user.last_name}`,
+            }));
+          setConversations((prev) => {
+            const existingIds = new Set(prev.map((c) => c.order_id));
+            return [
+              ...prev,
+              ...newConversations.filter((c) => !existingIds.has(c.order_id)),
+            ].sort(
+              (a, b) =>
+                new Date(b.last_message_at || 0) -
+                new Date(a.last_message_at || 0)
+            );
+          });
+          console.log(
+            "[TechnicianNotifications] Conversaciones actualizadas por nuevas órdenes:",
+            newConversations.length
+          );
+        } catch (error) {
+          console.error(
+            "[TechnicianNotifications] Error al actualizar conversaciones:",
+            error
+          );
+        }
+      }
+      fetchConversations();
+    }
+  }, [notifications, selectedConversation, user?.id]);
 
   // Enviar mensaje
   const handleSendMessage = async (e) => {
@@ -162,34 +567,102 @@ const TechnicianNotifications = () => {
     if (!newMessage.trim() && files.length === 0) return;
 
     try {
+      const toUserId =
+        selectedConversation.to_user_id ||
+        allMessages.find((m) => m.from_user_id !== user.id)?.from_user_id;
+      if (!toUserId) {
+        console.error(
+          "[TechnicianNotifications] No se encontró to_user_id:",
+          selectedConversation
+        );
+        toast.error("Error: No se pudo determinar el destinatario");
+        return;
+      }
+
+      const isDirectMessage = selectedConversation.type === "direct";
       const notificationData = {
-        order_id: selectedConversation.order_id,
-        to_user_id:
-          messages.find((m) => m.from_user_id !== user.id)?.from_user_id ||
-          "admin",
+        order_id: isDirectMessage ? null : selectedConversation.order_id,
+        to_user_id: toUserId,
         message: newMessage || "Adjunto enviado",
-        type: "message",
-        status: "Pendiente",
+        type: isDirectMessage ? "direct_message" : "message",
+        from_user_id: user.id,
       };
-      const newNotification = await createNotification(notificationData, files);
-      setMessages((prev) => [...prev, newNotification]);
-      setConversations((prev) =>
-        prev.map((c) =>
-          c.order_id === selectedConversation.order_id
-            ? {
-                ...c,
-                last_message_at: newNotification.created_at,
-                total_messages: c.total_messages + 1,
-              }
-            : c
-        )
+
+      console.log(
+        "[TechnicianNotifications] Enviando notificación:",
+        JSON.stringify(notificationData, null, 2),
+        "Archivos:",
+        files.length
       );
+
+      const notification = await createNotification(notificationData, files);
+      const newNotification = {
+        id: notification.id,
+        order_id: notificationData.order_id,
+        from_user_id: user.id,
+        to_user_id: toUserId,
+        message: notificationData.message,
+        type: notificationData.type,
+        status: "Pendiente",
+        details: notification.details || {},
+        created_at: new Date(),
+        attachments: notification.attachments || [],
+      };
+
+      setAllMessages((prev) => [...prev, newNotification]);
+      if (!["part_request", "order_creation"].includes(newNotification.type)) {
+        setFilteredMessages((prev) => [...prev, newNotification]);
+      }
+
+      setConversations((prev) =>
+        prev
+          .map((c) =>
+            c.order_id === selectedConversation.order_id
+              ? {
+                  ...c,
+                  last_message_at: new Date(),
+                  total_messages: c.total_messages + 1,
+                }
+              : c
+          )
+          .sort(
+            (a, b) =>
+              new Date(b.last_message_at || 0) -
+              new Date(a.last_message_at || 0)
+          )
+      );
+
       setNewMessage("");
       setFiles([]);
       if (fileInputRef.current) fileInputRef.current.value = "";
+
+      if (socket && isConnected) {
+        const room = isDirectMessage
+          ? `DIRECT_MESSAGE_${toUserId}`
+          : selectedConversation.order_id;
+        socket.emit("notification", {
+          ...newNotification,
+          toUserId: toUserId,
+          fromUserId: user.id,
+          timestamp: new Date().toISOString(),
+          room,
+          orderId: notificationData.order_id, // Compatibilidad con AdminNotifications
+        });
+        console.log(
+          "[TechnicianNotifications] Notificación emitida a sala:",
+          room
+        );
+      } else {
+        console.warn(
+          "[TechnicianNotifications] Socket no conectado, mensaje enviado solo vía API"
+        );
+      }
     } catch (error) {
-      console.error("Error al enviar mensaje:", error);
-      toast.error("Error al enviar mensaje");
+      console.error(
+        "[TechnicianNotifications] Error al enviar mensaje:",
+        error
+      );
+      toast.error(`Error al enviar mensaje: ${error.message}`);
     }
   };
 
@@ -201,100 +674,160 @@ const TechnicianNotifications = () => {
     setFiles(selectedFiles);
   };
 
-  // Auto-scroll al final de los mensajes
+  // Manejar escritura
+  const handleTyping = (e) => {
+    setNewMessage(e.target.value);
+    const isCurrentlyTyping = e.target.value.trim().length > 0;
+    if (isCurrentlyTyping !== isTyping && selectedConversation) {
+      setIsTyping(isCurrentlyTyping);
+      sendTyping(selectedConversation.order_id, isCurrentlyTyping);
+    }
+  };
+
+  // Alternar motivo de rechazo
+  const toggleRejectionReason = (messageId) => {
+    setExpandedRejections((prev) => ({
+      ...prev,
+      [messageId]: !prev[messageId],
+    }));
+  };
+
+  // Auto-scroll al final
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [filteredMessages]);
 
-  // Filtrar notificaciones de part_request
-  const partRequestNotifications = useMemo(() => {
-    return messages.filter((m) => m.type === "part_request");
-  }, [messages]);
-
-  // Filtrar mensajes para el chat (excluir part_request y order_creation)
   const chatMessages = useMemo(() => {
-    return messages.filter(
-      (m) => m.type !== "part_request" && m.type !== "order_creation"
+    console.log(
+      "[TechnicianNotifications] Actualizando chatMessages:",
+      filteredMessages.length
     );
-  }, [messages]);
+    return filteredMessages;
+  }, [filteredMessages]);
 
-  const isChatDisabled = ["Facturado", "Finalizado"].includes(orderStatus);
+  const isAdminTyping = selectedConversation
+    ? typingUsers[
+        `${allMessages.find((m) => m.from_user_id !== user.id)?.from_user_id}_${
+          selectedConversation.order_id
+        }`
+      ]
+    : false;
+
+  const isChatDisabled =
+    selectedConversation?.type === "order" &&
+    ["Facturado", "Finalizado"].includes(orderStatus);
 
   return (
     <MainContainer fluid>
-      <Sidebar menuItems={technicianMenu} title="Menú" />
+      <Sidebar menuItems={technicianMenu} title="Menú Técnico" />
       <Content>
-        <DashboardHeader title="Notificaciones" />
+        <DashboardHeader
+          title="Notificaciones"
+          userId={user?.id}
+          userName={`${user?.first_name} ${user?.last_name}`}
+          activeOrdersCount={0}
+          notificationsCount={conversations.reduce(
+            (acc, c) => acc + c.unread_messages,
+            0
+          )}
+        />
         <Container fluid>
           <MessageContainer>
             <NotificationList>
               <NotificationHeader>Conversaciones</NotificationHeader>
-              {conversations.map((conversation) => (
-                <NotificationItem
-                  key={conversation.order_id}
-                  className={conversation.unread_messages > 0 ? "new" : ""}
-                  onClick={() => handleSelectConversation(conversation)}
-                >
-                  <div
-                    style={{ display: "flex", justifyContent: "space-between" }}
+              {conversations
+                .filter(
+                  (conversation) =>
+                    conversation.type !== "order" ||
+                    ["En Proceso", "Pendiente"].includes(
+                      conversation.order_status
+                    )
+                )
+                .map((conversation) => (
+                  <NotificationItem
+                    key={conversation.order_id}
+                    className={conversation.unread_messages > 0 ? "new" : ""}
+                    onClick={() => handleSelectConversation(conversation)}
                   >
-                    <h3
+                    <div
                       style={{
-                        fontSize: "1rem",
-                        fontWeight: "medium",
-                        color: "#1b4552",
+                        display: "flex",
+                        justifyContent: "space-between",
                       }}
                     >
-                      Orden #{conversation.order_id} (
-                      {conversation.vehicle_economic_number})
-                    </h3>
-                    {conversation.unread_messages > 0 && (
-                      <span
+                      <h3
                         style={{
-                          backgroundColor: "#d74a49",
-                          color: "white",
-                          fontSize: "0.75rem",
-                          padding: "0.25rem 0.5rem",
-                          borderRadius: "9999px",
+                          fontSize: "1rem",
+                          fontWeight: "medium",
+                          color: "#1b4552",
                         }}
                       >
-                        {conversation.unread_messages} Nuevo
-                        {conversation.unread_messages > 1 ? "s" : ""}
-                      </span>
-                    )}
-                  </div>
-                  <p
-                    style={{
-                      fontSize: "0.875rem",
-                      color: "#6c757d",
-                      marginTop: "0.25rem",
-                    }}
-                  >
-                    {conversation.senders} ↔ {conversation.recipients}
-                  </p>
-                  <p
-                    style={{
-                      fontSize: "0.75rem",
-                      color: "#6c757d",
-                      marginTop: "0.5rem",
-                    }}
-                  >
-                    Último mensaje:{" "}
-                    {new Date(conversation.last_message_at).toLocaleString(
-                      "es-ES"
-                    )}
-                  </p>
-                </NotificationItem>
-              ))}
+                        {conversation.type === "direct"
+                          ? "Admin (Directo)"
+                          : `Orden #${conversation.order_id} (${
+                              conversation.vehicle_economic_number ||
+                              "Sin número"
+                            })`}
+                      </h3>
+                      {conversation.unread_messages > 0 && (
+                        <span
+                          style={{
+                            backgroundColor: "#d74a49",
+                            color: "white",
+                            fontSize: "0.75rem",
+                            padding: "0.25rem 0.5rem",
+                            borderRadius: "9999px",
+                          }}
+                        >
+                          {conversation.unread_messages} Nuevo
+                          {conversation.unread_messages > 1 ? "s" : ""}
+                        </span>
+                      )}
+                    </div>
+                    <p
+                      style={{
+                        fontSize: "0.875rem",
+                        color: "#6c757d",
+                        marginTop: "0.25rem",
+                      }}
+                    >
+                      {conversation.senders} ↔ {conversation.recipients}
+                    </p>
+                    <p
+                      style={{
+                        fontSize: "0.75rem",
+                        color: "#6c757d",
+                        marginTop: "0.5rem",
+                      }}
+                    >
+                      Último mensaje:{" "}
+                      {conversation.last_message_at
+                        ? new Date(conversation.last_message_at).toLocaleString(
+                            "es-ES"
+                          )
+                        : "Sin mensajes"}
+                    </p>
+                  </NotificationItem>
+                ))}
             </NotificationList>
             <MessageDetailContainer>
               {selectedConversation ? (
                 <>
                   <div
-                    style={{ padding: "1.5rem", flex: "1", overflowY: "auto" }}
+                    style={{ padding: "0 24px", flex: "1", overflowY: "auto" }}
                   >
-                    <div className="d-flex justify-content-between align-items-center">
-                      <div style={{ marginBottom: "1.5rem" }}>
+                    <div
+                      style={{
+                        position: "sticky",
+                        top: 0,
+                        backgroundColor: "#fff",
+                        zIndex: 10,
+                        padding: "1.5rem",
+                        borderBottom: "1px solid #e0e0e0",
+                      }}
+                      className="d-flex justify-content-between align-items-center"
+                    >
+                      <div>
                         <h2
                           style={{
                             fontSize: "1.5rem",
@@ -302,8 +835,12 @@ const TechnicianNotifications = () => {
                             color: "#1b4552",
                           }}
                         >
-                          Orden #{selectedConversation.order_id} (
-                          {selectedConversation.vehicle_economic_number})
+                          {selectedConversation.type === "direct"
+                            ? "Admin (Directo)"
+                            : `Orden #${selectedConversation.order_id} (${
+                                selectedConversation.vehicle_economic_number ||
+                                "Sin número"
+                              })`}
                         </h2>
                         <div
                           style={{
@@ -313,7 +850,7 @@ const TechnicianNotifications = () => {
                             fontSize: "0.875rem",
                           }}
                         >
-                          <span>Estado: {orderStatus}</span>
+                          <span>Estado: {orderStatus || "Activo"}</span>
                           <span style={{ margin: "0 0.5rem" }}>•</span>
                           <span>
                             {chatMessages.length} mensaje
@@ -321,28 +858,28 @@ const TechnicianNotifications = () => {
                           </span>
                         </div>
                       </div>
-                      {/* Banner de solicitudes de repuestos */}
-                      {partRequestNotifications.length > 0 && (
-                        <PartRequestBanner role="alert">
-                          <span
-                            style={{
-                              fontWeight: "bold",
-                              color: "#1b4552",
-                              marginBottom: "0.5rem",
-                            }}
-                          >
-                            solicitud de repuestos para la orden #
-                            {selectedConversation.order_id}
-                          </span>
-                          <Button
-                            variant="primary"
-                            onClick={() => setShowPartsManagementModal(true)}
-                            aria-label="Ver repuestos solicitados"
-                          >
-                            Ver repuestos
-                          </Button>
-                        </PartRequestBanner>
-                      )}
+                      {allMessages.some((m) => m.type === "part_request") &&
+                        selectedConversation.type === "order" && (
+                          <PartRequestBanner role="alert">
+                            <span
+                              style={{
+                                fontWeight: "bold",
+                                color: "#1b4552",
+                                marginBottom: "0.5rem",
+                              }}
+                            >
+                              Solicitud de repuestos para la orden #
+                              {selectedConversation.order_id}
+                            </span>
+                            <Button
+                              variant="primary"
+                              onClick={() => setShowPartsManagementModal(true)}
+                              aria-label="Ver repuestos solicitados"
+                            >
+                              Ver repuestos
+                            </Button>
+                          </PartRequestBanner>
+                        )}
                     </div>
                     <div
                       style={{
@@ -353,71 +890,214 @@ const TechnicianNotifications = () => {
                       aria-live="polite"
                     >
                       {chatMessages.map((message) => (
-                        <MessageBubble
+                        <div
                           key={message.id}
-                          sender={
-                            message.from_user_id === user.id ? "user" : "other"
-                          }
+                          style={{
+                            display: "flex",
+                            justifyContent:
+                              message.from_user_id === user.id
+                                ? "flex-end"
+                                : "flex-start",
+                            marginBottom: "0.5rem",
+                          }}
                         >
-                          <p>{message.message}</p>
-                          {message.details && (
-                            <pre
-                              style={{
-                                fontSize: "0.75rem",
-                                background: "#f8f9fa",
-                                padding: "0.5rem",
-                                borderRadius: "0.25rem",
-                              }}
-                            >
-                              {JSON.stringify(message.details, null, 2)}
-                            </pre>
-                          )}
-                          {message.attachments?.length > 0 && (
-                            <div style={{ marginTop: "0.5rem" }}>
-                              {message.attachments.map((attachment) => (
-                                <div key={attachment.id}>
-                                  {attachment.file_type.startsWith("image/") ? (
-                                    <Image
-                                      src={attachment.file_path}
-                                      thumbnail
-                                      style={{ maxWidth: "200px" }}
-                                    />
-                                  ) : (
-                                    <a
-                                      href={attachment.file_path}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                    >
-                                      Descargar {attachment.file_type}
-                                    </a>
+                          {message.type === "part_approval" ? (
+                            <div>
+                              <ApprovedNotification>
+                                {message.message}
+                              </ApprovedNotification>
+                              <p
+                                style={{
+                                  fontSize: "0.75rem",
+                                  color: "#28a745",
+                                  marginTop: "0.25rem",
+                                  textAlign:
+                                    message.from_user_id === user.id
+                                      ? "right"
+                                      : "left",
+                                }}
+                              >
+                                {message.created_at
+                                  ? new Date(
+                                      message.created_at
+                                    ).toLocaleTimeString("es-ES", {
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })
+                                  : "Hora desconocida"}
+                                {message.from_user_id === user.id && (
+                                  <span style={{ marginLeft: "0.5rem" }}>
+                                    {message.status === "Leída"
+                                      ? "✓✓ Leído"
+                                      : "✓ Enviado"}
+                                  </span>
+                                )}
+                                {message.status === "Pendiente" &&
+                                  message.to_user_id === user.id && (
+                                    <span style={{ marginLeft: "0.5rem" }}>
+                                      (No leído)
+                                    </span>
                                   )}
-                                </div>
-                              ))}
+                              </p>
+                            </div>
+                          ) : message.type === "part_rejection" ? (
+                            <div>
+                              <RejectedNotification>
+                                {message.message}
+                                {message.details && message.details.reason && (
+                                  <ToggleButton
+                                    onClick={() =>
+                                      toggleRejectionReason(message.id)
+                                    }
+                                  >
+                                    {expandedRejections[message.id] ? "▲" : "▼"}
+                                  </ToggleButton>
+                                )}
+                              </RejectedNotification>
+                              {message.details && message.details.reason && (
+                                <RejectionReason
+                                  className={
+                                    expandedRejections[message.id]
+                                      ? "active"
+                                      : ""
+                                  }
+                                >
+                                  Motivo de rechazo: {message.details.reason}
+                                </RejectionReason>
+                              )}
+                              <p
+                                style={{
+                                  fontSize: "0.75rem",
+                                  color: "#dc3545",
+                                  marginTop: "0.25rem",
+                                  textAlign:
+                                    message.from_user_id === user.id
+                                      ? "right"
+                                      : "left",
+                                }}
+                              >
+                                {message.created_at
+                                  ? new Date(
+                                      message.created_at
+                                    ).toLocaleTimeString("es-ES", {
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })
+                                  : "Hora desconocida"}
+                                {message.from_user_id === user.id && (
+                                  <span style={{ marginLeft: "0.5rem" }}>
+                                    {message.status === "Leída"
+                                      ? "✓✓ Leído"
+                                      : "✓ Enviado"}
+                                  </span>
+                                )}
+                                {message.status === "Pendiente" &&
+                                  message.to_user_id === user.id && (
+                                    <span style={{ marginLeft: "0.5rem" }}>
+                                      (No leído)
+                                    </span>
+                                  )}
+                              </p>
+                            </div>
+                          ) : (
+                            <div
+                              className="d-flex flex-column"
+                              style={{ width: "100%" }}
+                            >
+                              <MessageBubble
+                                sender={
+                                  message.from_user_id === user.id
+                                    ? "user"
+                                    : "other"
+                                }
+                              >
+                                <p>{message.message}</p>
+                                {message.attachments?.length > 0 && (
+                                  <div>
+                                    {message.attachments.map((attachment) => (
+                                      <div key={attachment.id}>
+                                        {attachment.file_type?.startsWith(
+                                          "image/"
+                                        ) ? (
+                                          <Image
+                                            src={attachment.file_path}
+                                            thumbnail
+                                            style={{ maxWidth: "200px" }}
+                                          />
+                                        ) : (
+                                          <a
+                                            href={attachment.file_path}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                          >
+                                            Descargar{" "}
+                                            {attachment.file_type || "archivo"}
+                                          </a>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </MessageBubble>
+                              <p
+                                style={{
+                                  fontSize: "0.75rem",
+                                  color:
+                                    message.from_user_id === user.id
+                                      ? "#c7c7c7"
+                                      : "#b6bac0",
+                                  marginTop: "0.25rem",
+                                  textAlign:
+                                    message.from_user_id === user.id
+                                      ? "right"
+                                      : "left",
+                                }}
+                              >
+                                {message.created_at
+                                  ? new Date(
+                                      message.created_at
+                                    ).toLocaleTimeString("es-ES", {
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })
+                                  : "Hora desconocida"}
+                                {message.from_user_id === user.id && (
+                                  <span style={{ marginLeft: "0.5rem" }}>
+                                    {message.status === "Leída"
+                                      ? "✓✓ Leído"
+                                      : "✓ Enviado"}
+                                  </span>
+                                )}
+                                {message.status === "Pendiente" &&
+                                  message.to_user_id === user.id && (
+                                    <span style={{ marginLeft: "0.5rem" }}>
+                                      (No leído)
+                                    </span>
+                                  )}
+                              </p>
                             </div>
                           )}
-                          <p
-                            style={{
-                              fontSize: "0.75rem",
-                              color:
-                                message.from_user_id === user.id
-                                  ? "#f8f9fa"
-                                  : "#6c757d",
-                              marginTop: "0.25rem",
-                            }}
-                          >
-                            {new Date(message.created_at).toLocaleTimeString(
-                              "es-ES",
-                              {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              }
-                            )}
-                            {message.status === "Pendiente" &&
-                              message.to_user_id === user.id &&
-                              " (No leído)"}
-                          </p>
-                        </MessageBubble>
+                        </div>
                       ))}
+                      {isAdminTyping && (
+                        <div
+                          style={{
+                            padding: "0.5rem",
+                            color: "#1b4552",
+                            fontStyle: "italic",
+                            fontSize: "0.875rem",
+                            alignSelf: "flex-start",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "0.5rem",
+                          }}
+                        >
+                          Admin está escribiendo
+                          <span style={{ animation: "blink 1s infinite" }}>
+                            ...
+                          </span>
+                        </div>
+                      )}
                       <div ref={messagesEndRef} />
                     </div>
                   </div>
@@ -435,7 +1115,7 @@ const TechnicianNotifications = () => {
                             <FormInput
                               type="text"
                               value={newMessage}
-                              onChange={(e) => setNewMessage(e.target.value)}
+                              onChange={handleTyping}
                               placeholder="Escribe tu mensaje..."
                               disabled={isChatDisabled}
                             />
@@ -490,7 +1170,7 @@ const TechnicianNotifications = () => {
                       }}
                     >
                       La mensajería está deshabilitada porque la orden está{" "}
-                      {orderStatus}.
+                      {orderStatus || "desconocida"}.
                     </div>
                   )}
                 </>
@@ -510,7 +1190,6 @@ const TechnicianNotifications = () => {
             </MessageDetailContainer>
           </MessageContainer>
         </Container>
-        {/* Modal para gestionar repuestos */}
         {selectedConversation && (
           <PartsModal
             showPartsModal={false}

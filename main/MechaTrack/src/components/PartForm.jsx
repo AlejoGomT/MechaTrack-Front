@@ -1,12 +1,11 @@
 import { useState, useEffect } from "react";
 import { Form, Row, Col } from "react-bootstrap";
 import { toast } from "react-toastify";
-import { getVehicleModels, API_URL } from "../services/orderService";
+import { getVehicleModels } from "../services/vehicleService";
+import { API_URL } from "../services/apiConfig";
 import {
   CustomButton,
   FormSection,
-  FormInput,
-  DetailLabel,
   ModelTag,
   AllModelsTag,
   ModelTagContainer,

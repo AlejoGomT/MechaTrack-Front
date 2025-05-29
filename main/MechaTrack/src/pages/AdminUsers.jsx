@@ -15,6 +15,7 @@ import {
   ModalBody,
   StyledTable,
   ActionsContainer,
+  TableWrapper,
 } from "../styles/GlobalStyles";
 import { toast } from "react-toastify";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -173,7 +174,7 @@ const AdminUsers = () => {
               Nuevo Usuario
             </CustomButton>
           </FiltersContainer>
-          <ListGroup.Item className="w-100">
+          <TableWrapper>
             <StyledTable>
               <thead>
                 <tr>
@@ -218,7 +219,7 @@ const AdminUsers = () => {
                 ))}
               </tbody>
             </StyledTable>
-          </ListGroup.Item>
+          </TableWrapper>
           <Pagination>
             <Pagination.Prev
               onClick={() => handlePageChange(pagination.page - 1)}

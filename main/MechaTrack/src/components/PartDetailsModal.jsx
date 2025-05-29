@@ -8,7 +8,7 @@ import {
   ModelTag,
   ImageContainer,
 } from "../styles/GlobalStyles";
-import { API_URL } from "../services/orderService";
+import { API_URL } from "../services/apiConfig";
 
 const PartDetailsModal = ({ show, onHide, part }) => {
   if (!part) return null;

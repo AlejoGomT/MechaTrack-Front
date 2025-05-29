@@ -14,30 +14,25 @@ import {
   getBranches,
   getVehicleBrands,
   getVehicleModels,
-} from "../services/orderService";
+} from "../services/vehicleService";
 
 // Lista estática de ciudades de México
 const cities = [
-  "Ciudad de México",
-  "Guadalajara",
-  "Monterrey",
-  "Puebla",
-  "Tijuana",
-  "León",
-  "Mérida",
-  "Querétaro",
-  "Cancún",
-  "Veracruz",
-  "Toluca",
-  "Chihuahua",
-  "Hermosillo",
-  "Culiacán",
-  "Aguascalientes",
-  "Morelia",
-  "Saltillo",
-  "Torreón",
-  "San Luis Potosí",
-  "Acapulco",
+  "CD VALLES",
+  "CD VICTORIA",
+  "CHIHUAHUA",
+  "GUADALUPE",
+  "LA JUNTA",
+  "LAREDO",
+  "MONCLOVA",
+  "MONTERREY",
+  "PIEDRAS NEGRAS",
+  "PLANTA CHIHUAHUA",
+  "PLANTA MONTERREY",
+  "REYNOSA",
+  "SALTILLO",
+  "TAMPICO",
+  "TORREON",
 ];
 
 // Implementación de distancia de Levenshtein para búsqueda difusa

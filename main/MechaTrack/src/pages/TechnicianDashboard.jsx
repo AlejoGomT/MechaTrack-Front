@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { Button, Modal, Pagination, Container } from "react-bootstrap";
+import { useSocket } from "../context/SocketContext";
+import { Button, Modal, Pagination, Container, Spinner } from "react-bootstrap";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import StatCardsContainer from "../components/StatCardsContainer";
@@ -10,7 +11,7 @@ import OrderList from "../components/OrderList";
 import CustomButton from "../components/CustomButton";
 import TechnicianCreateOrder from "./TechnicianCreateOrder";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faEye, faCircle, faEdit } from "@fortawesome/free-solid-svg-icons";
+import { faEye, faEdit } from "@fortawesome/free-solid-svg-icons";
 import {
   StatusDiv,
   MainContainer,
@@ -22,17 +23,18 @@ import {
   TableWrapper,
   StyledTable,
   ActionsContainer,
-  StatusIcon,
   OrderDetailsModal,
   OrderDetailsBody,
 } from "../styles/GlobalStyles";
+import { getVehicles } from "../services/vehicleService";
 import {
   getOrders,
-  getVehicles,
   updateOrderStatus,
+  getOrderById,
   getOrderCounts,
 } from "../services/orderService";
 import { toast } from "react-toastify";
+import debounce from "lodash/debounce";
 
 const baseTechnicianMenu = [
   { label: "Inicio", path: "../technician" },
@@ -44,6 +46,7 @@ const baseTechnicianMenu = [
 
 const TechnicianDashboard = () => {
   const { user } = useAuth();
+  const { socket, isConnected } = useSocket();
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -63,6 +66,7 @@ const TechnicianDashboard = () => {
   const [orders, setOrders] = useState([]);
   const [vehicles, setVehicles] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [modalCurrentPage, setModalCurrentPage] = useState(1);
@@ -73,79 +77,98 @@ const TechnicianDashboard = () => {
   const pageSize = 5;
   const formRef = useRef(null);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [ordersData, vehiclesData, countsData] = await Promise.all([
-          getOrders({
-            technician_id: user.id,
-            page: currentPage,
-            limit: pageSize,
-            economicNumber: economicNumberFilter,
-            status: statusFilter === "Todos" ? undefined : statusFilter,
-            orderNumber: orderNumberFilter,
-            startDate: startDateFilter,
-            endDate: endDateFilter,
-          }),
-          getVehicles({ limit: 1000 }),
-          getOrderCounts({ technician_id: user.id }),
-        ]);
-        console.log(
-          "[TechnicianDashboard] Respuesta de getOrders:",
-          ordersData
-        );
-        console.log(
-          "[TechnicianDashboard] Respuesta de getOrderCounts:",
-          countsData
-        );
+  // Debounce para filtros de texto
+  const debouncedSetEconomicNumberFilter = useCallback(
+    debounce((value) => {
+      setEconomicNumberFilter(value);
+      setCurrentPage(1);
+    }, 500),
+    []
+  );
 
-        if (!Array.isArray(ordersData.orders)) {
-          console.error(
-            "[TechnicianDashboard] Respuesta inválida de getOrders, se esperaba un arreglo en orders:",
-            ordersData
-          );
-          setOrders([]);
-          toast.error("Respuesta inválida al cargar órdenes");
-          return;
-        }
+  const debouncedSetOrderNumberFilter = useCallback(
+    debounce((value) => {
+      setOrderNumberFilter(value);
+      setCurrentPage(1);
+    }, 500),
+    []
+  );
 
-        if (
-          !countsData ||
-          typeof countsData !== "object" ||
-          !("inProcess" in countsData)
-        ) {
-          console.error(
-            "[TechnicianDashboard] Respuesta inválida de getOrderCounts:",
-            countsData
-          );
-          setInProcessOrdersCount(0);
-          setPendingOrdersCount(0);
-          setCompletedOrdersCount(0);
-          toast.error("Respuesta inválida al cargar conteos");
-        } else {
-          setInProcessOrdersCount(countsData.inProcess || 0);
-          setPendingOrdersCount(countsData.pending || 0);
-          setCompletedOrdersCount(countsData.completed || 0);
-        }
+  // Cargar datos iniciales
+  const fetchData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [ordersData, vehiclesData, countsData] = await Promise.all([
+        getOrders({
+          technician_id: user.id,
+          page: currentPage,
+          limit: pageSize,
+          economicNumber: economicNumberFilter,
+          status: statusFilter === "Todos" ? undefined : statusFilter,
+          orderNumber: orderNumberFilter,
+          startDate: startDateFilter,
+          endDate: endDateFilter,
+        }),
+        getVehicles({ limit: 1000 }),
+        getOrderCounts({ technician_id: user.id }),
+      ]);
 
-        setOrders(ordersData.orders);
-        setTotalPages(
-          Math.ceil((ordersData.total || ordersData.orders.length) / pageSize)
-        );
-        setVehicles(
-          Array.isArray(vehiclesData.vehicles) ? vehiclesData.vehicles : []
-        );
-      } catch (err) {
-        console.error("[TechnicianDashboard] Error al cargar datos:", err);
-        toast.error(err.message || "Error al cargar datos");
+      console.log("[TechnicianDashboard] Respuesta de getOrders:", ordersData);
+      console.log(
+        "[TechnicianDashboard] Respuesta de getVehicles:",
+        vehiclesData
+      );
+      console.log(
+        "[TechnicianDashboard] Respuesta de getOrderCounts:",
+        countsData
+      );
+
+      if (!Array.isArray(ordersData.orders)) {
+        console.error("[TechnicianDashboard] Órdenes inválidas:", ordersData);
         setOrders([]);
-        setVehicles([]);
+        toast.error("Respuesta inválida al cargar órdenes");
+        return;
+      }
+
+      if (
+        !countsData ||
+        typeof countsData !== "object" ||
+        !("inProcess" in countsData)
+      ) {
+        console.error("[TechnicianDashboard] Conteos inválidos:", countsData);
         setInProcessOrdersCount(0);
         setPendingOrdersCount(0);
         setCompletedOrdersCount(0);
+        toast.error("Respuesta inválida al cargar conteos");
+      } else {
+        setInProcessOrdersCount(countsData.inProcess || 0);
+        setPendingOrdersCount(countsData.pending || 0);
+        setCompletedOrdersCount(countsData.completed || 0);
       }
-    };
-    fetchData();
+
+      const processedOrders = ordersData.orders.map((order) => ({
+        ...order,
+        notifications: order.notifications || [],
+      }));
+
+      setOrders(processedOrders);
+      setTotalPages(
+        Math.ceil((ordersData.total || ordersData.orders.length) / pageSize)
+      );
+      setVehicles(
+        Array.isArray(vehiclesData.vehicles) ? vehiclesData.vehicles : []
+      );
+    } catch (err) {
+      console.error("[TechnicianDashboard] Error al cargar datos:", err);
+      toast.error(err.message || "Error al cargar datos");
+      setOrders([]);
+      setVehicles([]);
+      setInProcessOrdersCount(0);
+      setPendingOrdersCount(0);
+      setCompletedOrdersCount(0);
+    } finally {
+      setIsLoading(false);
+    }
   }, [
     user.id,
     currentPage,
@@ -156,50 +179,286 @@ const TechnicianDashboard = () => {
     endDateFilter,
   ]);
 
+  // Configurar Socket.IO
   useEffect(() => {
-    if (showModal && modalType) {
-      const fetchModalOrders = async () => {
+    if (!socket || !isConnected || !user?.id) {
+      console.log(
+        "[TechnicianDashboard] Socket no conectado o usuario no disponible:",
+        {
+          socket: !!socket,
+          isConnected,
+          userId: user?.id,
+        }
+      );
+      return;
+    }
+
+    // Unirse a sala de usuario
+    const userRoom = `USER_${user.id}`;
+    socket.emit("joinUser", userRoom);
+    console.log(`[TechnicianDashboard] Unido a sala de usuario: ${userRoom}`);
+
+    // Unirse a salas de órdenes
+    orders.forEach((order) => {
+      if (["En Proceso", "Pendiente"].includes(order.status)) {
+        const orderRoom = order.id;
+        socket.emit("joinOrder", orderRoom);
+        console.log(
+          `[TechnicianDashboard] Unido a sala de orden: ${orderRoom}`
+        );
+      }
+    });
+
+    // Escuchar nuevas órdenes
+    socket.on("order_creation", async (newOrder) => {
+      console.log("[TechnicianDashboard] Nueva orden recibida:", newOrder);
+      if (newOrder.technician_id === user.id) {
         try {
-          const status =
-            modalType === "in-process"
-              ? "En Proceso"
-              : modalType === "pending-approval"
-              ? "Pendiente"
-              : "Finalizado";
-          const ordersData = await getOrders({
-            technician_id: user.id,
-            status,
-            page: modalCurrentPage,
-            limit: pageSize,
-            startDate: startDateFilter,
-            endDate: endDateFilter,
+          const countsData = await getOrderCounts({ technician_id: user.id });
+          setInProcessOrdersCount(countsData.inProcess || 0);
+          setPendingOrdersCount(countsData.pending || 0);
+          setCompletedOrdersCount(countsData.completed || 0);
+
+          setOrders((prev) => {
+            if (prev.some((o) => o.id === newOrder.id)) return prev;
+            const matchesFilters = [
+              economicNumberFilter
+                ? newOrder.vehicle_economic_number
+                    ?.toLowerCase()
+                    .includes(economicNumberFilter.toLowerCase())
+                : true,
+              orderNumberFilter
+                ? newOrder.id.toString().includes(orderNumberFilter)
+                : true,
+              statusFilter !== "Todos"
+                ? newOrder.status === statusFilter
+                : true,
+              startDateFilter
+                ? new Date(newOrder.created_at) >= new Date(startDateFilter)
+                : true,
+              endDateFilter
+                ? new Date(newOrder.created_at) <= new Date(endDateFilter)
+                : true,
+            ].every(Boolean);
+
+            if (!matchesFilters) return prev;
+
+            const updatedOrders = [
+              { ...newOrder, notifications: newOrder.notifications || [] },
+              ...prev,
+            ].slice(0, pageSize);
+            setTotalPages(Math.ceil((prev.length + 1) / pageSize));
+            return updatedOrders;
           });
 
-          if (!Array.isArray(ordersData.orders)) {
-            setOrders([]);
-            toast.error("Respuesta inválida al cargar órdenes");
-            return;
-          }
-
-          setOrders(ordersData.orders);
-          setModalTotalPages(
-            Math.ceil((ordersData.total || ordersData.orders.length) / pageSize)
-          );
+          toast.info(`Nueva orden creada: #${newOrder.id}`);
         } catch (err) {
-          toast.error(err.message || "Error al cargar órdenes");
-          setOrders([]);
+          console.error(
+            "[TechnicianDashboard] Error al actualizar contadores:",
+            err
+          );
         }
-      };
-      fetchModalOrders();
-    }
+      }
+    });
+
+    // Escuchar actualizaciones de órdenes
+    socket.on("order_update", async (updatedOrder) => {
+      console.log(
+        "[TechnicianDashboard] Actualización de orden:",
+        updatedOrder
+      );
+      try {
+        const countsData = await getOrderCounts({ technician_id: user.id });
+        setInProcessOrdersCount(countsData.inProcess || 0);
+        setPendingOrdersCount(countsData.pending || 0);
+        setCompletedOrdersCount(countsData.completed || 0);
+
+        setOrders((prev) => {
+          const updatedOrders = prev
+            .map((order) =>
+              order.id === updatedOrder.id
+                ? {
+                    ...order,
+                    ...updatedOrder,
+                    notifications: order.notifications,
+                  }
+                : order
+            )
+            .filter((order) => {
+              const matchesStatus =
+                statusFilter === "Todos" || order.status === statusFilter;
+              return matchesStatus;
+            });
+          return updatedOrders;
+        });
+
+        if (updatedOrder.technician_id === user.id) {
+          toast.info(
+            `Orden #${updatedOrder.id} actualizada a: ${updatedOrder.status}`
+          );
+        }
+      } catch (err) {
+        console.error("[TechnicianDashboard] Error al actualizar orden:", err);
+      }
+    });
+
+    // Escuchar notificaciones
+    socket.on("notification", async (notification) => {
+      console.log("[TechnicianDashboard] Notificación recibida:", notification);
+      if (
+        notification.toUserId === user.id &&
+        (notification.orderId || notification.order_id)
+      ) {
+        const orderId = notification.orderId || notification.order_id;
+        try {
+          const updatedOrder = await getOrderById(orderId);
+          setOrders((prev) => {
+            const updatedOrders = prev.map((order) => {
+              if (order.id === orderId) {
+                const newNotification = {
+                  id: notification.id,
+                  order_id: orderId,
+                  from_user_id: notification.fromUserId,
+                  to_user_id: notification.toUserId,
+                  message: notification.message,
+                  type: notification.type,
+                  status: notification.status || "Pendiente",
+                  created_at: notification.timestamp,
+                };
+                const updatedNotifications = order.notifications.some(
+                  (n) => n.id === notification.id
+                )
+                  ? order.notifications
+                  : [...order.notifications, newNotification];
+                return {
+                  ...order,
+                  ...updatedOrder,
+                  notifications: updatedNotifications,
+                };
+              }
+              return order;
+            });
+            return updatedOrders;
+          });
+
+          const countsData = await getOrderCounts({ technician_id: user.id });
+          setInProcessOrdersCount(countsData.inProcess || 0);
+          setPendingOrdersCount(countsData.pending || 0);
+          setCompletedOrdersCount(countsData.completed || 0);
+
+          toast.info(notification.message, {
+            onClick: () => {
+              setSelectedOrder(updatedOrder);
+              setShowModal(false);
+              if (updatedOrder.status === "Finalizado") {
+                setShowViewFinalizedModal(true);
+              } else if (updatedOrder.status === "Pendiente") {
+                setShowViewPendingApprovalModal(true);
+              } else {
+                setShowEditModal(true);
+              }
+            },
+          });
+        } catch (err) {
+          console.error(
+            "[TechnicianDashboard] Error al procesar notificación:",
+            err
+          );
+        }
+      }
+    });
+
+    return () => {
+      socket.off("order_creation");
+      socket.off("order_update");
+      socket.off("notification");
+      socket.emit("leaveUser", userRoom);
+      orders.forEach((order) => {
+        if (["En Proceso", "Pendiente"].includes(order.status)) {
+          socket.emit("leaveOrder", order.id);
+        }
+      });
+      console.log(
+        "[TechnicianDashboard] Listeners removidos y salas abandonadas"
+      );
+    };
   }, [
-    modalType,
-    modalCurrentPage,
-    user.id,
-    showModal,
+    socket,
+    isConnected,
+    user?.id,
+    orders,
+    economicNumberFilter,
+    orderNumberFilter,
+    statusFilter,
     startDateFilter,
     endDateFilter,
   ]);
+
+  // Cargar datos iniciales
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // Cargar órdenes para modales
+  const fetchModalOrders = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const status =
+        modalType === "in-process"
+          ? "En Proceso"
+          : modalType === "pending-approval"
+          ? "Pendiente"
+          : "Finalizado";
+      const ordersData = await getOrders({
+        technician_id: user.id,
+        status,
+        page: modalCurrentPage,
+        limit: pageSize,
+        startDate: startDateFilter,
+        endDate: endDateFilter,
+      });
+
+      console.log(
+        "[TechnicianDashboard] Respuesta de fetchModalOrders:",
+        ordersData
+      );
+
+      if (!Array.isArray(ordersData.orders)) {
+        console.error(
+          "[TechnicianDashboard] Órdenes modales inválidas:",
+          ordersData
+        );
+        setOrders([]);
+        toast.error("Respuesta inválida al cargar órdenes");
+        return;
+      }
+
+      const processedOrders = ordersData.orders.map((order) => ({
+        ...order,
+        notifications: order.notifications || [],
+      }));
+
+      setOrders(processedOrders);
+      setModalTotalPages(
+        Math.ceil((ordersData.total || ordersData.orders.length) / pageSize)
+      );
+    } catch (err) {
+      console.error(
+        "[TechnicianDashboard] Error al cargar órdenes modales:",
+        err
+      );
+      toast.error(err.message || "Error al cargar órdenes");
+      setOrders([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [modalType, modalCurrentPage, user.id, startDateFilter, endDateFilter]);
+
+  useEffect(() => {
+    if (showModal && modalType) {
+      fetchModalOrders();
+    }
+  }, [showModal, modalType, fetchModalOrders]);
 
   const technicianOrders = orders.filter(
     (order) => order.technician_id === user.id
@@ -210,30 +469,26 @@ const TechnicianDashboard = () => {
 
   const filteredOrders = activeAndPendingOrders
     .filter((order) => {
-      const matchesStatus =
-        statusFilter === "Todos" || order.status === statusFilter;
-      const matchesOrderNumber = orderNumberFilter
-        ? String(order.id).includes(orderNumberFilter)
-        : true;
-      const matchesEconomicNumber = economicNumberFilter
-        ? order.vehicle_economic_number.includes(economicNumberFilter)
-        : true;
-      const matchesDateRange =
-        startDateFilter && endDateFilter
-          ? new Date(order.created_at) >= new Date(startDateFilter) &&
-            new Date(order.created_at) <= new Date(endDateFilter)
-          : true;
-      return (
-        matchesStatus &&
-        matchesOrderNumber &&
-        matchesEconomicNumber &&
-        matchesDateRange
-      );
+      return [
+        statusFilter === "Todos" || order.status === statusFilter,
+        orderNumberFilter ? String(order.id).includes(orderNumberFilter) : true,
+        economicNumberFilter
+          ? order.vehicle_economic_number
+              ?.toLowerCase()
+              .includes(economicNumberFilter.toLowerCase())
+          : true,
+        startDateFilter
+          ? new Date(order.created_at) >= new Date(startDateFilter)
+          : true,
+        endDateFilter
+          ? new Date(order.created_at) <= new Date(endDateFilter)
+          : true,
+      ].every(Boolean);
     })
     .map((order) => ({
       id: order.id,
       title: `Orden #${order.id}`,
-      content: `Vehículo ${order.vehicle_economic_number} - ${
+      content: `Vehículo ${order.vehicle_economic_number || "-"} - ${
         order.status
       } (Ingreso: ${new Date(order.created_at).toLocaleDateString("es-ES")})`,
       status: order.status,
@@ -337,20 +592,19 @@ const TechnicianDashboard = () => {
     try {
       formRef.current.requestSubmit();
     } catch (err) {
-      console.error("Error al actualizar:", err);
+      console.error("[TechnicianDashboard] Error al actualizar:", err);
+      toast.error("Error al actualizar la orden");
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const submitForApproval = async (order) => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     try {
-      console.log(
-        `[TechnicianDashboard] Enviando orden #${order.id} para aprobación con estado Pendiente`
-      );
       const updatedOrder = await updateOrderStatus(order.id, "Pendiente");
       console.log(`[TechnicianDashboard] Orden actualizada:`, updatedOrder);
-      toast.success(`Orden #${order.id} enviada para aprobación`);
       setOrders((prev) =>
         prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o))
       );
@@ -358,12 +612,18 @@ const TechnicianDashboard = () => {
       setInProcessOrdersCount(countsData.inProcess || 0);
       setPendingOrdersCount(countsData.pending || 0);
       setCompletedOrdersCount(countsData.completed || 0);
+      toast.success(`Orden #${order.id} enviada para aprobación`);
+      if (socket && isConnected) {
+        socket.emit("joinOrder", order.id);
+      }
     } catch (err) {
       console.error(
         `[TechnicianDashboard] Error al enviar orden #${order.id}:`,
         err
       );
       toast.error(err.message || "Error al enviar la orden para aprobación");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -435,7 +695,14 @@ const TechnicianDashboard = () => {
           <ContentBtn>
             <h3>Estadísticas</h3>
           </ContentBtn>
-          <StatCardsContainer stats={stats} />
+          {isLoading ? (
+            <div className="text-center my-4">
+              <Spinner animation="border" variant="primary" />
+              <p>Cargando datos...</p>
+            </div>
+          ) : (
+            <StatCardsContainer stats={stats} />
+          )}
           <ContentBtn>
             <h3>Órdenes de Servicio</h3>
             <CustomButton onClick={() => navigate("/technician/create-order")}>
@@ -444,21 +711,43 @@ const TechnicianDashboard = () => {
           </ContentBtn>
           <OrderFilters
             economicNumberFilter={economicNumberFilter}
-            setEconomicNumberFilter={setEconomicNumberFilter}
+            setEconomicNumberFilter={debouncedSetEconomicNumberFilter}
             statusFilter={statusFilter}
-            setStatusFilter={setStatusFilter}
+            setStatusFilter={(value) => {
+              setStatusFilter(value);
+              setCurrentPage(1);
+            }}
             orderNumberFilter={orderNumberFilter}
-            setOrderNumberFilter={setOrderNumberFilter}
+            setOrderNumberFilter={debouncedSetOrderNumberFilter}
             startDateFilter={startDateFilter}
-            setStartDateFilter={setStartDateFilter}
+            setStartDateFilter={(value) => {
+              setStartDateFilter(value);
+              setCurrentPage(1);
+            }}
             endDateFilter={endDateFilter}
-            setEndDateFilter={setEndDateFilter}
+            setEndDateFilter={(value) => {
+              setEndDateFilter(value);
+              setCurrentPage(1);
+            }}
           />
-          <OrderList orders={filteredOrders} />
-          {totalPages > 1 && (
-            <div className="d-flex justify-content-center mt-4">
-              {renderPagination(currentPage, totalPages, handlePageChange)}
+          {isLoading ? (
+            <div className="text-center my-4">
+              <Spinner animation="border" variant="primary" />
+              <p>Cargando órdenes...</p>
             </div>
+          ) : filteredOrders.length > 0 ? (
+            <>
+              <OrderList orders={filteredOrders} />
+              {totalPages > 1 && (
+                <div className="d-flex justify-content-center mt-4">
+                  {renderPagination(currentPage, totalPages, handlePageChange)}
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="text-center mt-4">
+              No hay órdenes activas o pendientes con los filtros seleccionados.
+            </p>
           )}
         </Container>
 
@@ -477,7 +766,12 @@ const TechnicianDashboard = () => {
             </Modal.Title>
           </Modal.Header>
           <ModalBody>
-            {modalOrders.length > 0 ? (
+            {isLoading ? (
+              <div className="text-center my-4">
+                <Spinner animation="border" variant="primary" />
+                <p>Cargando órdenes...</p>
+              </div>
+            ) : modalOrders.length > 0 ? (
               <>
                 <TableWrapper>
                   <StyledTable>
@@ -493,7 +787,7 @@ const TechnicianDashboard = () => {
                     <tbody>
                       {modalOrders.map((order) => (
                         <tr key={order.id}>
-                          <td>{order.vehicle_economic_number}</td>
+                          <td>{order.vehicle_economic_number || "-"}</td>
                           <td>{order.id}</td>
                           <td>
                             {new Date(order.created_at).toLocaleDateString(
@@ -633,6 +927,7 @@ const TechnicianDashboard = () => {
                               model: updatedOrder.model || o.model,
                               year: updatedOrder.year || o.year,
                               parts: updatedOrder.parts || o.parts,
+                              notifications: o.notifications,
                             }
                           : o
                       )
@@ -652,6 +947,7 @@ const TechnicianDashboard = () => {
                       model: updatedOrder.model || selectedOrder.model,
                       year: updatedOrder.year || selectedOrder.year,
                       parts: updatedOrder.parts || selectedOrder.parts,
+                      notifications: selectedOrder.notifications,
                     });
                     const countsData = await getOrderCounts({
                       technician_id: user.id,
@@ -659,6 +955,13 @@ const TechnicianDashboard = () => {
                     setInProcessOrdersCount(countsData.inProcess || 0);
                     setPendingOrdersCount(countsData.pending || 0);
                     setCompletedOrdersCount(countsData.completed || 0);
+                    if (
+                      socket &&
+                      isConnected &&
+                      ["En Proceso", "Pendiente"].includes(updatedOrder.status)
+                    ) {
+                      socket.emit("joinOrder", updatedOrder.id);
+                    }
                   }
                   closeModal("edit", "main", "in-process");
                 }}

@@ -1,4 +1,5 @@
 import styled from "@emotion/styled";
+import { createGlobalStyle } from "styled-components";
 import {
   Container,
   Col,
@@ -10,6 +11,14 @@ import {
   Modal,
   Table,
 } from "react-bootstrap";
+
+export const GlobalStyle = createGlobalStyle`
+  @keyframes blink {
+    0% { opacity: 1; }
+    50% { opacity: 0.3; }
+    100% { opacity: 1; }
+  }
+`;
 
 export const colors = {
   primary: "#d74a49",
@@ -200,18 +209,22 @@ export const StyledTable = styled.table`
   margin-top: 20px;
   th,
   td {
-    padding: 12px;
+    padding: 10px;
     border: 1px solid #ddd;
     text-align: left;
     vertical-align: middle;
+    font-size: 0.9rem;
   }
   th {
     background-color: ${colors.backgroundLight};
     color: white;
     font-weight: bold;
+    white-space: wrap;
+    text-align: center;
   }
   td {
     line-height: 1.5;
+    white-space: nowrap;
   }
   tr:nth-of-type(even) {
     background-color: #f9f9f9;
@@ -221,27 +234,43 @@ export const StyledTable = styled.table`
   }
   td.actions {
     white-space: nowrap;
-    min-width: 150px;
+    min-width: 120px;
   }
   th:nth-of-type(1),
   td:nth-of-type(1) {
-    min-width: 100px;
+    min-width: 80px;
   }
   th:nth-of-type(2),
   td:nth-of-type(2) {
-    min-width: 150px;
+    min-width: 100px;
   }
   th:nth-of-type(3),
   td:nth-of-type(3) {
-    min-width: 150px;
+    min-width: 100px;
   }
   th:nth-of-type(4),
   td:nth-of-type(4) {
-    min-width: 200px;
+    min-width: 100px;
   }
   th:nth-of-type(5),
   td:nth-of-type(5) {
+    min-width: 100px;
+  }
+  th:nth-of-type(6),
+  td:nth-of-type(6) {
     min-width: 120px;
+  }
+  th:nth-of-type(7),
+  td:nth-of-type(7) {
+    min-width: 80px;
+  }
+  th:nth-of-type(8),
+  td:nth-of-type(8) {
+    min-width: 100px;
+  }
+  th:nth-of-type(9),
+  td:nth-of-type(9) {
+    min-width: 100px;
   }
 `;
 
@@ -519,7 +548,9 @@ export const MobileToggleButton = styled(Button)`
 export const StyledModal = styled(Modal)`
   .modal-dialog {
     max-width: ${(props) =>
-      props.variant === "detailsVehicle"
+      props.variant === "alertModal"
+        ? "auto"
+        : props.variant === "detailsVehicle"
         ? "500px"
         : props.variant === "detailsParts"
         ? "800px"
@@ -538,6 +569,8 @@ export const ModalBody = styled(Modal.Body)`
 
 export const TableWrapper = styled.div`
   overflow-x: auto;
+  width: 100%;
+  max-width: 100%;
 `;
 
 export const StyledTableModal = styled(Table)`
@@ -670,6 +703,22 @@ export const DetailValue = styled.p`
   font-weight: 500;
   color: ${colors.backgroundDark};
   margin-bottom: 1rem;
+  border-radius: ${({ variant }) =>
+    variant === "pending"
+      ? "10px solid #ffc107"
+      : variant === "approved"
+      ? "10px solid #28a745"
+      : variant === "inProcess"
+      ? "10px solid #fae79c"
+      : ""};
+  background-color: ${({ variant }) =>
+    variant === "pending"
+      ? "#fffbe6"
+      : variant === "approved"
+      ? "#e6ffed"
+      : variant === "inProcess"
+      ? "#fffbe6"
+      : "transparent"};
 
   &.price {
     color: ${colors.success};
@@ -755,15 +804,15 @@ export const ButtonDetails = styled(Button)(({ variant }) => ({
 }));
 
 export const MessageBubble = styled.div`
-  max-width: 70%;
-  padding: 0.75rem;
+  padding: 1px 12px;
   border-radius: 0.5rem;
   margin-bottom: 0.5rem;
   background-color: ${(props) =>
-    props.sender === "user" ? "#d74a49" : "#e9ecef"};
-  color: ${(props) => (props.sender === "user" ? "white" : "#333")};
+    props.sender === "user" ? colors.primary : colors.backgroundLight};
+  color: ${(props) => (props.sender === "user" ? "white" : "white")};
   align-self: ${(props) =>
     props.sender === "user" ? "flex-end" : "flex-start"};
+  position: relative;
 `;
 
 export const MessageInputWrapper = styled.div`
@@ -776,7 +825,7 @@ export const PartRequestBanner = styled.div`
   color: #333;
   padding: 1rem;
   border-radius: 8px;
-  margin: 1rem;
+  margin-left: 1rem;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -840,5 +889,99 @@ export const MessageDetailContainer = styled.div`
   @media (max-width: 768px) {
     width: 100%;
     min-height: 50vh;
+  }
+`;
+
+// Nuevos estilos para notificaciones
+export const NotificationMessage = styled.div`
+  padding: 10px;
+  margin: 10px 0;
+  border-radius: 5px;
+  font-family: Arial, sans-serif;
+  font-size: 16px;
+`;
+
+export const ApprovedNotification = styled(NotificationMessage)`
+  background-color: #e6f3e6;
+  border: 1px solid #28a745;
+  color: #28a745;
+`;
+
+export const RejectedNotification = styled(NotificationMessage)`
+  background-color: #f8d7da;
+  border: 1px solid #dc3545;
+  color: #dc3545;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+`;
+
+export const ToggleButton = styled.button`
+  background: none;
+  border: none;
+  color: #dc3545;
+  font-size: 16px;
+  cursor: pointer;
+`;
+
+export const RejectionReason = styled.span`
+  display: none;
+  background-color: #fff3cd;
+  border: 1px solid #ffc107;
+  padding: 8px;
+  margin-top: 5px;
+  border-radius: 5px;
+  color: #856404;
+  font-size: 14px;
+  width: 100%;
+  &.active {
+    display: block;
+  }
+`;
+
+export const InvoiceDisplay = styled.div`
+  display: flex;
+  align-items: center;
+  background-color: #f0f0f0;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-family: Arial, sans-serif;
+  font-size: 0.9rem;
+  color: ${colors.backgroundDark};
+`;
+
+export const DeleteIcon = styled.span`
+  color: ${colors.danger};
+  margin-right: 8px;
+  cursor: pointer;
+  font-size: 0.9rem; /* Ajustado para Font Awesome */
+  padding-right: 8px;
+  border-right: 1px solid #ccc;
+  display: flex;
+  align-items: center;
+  transition: color 0.3s;
+  &:hover {
+    color: ${colors.primaryHover};
+  }
+`;
+
+export const InvoiceNumber = styled.span`
+  flex: 1;
+`;
+
+export const InfoGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  & > div {
+    display: flex;
+    flex-direction: column;
+  }
+  & > div.full-width {
+    grid-column: 1 / -1;
+  }
+  @media (max-width: 768px) {
+    grid-template-columns: 1fr;
   }
 `;

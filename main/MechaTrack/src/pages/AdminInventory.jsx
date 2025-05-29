@@ -15,15 +15,16 @@ import {
   ModalBody,
   StyledTable,
   ActionsContainer,
+  TableWrapper,
 } from "../styles/GlobalStyles";
+import { API_URL } from "../services/apiConfig";
+import { getVehicleModels } from "../services/vehicleService";
 import {
   getParts,
   createPart,
   updatePart,
   deletePart,
-  getVehicleModels,
-  API_URL,
-} from "../services/orderService";
+} from "../services/partService";
 import { toast } from "react-toastify";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faEye, faPencil, faTrashCan } from "@fortawesome/free-solid-svg-icons";
@@ -190,7 +191,7 @@ const AdminInventory = () => {
               Agregar Repuesto
             </CustomButton>
           </FiltersContainer>
-          <ListGroup.Item className="w-100">
+          <TableWrapper>
             <StyledTable>
               <thead>
                 <tr>
@@ -255,7 +256,7 @@ const AdminInventory = () => {
                 ))}
               </tbody>
             </StyledTable>
-          </ListGroup.Item>
+          </TableWrapper>
           <Pagination>
             <Pagination.Prev
               onClick={() => handlePageChange(pagination.page - 1)}

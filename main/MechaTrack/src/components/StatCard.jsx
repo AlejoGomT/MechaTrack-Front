@@ -1,6 +1,6 @@
-import { Card } from 'react-bootstrap';
-import { StatCard as StyledStatCard } from '../styles/GlobalStyles';
-import CustomButton from './CustomButton';
+import { Card } from "react-bootstrap";
+import { StatCard as StyledStatCard } from "../styles/GlobalStyles";
+import CustomButton from "./CustomButton";
 
 const StatCard = ({ title, content, buttonText, onClick }) => {
   return (
