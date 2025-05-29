@@ -94,15 +94,19 @@ export const createOrder = async (orderData) => {
 export const updateOrder = async (orderId, orderData) => {
   try {
     const formData = new FormData();
+    let hasImages = false;
+
     Object.entries(orderData).forEach(([key, value]) => {
       if (key === "images" && Array.isArray(value)) {
         value.forEach((file) => {
           if (file instanceof File) {
             formData.append("images", file);
+            hasImages = true;
           }
         });
       } else if (key === "existingImages" && Array.isArray(value)) {
         formData.append("existingImages", JSON.stringify(value));
+        hasImages = true;
       } else if (key === "parts" && Array.isArray(value)) {
         formData.append(
           "parts",
@@ -121,6 +125,10 @@ export const updateOrder = async (orderId, orderData) => {
       }
     });
 
+    if (hasImages && !orderData.parts) {
+      formData.append("updateImagesOnly", "true");
+    }
+
     const response = await axiosInstance.put(
       `/api/orders/${orderId}`,
       formData,
@@ -132,6 +140,7 @@ export const updateOrder = async (orderId, orderData) => {
     );
     return response.data;
   } catch (error) {
+    console.error("Error en updateOrder:", error.response?.data || error);
     throw error.response?.data || { message: "Error al actualizar la orden" };
   }
 };
