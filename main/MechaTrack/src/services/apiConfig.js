@@ -25,6 +25,11 @@ axiosInstance.interceptors.response.use(
       localStorage.removeItem("token");
       window.location.href = "/";
     }
+    console.error(
+      "[Axios] Error en solicitud:",
+      error.response?.status,
+      error.response?.data
+    );
     return Promise.reject(error);
   }
 );
