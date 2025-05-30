@@ -9,9 +9,10 @@ import {
   Carousel,
   Row,
   Container,
+  Pagination,
 } from "react-bootstrap";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faSort, faDownload } from "@fortawesome/free-solid-svg-icons";
+import { faSort, faDownload, faEye } from "@fortawesome/free-solid-svg-icons";
 import * as Papa from "papaparse";
 import { debounce } from "lodash";
 import {
@@ -23,7 +24,7 @@ import {
   Tooltip as RechartsTooltip,
   Legend,
 } from "recharts";
-import io from "socket.io-client";
+import { useSocket } from "../context/SocketContext";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import CustomButton from "../components/CustomButton";
@@ -40,7 +41,6 @@ import {
   StatusDiv,
   StatsContainer,
   StatCard,
-  ImageContainer,
   StyledCarousel,
   CarouselItemDiv,
   OverlayText,
@@ -51,6 +51,7 @@ import {
   DetailLabel,
   DetailValue,
   TableWrapper,
+  Content,
 } from "../styles/GlobalStyles";
 import { colors } from "../styles/GlobalStyles";
 import {
@@ -59,8 +60,26 @@ import {
   getOrderCounts,
 } from "../services/orderService";
 import { API_URL } from "../services/apiConfig";
+import axiosInstance from "../services/apiConfig";
+import styled from "@emotion/styled";
+import { toast } from "react-toastify";
 
-const socket = io(API_URL);
+const StyledFiltersContainer = styled(FiltersContainer)`
+  background-color: #f1f3f5;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+`;
+
+const EmptyMessage = styled.div`
+  text-align: center;
+  padding: 20px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  color: #6c757d;
+  margin-top: 20px;
+`;
 
 const clientMenu = [
   { label: "Inicio", path: "/client" },
@@ -70,63 +89,128 @@ const clientMenu = [
 ];
 
 const ClientQuery = () => {
+  const { socket, isConnected } = useSocket();
   const [orders, setOrders] = useState([]);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
-  const [filters, setFilters] = useState({
-    orderId: "",
-    orderNumber: "",
-    economicNumber: "",
-    displayStatus: "",
-    branch: "",
-    startDate: "",
-    endDate: "",
-    page: 1,
-    limit: 10,
-  });
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
+  const [orderNumberFilter, setOrderNumberFilter] = useState("");
+  const [economicNumberFilter, setEconomicNumberFilter] = useState("");
+  const [branchFilter, setBranchFilter] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
   const [stats, setStats] = useState({
+    total: 0,
     inProcess: 0,
     pending: 0,
     completed: 0,
   });
   const [notifications, setNotifications] = useState([]);
+  const [branches, setBranches] = useState([]);
+  const pageSize = 10;
 
-  const loadData = useCallback(async () => {
+  // Cargar sucursales desde el backend
+  const loadBranches = useCallback(async () => {
+    try {
+      const response = await axiosInstance.get("/api/orders/branches");
+      setBranches(response.data || []);
+      console.log("[ClientQuery] Sucursales cargadas:", response.data);
+    } catch (error) {
+      console.error("[ClientQuery] Error cargando sucursales:", error);
+      toast.error("Error al cargar sucursales");
+    }
+  }, []);
+
+  const fetchOrders = useCallback(async () => {
     setLoading(true);
     try {
-      const { orders, totalPages } = await getOrders({
-        orderId: filters.orderId || undefined,
-        orderNumber: filters.orderNumber || undefined,
-        economicNumber: filters.economicNumber || undefined,
-        displayStatus: filters.displayStatus || undefined,
-        branch: filters.branch || undefined,
-        startDate: filters.startDate || undefined,
-        endDate: filters.endDate || undefined,
-        page: filters.page,
-        limit: filters.limit,
+      const ordersData = await getOrders({
+        orderId: orderNumberFilter,
+        economicNumber: economicNumberFilter || undefined,
+        branch: branchFilter || undefined,
+        page: currentPage,
+        limit: pageSize,
       });
-      console.log("[ClientQuery] Órdenes recibidas:", orders);
-      setOrders(orders || []);
-      setTotalPages(totalPages || 1);
+      console.log("[ClientQuery] Respuesta de getOrders:", ordersData);
 
-      const counts = await getOrderCounts();
+      if (!Array.isArray(ordersData.orders)) {
+        console.error(
+          "[ClientQuery] Respuesta inválida de getOrders, se esperaba un arreglo en orders:",
+          ordersData
+        );
+        setOrders([]);
+        toast.error("Respuesta inválida al cargar órdenes");
+        setTotalPages(1);
+        return;
+      }
+
+      setOrders(ordersData.orders);
+      setTotalPages(
+        Math.ceil((ordersData.total || ordersData.orders.length) / pageSize)
+      );
+      console.log(
+        "[ClientQuery] Órdenes establecidas:",
+        ordersData.orders.length
+      );
+
+      // Calcular contadores manualmente
+      const inProcessCount = ordersData.orders.reduce((count, order) => {
+        return ["En Proceso", "Pendiente", "Finalizado"].includes(order.status)
+          ? count + 1
+          : count;
+      }, 0);
+      const pendingCount = ordersData.orders.reduce((count, order) => {
+        return order.status === "Pendiente de Facturación" ? count + 1 : count;
+      }, 0);
+      const completedCount = ordersData.orders.reduce((count, order) => {
+        return order.status === "Facturado" ? count + 1 : count;
+      }, 0);
+
       setStats({
-        inProcess: counts.inProcess || 0,
-        pending: counts.pending || 0,
-        completed: counts.completed || 0,
+        total: ordersData.total || ordersData.orders.length,
+        inProcess: inProcessCount,
+        pending: pendingCount,
+        completed: completedCount,
       });
-    } catch (error) {
-      console.error("[ClientQuery] Error cargando datos:", error);
+    } catch (err) {
+      console.error("[ClientQuery] Error al cargar órdenes:", err);
+      toast.error(err.message || "Error al cargar órdenes");
+      setOrders([]);
+      setTotalPages(1);
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [orderNumberFilter, economicNumberFilter, branchFilter, currentPage]);
 
+  // Cargar datos iniciales
   useEffect(() => {
-    loadData();
+    loadBranches();
+    fetchOrders();
+  }, [loadBranches, fetchOrders]);
+
+  // Debounce para filtros de texto
+  const debouncedSetOrderNumberFilter = useCallback(
+    debounce((value) => {
+      setOrderNumberFilter(value);
+      setCurrentPage(1);
+    }, 100),
+    []
+  );
+
+  const debouncedSetEconomicNumberFilter = useCallback(
+    debounce((value) => {
+      setEconomicNumberFilter(value);
+      setCurrentPage(1);
+    }, 100),
+    []
+  );
+
+  // Configurar Socket.IO
+  useEffect(() => {
+    if (!socket || !isConnected) {
+      console.warn("[ClientQuery] Socket no conectado o no inicializado");
+      return;
+    }
 
     socket.on("notification", (notification) => {
       if (
@@ -142,61 +226,24 @@ const ClientQuery = () => {
           },
           ...prev.slice(0, 4),
         ]);
-        loadData();
+        fetchOrders();
+        toast.info(notification.message);
       }
     });
 
-    return () => socket.off("notification");
-  }, [loadData]);
-
-  const debouncedFilterChange = useMemo(
-    () =>
-      debounce((name, value) => {
-        setFilters((prev) => ({ ...prev, [name]: value, page: 1 }));
-      }, 500),
-    []
-  );
-
-  const handleFilterChange = (e) => {
-    const { name, value } = e.target;
-    if (["orderId", "orderNumber", "economicNumber"].includes(name)) {
-      debouncedFilterChange(name, value);
-    } else {
-      setFilters((prev) => ({ ...prev, [name]: value, page: 1 }));
-    }
-  };
-
-  const handleSort = (key) => {
-    setSortConfig((prev) => ({
-      key,
-      direction: prev.key === key && prev.direction === "asc" ? "desc" : "asc",
-    }));
-  };
-
-  const sortedOrders = useMemo(() => {
-    if (!sortConfig.key) return orders;
-    return [...orders].sort((a, b) => {
-      const aValue = a[sortConfig.key] || "";
-      const bValue = b[sortConfig.key] || "";
-      return aValue < bValue
-        ? sortConfig.direction === "asc"
-          ? -1
-          : 1
-        : aValue > bValue
-        ? sortConfig.direction === "asc"
-          ? 1
-          : -1
-        : 0;
-    });
-  }, [orders, sortConfig]);
+    return () => {
+      if (socket) {
+        socket.off("notification");
+      }
+    };
+  }, [socket, isConnected, fetchOrders]);
 
   const handleExportCSV = () => {
     try {
       const csvData = orders.map((order) => ({
         "Número de Orden": order.id,
-        "Número de Pedido": order.order_number || "N/A",
         "Número Económico": order.vehicle_economic_number,
-        Estado: getStatusDisplay(order.status, filters.displayStatus),
+        Estado: getStatusDisplay(order.status),
         "Fecha de Ingreso": order.created_at,
         "Fecha de Finalización": order.finalized_at || "N/A",
         Sucursal: order.vehicle?.branch || "N/A",
@@ -213,16 +260,14 @@ const ClientQuery = () => {
       console.error("[ClientQuery] Error al exportar CSV:", error);
       const csvData = orders.map(
         (order) =>
-          `"${order.id}","${order.order_number || "N/A"}","${
-            order.vehicle_economic_number
-          }","${getStatusDisplay(order.status, filters.displayStatus)}","${
-            order.created_at
-          }","${order.finalized_at || "N/A"}","${
+          `"${order.id}","${order.vehicle_economic_number}","${getStatusDisplay(
+            order.status
+          )}","${order.created_at}","${order.finalized_at || "N/A"}","${
             order.vehicle?.branch || "N/A"
           }"`
       );
       const csv = [
-        "Número de Orden,Número de Pedido,Número Económico,Estado,Fecha de Ingreso,Fecha de Finalización,Sucursal",
+        "Número de Orden,Número Económico,Estado,Fecha de Ingreso,Fecha de Finalización,Sucursal",
         ...csvData,
       ].join("\n");
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -243,6 +288,7 @@ const ClientQuery = () => {
       setShowModal(true);
     } catch (error) {
       console.error("[ClientQuery] Error cargando detalles:", error);
+      toast.error("Error al cargar detalles de la orden");
     } finally {
       setLoading(false);
     }
@@ -250,23 +296,8 @@ const ClientQuery = () => {
 
   const handleCloseModal = () => setShowModal(false);
 
-  const getStatusDisplay = (status, displayStatus) => {
-    if (
-      displayStatus === "En Proceso" &&
-      ["En Proceso", "Pendiente", "Finalizado"].includes(status)
-    ) {
-      return "En Proceso";
-    }
-    if (
-      displayStatus === "Pendiente de Facturación" &&
-      status === "Pendiente de Facturación"
-    ) {
-      return "Pendiente de Facturación";
-    }
-    if (displayStatus === "Finalizado" && status === "Facturado") {
-      return "Orden Finalizada";
-    }
-    if (["En Proceso", "Pendiente", "Finalizado"].includes(status)) {
+  const getStatusDisplay = (status) => {
+    if (["En Proceso", "Pendiente"].includes(status)) {
       return "En Proceso";
     }
     if (status === "Pendiente de Facturación") {
@@ -278,8 +309,8 @@ const ClientQuery = () => {
     return status;
   };
 
-  const getStatusVariant = (status, displayStatus) => {
-    const computedStatus = getStatusDisplay(status, displayStatus);
+  const getStatusVariant = (status) => {
+    const computedStatus = getStatusDisplay(status);
     if (computedStatus === "Orden Finalizada") return "completed";
     if (computedStatus === "En Proceso") return "inProcess";
     if (computedStatus === "Pendiente de Facturación") return "pending";
@@ -296,30 +327,81 @@ const ClientQuery = () => {
     { name: "Finalizadas", value: stats.completed, fill: colors.green },
   ];
 
+  const formatDate = (dateStr) => {
+    if (!dateStr) return "-";
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("es-ES", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
+  const renderPagination = (current, total, onPageChange) => {
+    const items = [];
+    const maxPagesToShow = 5;
+    const startPage = Math.max(1, current - Math.floor(maxPagesToShow / 2));
+    const endPage = Math.min(total, startPage + maxPagesToShow - 1);
+
+    items.push(
+      <Pagination.Prev
+        key="prev"
+        onClick={() => current > 1 && onPageChange(current - 1)}
+        disabled={current === 1}
+      />
+    );
+
+    for (let page = startPage; page <= endPage; page++) {
+      items.push(
+        <Pagination.Item
+          key={page}
+          active={page === current}
+          onClick={() => onPageChange(page)}
+        >
+          {page}
+        </Pagination.Item>
+      );
+    }
+
+    items.push(
+      <Pagination.Next
+        key="next"
+        onClick={() => current < total && onPageChange(current + 1)}
+        disabled={current === total}
+      />
+    );
+
+    return <Pagination>{items}</Pagination>;
+  };
+
   return (
     <MainContainer fluid>
       <Sidebar menuItems={clientMenu} title="Consulta de Cliente" />
-      <div className="content" style={{ marginLeft: "200px", padding: "20px" }}>
+      <Content>
         <DashboardHeader
           title="Consulta de Estado de Facturación"
           subtitle="Verifica el estado y el historial de tus órdenes de servicio"
         />
+        {!isConnected && (
+          <div className="alert alert-warning">
+            Conexión en tiempo real perdida. Algunas actualizaciones podrían no
+            reflejarse.
+          </div>
+        )}
         {notifications.length > 0 && (
           <NotificationMessage variant="info">
             {notifications[0].message} (
             {new Date(notifications[0].timestamp).toLocaleString()})
           </NotificationMessage>
         )}
-        <Container className="mt-4 d-flex flex-column align-items-center gap-3">
+        <Container fluid>
           <ActionsContainer>
-            <StatsContainer className="mt-3">
+            <StatsContainer className="mt-3 w-50 pe-2">
               <Row className="justify-content-between">
                 <StatCard>
                   <Card.Body>
                     <Card.Title>Total Órdenes</Card.Title>
-                    <Card.Text>
-                      {stats.inProcess + stats.pending + stats.completed}
-                    </Card.Text>
+                    <Card.Text>{stats.total}</Card.Text>
                   </Card.Body>
                 </StatCard>
                 <StatCard>
@@ -342,10 +424,17 @@ const ClientQuery = () => {
                 </StatCard>
               </Row>
             </StatsContainer>
-            <div style={{ margin: "20px 0", textAlign: "center" }}>
+            <div
+              style={{
+                margin: "20px 0",
+                textAlign: "center",
+                maxWidth: "100%",
+                overflowX: "auto",
+              }}
+            >
               <h6>Distribución de Órdenes</h6>
               <BarChart
-                width={400}
+                width={Math.min(window.innerWidth - 320, 600)}
                 height={300}
                 data={chartData}
                 margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
@@ -359,90 +448,43 @@ const ClientQuery = () => {
               </BarChart>
             </div>
           </ActionsContainer>
-          <FiltersContainer>
+          <StyledFiltersContainer>
             <FilterGroup>
               <FilterLabel>Número de Orden</FilterLabel>
               <FilterInput
-                type="number"
-                name="orderId"
-                value={filters.orderId}
-                onChange={handleFilterChange}
-                placeholder="Ingrese número de orden (ID)"
-                aria-label="Filtrar por número de orden"
-              />
-            </FilterGroup>
-            <FilterGroup>
-              <FilterLabel>Número de Pedido</FilterLabel>
-              <FilterInput
                 type="text"
-                name="orderNumber"
-                value={filters.orderNumber}
-                onChange={handleFilterChange}
-                placeholder="Ingrese número de pedido"
-                aria-label="Filtrar por número de pedido"
+                value={orderNumberFilter}
+                onChange={(e) => debouncedSetOrderNumberFilter(e.target.value)}
+                placeholder="Filtrar por N° Orden"
               />
             </FilterGroup>
             <FilterGroup>
               <FilterLabel>Número Económico</FilterLabel>
               <FilterInput
                 type="text"
-                name="economicNumber"
-                value={filters.economicNumber}
-                onChange={handleFilterChange}
-                placeholder="Ingrese número económico"
-                aria-label="Filtrar por número económico"
+                defaultValue={economicNumberFilter}
+                onChange={(e) =>
+                  debouncedSetEconomicNumberFilter(e.target.value)
+                }
+                placeholder="Filtrar por N° Económico"
               />
-            </FilterGroup>
-            <FilterGroup>
-              <FilterLabel>Estado</FilterLabel>
-              <FilterSelect
-                name="displayStatus"
-                value={filters.displayStatus}
-                onChange={handleFilterChange}
-                aria-label="Filtrar por estado"
-              >
-                <option value="">Todos</option>
-                <option value="En Proceso">En Proceso</option>
-                <option value="Pendiente de Facturación">
-                  Pendiente de Facturación
-                </option>
-                <option value="Finalizado">Orden Finalizada</option>
-              </FilterSelect>
             </FilterGroup>
             <FilterGroup>
               <FilterLabel>Sucursal</FilterLabel>
               <FilterSelect
-                name="branch"
-                value={filters.branch}
-                onChange={handleFilterChange}
-                aria-label="Filtrar por sucursal"
+                value={branchFilter}
+                onChange={(e) => {
+                  setBranchFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
               >
                 <option value="">Todas</option>
-                <option value="SALTILLO">SALTILLO</option>
-                <option value="TORREON">TORREON</option>
-                <option value="GUADALUPE">GUADALUPE</option>
-                <option value="MONTERREY">MONTERREY</option>
+                {branches.map((branch) => (
+                  <option key={branch} value={branch}>
+                    {branch}
+                  </option>
+                ))}
               </FilterSelect>
-            </FilterGroup>
-            <FilterGroup>
-              <FilterLabel>Fecha Desde</FilterLabel>
-              <FilterInput
-                type="date"
-                name="startDate"
-                value={filters.startDate}
-                onChange={handleFilterChange}
-                aria-label="Filtrar por fecha desde"
-              />
-            </FilterGroup>
-            <FilterGroup>
-              <FilterLabel>Fecha Hasta</FilterLabel>
-              <FilterInput
-                type="date"
-                name="endDate"
-                value={filters.endDate}
-                onChange={handleFilterChange}
-                aria-label="Filtrar por fecha hasta"
-              />
             </FilterGroup>
             <OverlayTrigger
               placement="top"
@@ -455,136 +497,66 @@ const ClientQuery = () => {
                 <FontAwesomeIcon icon={faDownload} /> Exportar
               </CustomButton>
             </OverlayTrigger>
-          </FiltersContainer>
+          </StyledFiltersContainer>
           {loading ? (
-            <div className="text-center">
+            <div className="text-center my-4">
               <Spinner animation="border" style={{ color: colors.primary }} />
+              <p>Cargando órdenes...</p>
             </div>
-          ) : sortedOrders.length > 0 ? (
+          ) : orders.length > 0 ? (
             <>
-              <StyledTable>
-                <thead>
-                  <tr>
-                    <th
-                      onClick={() => handleSort("id")}
-                      role="button"
-                      tabIndex={0}
-                      aria-label="Ordenar por número de orden"
-                    >
-                      Número de Orden <FontAwesomeIcon icon={faSort} />
-                    </th>
-                    <th
-                      onClick={() => handleSort("order_number")}
-                      role="button"
-                      tabIndex={0}
-                      aria-label="Ordenar por número de pedido"
-                    >
-                      Número de Pedido <FontAwesomeIcon icon={faSort} />
-                    </th>
-                    <th
-                      onClick={() => handleSort("vehicle_economic_number")}
-                      role="button"
-                      tabIndex={0}
-                      aria-label="Ordenar por número económico"
-                    >
-                      Número Económico <FontAwesomeIcon icon={faSort} />
-                    </th>
-                    <th
-                      onClick={() => handleSort("status")}
-                      role="button"
-                      tabIndex={0}
-                      aria-label="Ordenar por estado"
-                    >
-                      Estado <FontAwesomeIcon icon={faSort} />
-                    </th>
-                    <th
-                      onClick={() => handleSort("created_at")}
-                      role="button"
-                      tabIndex={0}
-                      aria-label="Ordenar por fecha de ingreso"
-                    >
-                      Fecha de Ingreso <FontAwesomeIcon icon={faSort} />
-                    </th>
-                    <th
-                      onClick={() => handleSort("finalized_at")}
-                      role="button"
-                      tabIndex={0}
-                      aria-label="Ordenar por fecha de finalización"
-                    >
-                      Fecha de Finalización <FontAwesomeIcon icon={faSort} />
-                    </th>
-                    <th>Sucursal</th>
-                    <th>Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedOrders.map((order) => (
-                    <tr key={order.id}>
-                      <td>{order.id}</td>
-                      <td>{order.order_number || "N/A"}</td>
-                      <td>{order.vehicle_economic_number}</td>
-                      <td>
-                        <StatusDiv
-                          variant={getStatusVariant(
-                            order.status,
-                            filters.displayStatus
-                          )}
-                        >
-                          {getStatusDisplay(
-                            order.status,
-                            filters.displayStatus
-                          )}
-                        </StatusDiv>
-                      </td>
-                      <td>{new Date(order.created_at).toLocaleDateString()}</td>
-                      <td>
-                        {order.finalized_at
-                          ? new Date(order.finalized_at).toLocaleDateString()
-                          : "N/A"}
-                      </td>
-                      <td>{order.vehicle?.branch || "N/A"}</td>
-                      <td>
-                        <CustomButton
-                          onClick={() => handleShowModal(order)}
-                          aria-label={`Ver detalles de la orden ${order.id}`}
-                        >
-                          Ver Detalles
-                        </CustomButton>
-                      </td>
+              <TableWrapper>
+                <StyledTable>
+                  <thead>
+                    <tr>
+                      <th>N° Orden</th>
+                      <th>Número Económico</th>
+                      <th>Estado</th>
+                      <th>Ingreso/Finalización</th>
+                      <th>Sucursal</th>
+                      <th>Acción</th>
                     </tr>
-                  ))}
-                </tbody>
-              </StyledTable>
-              <div className="d-flex justify-content-between mt-3 w-100">
-                <Button
-                  disabled={filters.page === 1}
-                  onClick={() =>
-                    setFilters((prev) => ({ ...prev, page: prev.page - 1 }))
-                  }
-                  aria-label="Página anterior"
-                >
-                  Anterior
-                </Button>
-                <span
-                  aria-label={`Página actual ${filters.page} de ${totalPages}`}
-                >
-                  Página {filters.page} de {totalPages}
-                </span>
-                <Button
-                  disabled={filters.page === totalPages}
-                  onClick={() =>
-                    setFilters((prev) => ({ ...prev, page: prev.page + 1 }))
-                  }
-                  aria-label="Página siguiente"
-                >
-                  Siguiente
-                </Button>
-              </div>
+                  </thead>
+                  <tbody>
+                    {orders.map((order) => (
+                      <tr key={order.id}>
+                        <td>{order.id}</td>
+                        <td>{order.vehicle_economic_number || "-"}</td>
+                        <td>
+                          <StatusDiv variant={getStatusVariant(order.status)}>
+                            {getStatusDisplay(order.status)}
+                          </StatusDiv>
+                        </td>
+                        <td>
+                          {formatDate(order.created_at)} /{" "}
+                          {formatDate(order.finalized_at)}
+                        </td>
+                        <td>{order.branch}</td>
+                        <td className="actions">
+                          <ActionsContainer>
+                            <CustomButton
+                              onClick={() => handleShowModal(order)}
+                              title="Ver Detalles"
+                            >
+                              <FontAwesomeIcon icon={faEye} />
+                            </CustomButton>
+                          </ActionsContainer>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </StyledTable>
+              </TableWrapper>
+              {totalPages > 1 && (
+                <div className="d-flex justify-content-center mt-4">
+                  {renderPagination(currentPage, totalPages, setCurrentPage)}
+                </div>
+              )}
             </>
           ) : (
-            <ImageContainer>
-              <p>No se encontraron resultados.</p>
-            </ImageContainer>
+            <EmptyMessage>
+              <p>No hay órdenes disponibles con los filtros seleccionados.</p>
+            </EmptyMessage>
           )}
           <StyledModal
             show={showModal}
@@ -655,18 +627,9 @@ const ClientQuery = () => {
                       <DetailValue>{selectedOrder.id}</DetailValue>
                     </div>
                     <div>
-                      <DetailLabel>Número de Pedido</DetailLabel>
-                      <DetailValue>
-                        {selectedOrder.order_number || "N/A"}
-                      </DetailValue>
-                    </div>
-                    <div>
                       <DetailLabel>Estado</DetailLabel>
                       <DetailValue>
-                        {getStatusDisplay(
-                          selectedOrder.status,
-                          filters.displayStatus
-                        )}
+                        {getStatusDisplay(selectedOrder.status)}
                       </DetailValue>
                     </div>
                     <div>
@@ -726,7 +689,7 @@ const ClientQuery = () => {
                           <div>
                             <DetailLabel>Total</DetailLabel>
                             <DetailValue className="price">
-                              ${selectedOrder.invoice.total?.toFixed(2)}
+                              ${selectedOrder.invoice.total}
                             </DetailValue>
                           </div>
                         </InfoGrid>
@@ -742,9 +705,7 @@ const ClientQuery = () => {
                             <CarouselItemDiv image={img}>
                               <OverlayText>
                                 <img
-                                  src={`${
-                                    API_URL || "http://localhost:5000"
-                                  }${img}`}
+                                  src={`${API_URL}${img}`}
                                   alt={`Imagen ${index + 1}`}
                                   style={{ maxWidth: "100%" }}
                                 />
@@ -819,7 +780,7 @@ const ClientQuery = () => {
             </Modal.Footer>
           </StyledModal>
         </Container>
-      </div>
+      </Content>
     </MainContainer>
   );
 };
