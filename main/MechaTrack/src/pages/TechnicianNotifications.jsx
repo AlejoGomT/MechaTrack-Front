@@ -9,6 +9,7 @@ import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import CustomButton from "../components/CustomButton";
 import PartsModal from "../components/PartsModal";
+import { API_URL } from "../services/apiConfig";
 import {
   MainContainer,
   Content,
@@ -1020,7 +1021,7 @@ const TechnicianNotifications = () => {
                                           "image/"
                                         ) ? (
                                           <Image
-                                            src={attachment.file_path}
+                                            src={`${API_URL}${attachment.file_path}`}
                                             thumbnail
                                             style={{ maxWidth: "200px" }}
                                           />

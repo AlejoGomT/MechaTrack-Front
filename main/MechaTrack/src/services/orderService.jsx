@@ -31,7 +31,18 @@ export const getOrders = async (filters = {}) => {
 export const getOrderById = async (id) => {
   try {
     const response = await axiosInstance.get(`/api/orders/${id}`);
-    return response.data;
+    const order = response.data;
+    return {
+      ...order,
+      vehicle: {
+        branch: order.branch,
+        plate: order.plate,
+        brand: order.brand,
+        model: order.model,
+        year: order.year,
+        mileage: order.mileage,
+      },
+    };
   } catch (error) {
     console.error("Error en getOrderById:", error.response?.data || error);
     throw error.response?.data || { message: "Error al obtener la orden" };
@@ -47,6 +58,16 @@ export const getOrderCounts = async (filters = {}) => {
   } catch (error) {
     console.error("Error en getOrderCounts:", error.response?.data || error);
     throw error.response?.data || { message: "Error al obtener conteos" };
+  }
+};
+
+export const getBranches = async () => {
+  try {
+    const response = await axiosInstance.get("/api/orders/branches");
+    return response.data;
+  } catch (error) {
+    console.error("Error en getBranches:", error.response?.data || error);
+    throw error.response?.data || { message: "Error al obtener sucursales" };
   }
 };
 

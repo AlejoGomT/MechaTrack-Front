@@ -3,7 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { useSocket } from "../context/SocketContext";
 import { Container, Form, Image, Button } from "react-bootstrap";
 import { useLocation, useNavigate } from "react-router-dom";
-import axiosInstance from "../services/apiConfig";
+import axiosInstance, { API_URL } from "../services/apiConfig";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import CustomButton from "../components/CustomButton";
@@ -1297,7 +1297,7 @@ const AdminNotifications = () => {
                                           "image/"
                                         ) ? (
                                           <Image
-                                            src={attachment.file_path}
+                                            src={`${API_URL}${attachment.file_path}`}
                                             thumbnail
                                             style={{ maxWidth: "200px" }}
                                           />
