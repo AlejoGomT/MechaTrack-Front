@@ -12,7 +12,7 @@ import {
   Pagination,
 } from "react-bootstrap";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faSort, faDownload, faEye } from "@fortawesome/free-solid-svg-icons";
+import { faDownload, faEye } from "@fortawesome/free-solid-svg-icons";
 import * as Papa from "papaparse";
 import { debounce } from "lodash";
 import {
@@ -54,13 +54,8 @@ import {
   Content,
 } from "../styles/GlobalStyles";
 import { colors } from "../styles/GlobalStyles";
-import {
-  getOrders,
-  getOrderById,
-  getOrderCounts,
-} from "../services/orderService";
+import { getOrders, getOrderById } from "../services/orderService";
 import { API_URL } from "../services/apiConfig";
-import axiosInstance from "../services/apiConfig";
 import styled from "@emotion/styled";
 import { toast } from "react-toastify";
 
@@ -92,10 +87,10 @@ const ClientQuery = () => {
   const { socket, isConnected } = useSocket();
   const [orders, setOrders] = useState([]);
   const [totalPages, setTotalPages] = useState(1);
-  const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [filterLoading, setFilterLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
-  const [orderNumberFilter, setOrderNumberFilter] = useState("");
   const [economicNumberFilter, setEconomicNumberFilter] = useState("");
   const [branchFilter, setBranchFilter] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -106,30 +101,30 @@ const ClientQuery = () => {
     completed: 0,
   });
   const [notifications, setNotifications] = useState([]);
-  const [branches, setBranches] = useState([]);
   const pageSize = 10;
-
-  // Cargar sucursales desde el backend
-  const loadBranches = useCallback(async () => {
-    try {
-      const response = await axiosInstance.get("/api/orders/branches");
-      setBranches(response.data || []);
-      console.log("[ClientQuery] Sucursales cargadas:", response.data);
-    } catch (error) {
-      console.error("[ClientQuery] Error cargando sucursales:", error);
-      toast.error("Error al cargar sucursales");
-    }
-  }, []);
+  const allowedStatuses = [
+    "En Proceso",
+    "Pendiente",
+    "Finalizado",
+    "Pendiente de Facturación",
+    "Facturado",
+  ];
 
   const fetchOrders = useCallback(async () => {
-    setLoading(true);
+    setFilterLoading(true);
     try {
-      const ordersData = await getOrders({
-        orderId: orderNumberFilter,
+      console.log("[ClientQuery] Filtros enviados:", {
         economicNumber: economicNumberFilter || undefined,
         branch: branchFilter || undefined,
         page: currentPage,
         limit: pageSize,
+      });
+      const ordersData = await getOrders({
+        economicNumber: economicNumberFilter || undefined,
+        branch: branchFilter || undefined,
+        page: currentPage,
+        limit: pageSize,
+        statuses: allowedStatuses,
       });
       console.log("[ClientQuery] Respuesta de getOrders:", ordersData);
 
@@ -144,30 +139,36 @@ const ClientQuery = () => {
         return;
       }
 
-      setOrders(ordersData.orders);
+      const processedOrders = ordersData.orders
+        .filter((order) => allowedStatuses.includes(order.status))
+        .map((order) => ({
+          ...order,
+          notifications: order.notifications || [],
+        }));
+
+      setOrders(processedOrders);
       setTotalPages(
-        Math.ceil((ordersData.total || ordersData.orders.length) / pageSize)
+        Math.ceil((ordersData.total || processedOrders.length) / pageSize)
       );
       console.log(
         "[ClientQuery] Órdenes establecidas:",
-        ordersData.orders.length
+        processedOrders.length
       );
 
-      // Calcular contadores manualmente
-      const inProcessCount = ordersData.orders.reduce((count, order) => {
+      const inProcessCount = processedOrders.reduce((count, order) => {
         return ["En Proceso", "Pendiente", "Finalizado"].includes(order.status)
           ? count + 1
           : count;
       }, 0);
-      const pendingCount = ordersData.orders.reduce((count, order) => {
+      const pendingCount = processedOrders.reduce((count, order) => {
         return order.status === "Pendiente de Facturación" ? count + 1 : count;
       }, 0);
-      const completedCount = ordersData.orders.reduce((count, order) => {
+      const completedCount = processedOrders.reduce((count, order) => {
         return order.status === "Facturado" ? count + 1 : count;
       }, 0);
 
       setStats({
-        total: ordersData.total || ordersData.orders.length,
+        total: ordersData.total || processedOrders.length,
         inProcess: inProcessCount,
         pending: pendingCount,
         completed: completedCount,
@@ -178,41 +179,34 @@ const ClientQuery = () => {
       setOrders([]);
       setTotalPages(1);
     } finally {
-      setLoading(false);
+      setFilterLoading(false);
+      setInitialLoading(false);
     }
-  }, [orderNumberFilter, economicNumberFilter, branchFilter, currentPage]);
+  }, [economicNumberFilter, branchFilter, currentPage]);
 
-  // Cargar datos iniciales
   useEffect(() => {
-    loadBranches();
     fetchOrders();
-  }, [loadBranches, fetchOrders]);
+  }, [fetchOrders]);
 
-  // Debounce para filtros de texto
-  const debouncedSetOrderNumberFilter = useCallback(
-    debounce((value) => {
-      setOrderNumberFilter(value);
-      setCurrentPage(1);
-    }, 100),
-    []
-  );
+  const branches = useMemo(() => {
+    return [
+      ...new Set(
+        orders.map((order) => order.branch).filter((branch) => branch)
+      ),
+    ];
+  }, [orders]);
 
-  const debouncedSetEconomicNumberFilter = useCallback(
-    debounce((value) => {
-      setEconomicNumberFilter(value);
-      setCurrentPage(1);
-    }, 100),
-    []
-  );
-
-  // Configurar Socket.IO
   useEffect(() => {
     if (!socket || !isConnected) {
-      console.warn("[ClientQuery] Socket no conectado o no inicializado");
+      console.log("[ClientQuery] Socket no conectado o no inicializado:", {
+        socket: !!socket,
+        isConnected,
+      });
       return;
     }
 
     socket.on("notification", (notification) => {
+      console.log("[ClientQuery] Nueva notificación recibida:", notification);
       if (
         ["closure_approval", "closure_rejection", "order_creation"].includes(
           notification.type
@@ -232,9 +226,8 @@ const ClientQuery = () => {
     });
 
     return () => {
-      if (socket) {
-        socket.off("notification");
-      }
+      socket.off("notification");
+      console.log("[ClientQuery] Listeners removidos");
     };
   }, [socket, isConnected, fetchOrders]);
 
@@ -246,7 +239,7 @@ const ClientQuery = () => {
         Estado: getStatusDisplay(order.status),
         "Fecha de Ingreso": order.created_at,
         "Fecha de Finalización": order.finalized_at || "N/A",
-        Sucursal: order.vehicle?.branch || "N/A",
+        Sucursal: order.branch || "N/A",
       }));
       const csv = Papa.unparse(csvData);
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -263,7 +256,7 @@ const ClientQuery = () => {
           `"${order.id}","${order.vehicle_economic_number}","${getStatusDisplay(
             order.status
           )}","${order.created_at}","${order.finalized_at || "N/A"}","${
-            order.vehicle?.branch || "N/A"
+            order.branch || "N/A"
           }"`
       );
       const csv = [
@@ -281,7 +274,7 @@ const ClientQuery = () => {
   };
 
   const handleShowModal = async (order) => {
-    setLoading(true);
+    setFilterLoading(true);
     try {
       const detailedOrder = await getOrderById(order.id);
       setSelectedOrder(detailedOrder);
@@ -290,7 +283,7 @@ const ClientQuery = () => {
       console.error("[ClientQuery] Error cargando detalles:", error);
       toast.error("Error al cargar detalles de la orden");
     } finally {
-      setLoading(false);
+      setFilterLoading(false);
     }
   };
 
@@ -312,20 +305,28 @@ const ClientQuery = () => {
   const getStatusVariant = (status) => {
     const computedStatus = getStatusDisplay(status);
     if (computedStatus === "Orden Finalizada") return "completed";
-    if (computedStatus === "En Proceso") return "inProcess";
+    if (
+      computedStatus === "En Proceso" ||
+      computedStatus === "Pendiente" ||
+      computedStatus === "Finalizado"
+    )
+      return "inProcess";
     if (computedStatus === "Pendiente de Facturación") return "pending";
     return "";
   };
 
-  const chartData = [
-    { name: "En Proceso", value: stats.inProcess, fill: colors.yellow },
-    {
-      name: "Pendiente de Facturación",
-      value: stats.pending,
-      fill: colors.blue,
-    },
-    { name: "Finalizadas", value: stats.completed, fill: colors.green },
-  ];
+  const chartData = useMemo(
+    () => [
+      { name: "En Proceso", value: stats.inProcess, fill: colors.yellow },
+      {
+        name: "Pendiente de Facturación",
+        value: stats.pending,
+        fill: colors.blue,
+      },
+      { name: "Finalizadas", value: stats.completed, fill: colors.green },
+    ],
+    [stats]
+  );
 
   const formatDate = (dateStr) => {
     if (!dateStr) return "-";
@@ -450,22 +451,14 @@ const ClientQuery = () => {
           </ActionsContainer>
           <StyledFiltersContainer>
             <FilterGroup>
-              <FilterLabel>Número de Orden</FilterLabel>
-              <FilterInput
-                type="text"
-                value={orderNumberFilter}
-                onChange={(e) => debouncedSetOrderNumberFilter(e.target.value)}
-                placeholder="Filtrar por N° Orden"
-              />
-            </FilterGroup>
-            <FilterGroup>
               <FilterLabel>Número Económico</FilterLabel>
               <FilterInput
                 type="text"
-                defaultValue={economicNumberFilter}
-                onChange={(e) =>
-                  debouncedSetEconomicNumberFilter(e.target.value)
-                }
+                value={economicNumberFilter}
+                onChange={(e) => {
+                  setEconomicNumberFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
                 placeholder="Filtrar por N° Económico"
               />
             </FilterGroup>
@@ -498,7 +491,7 @@ const ClientQuery = () => {
               </CustomButton>
             </OverlayTrigger>
           </StyledFiltersContainer>
-          {loading ? (
+          {initialLoading ? (
             <div className="text-center my-4">
               <Spinner animation="border" style={{ color: colors.primary }} />
               <p>Cargando órdenes...</p>
@@ -531,7 +524,7 @@ const ClientQuery = () => {
                           {formatDate(order.created_at)} /{" "}
                           {formatDate(order.finalized_at)}
                         </td>
-                        <td>{order.branch}</td>
+                        <td>{order.branch || "N/A"}</td>
                         <td className="actions">
                           <ActionsContainer>
                             <CustomButton
@@ -570,7 +563,7 @@ const ClientQuery = () => {
               </Modal.Title>
             </Modal.Header>
             <ModalBody>
-              {loading ? (
+              {filterLoading ? (
                 <p>Cargando detalles...</p>
               ) : selectedOrder ? (
                 <div>

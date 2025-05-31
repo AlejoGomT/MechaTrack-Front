@@ -8,13 +8,15 @@ import StatCard from "../components/StatCard";
 import { toast } from "react-toastify";
 import io from "socket.io-client";
 import { getOrders } from "../services/orderService";
+import { getVehicles } from "../services/vehicleService"; // Importar getVehicles
 import axios from "axios";
 import { API_URL } from "../services/apiConfig";
 import { StatsContainer } from "../styles/GlobalStyles";
 
 const clientMenu = [
   { label: "Inicio", path: "/client" },
-  { label: "Consultas Vehículo", path: "/client/query" },
+  { label: "Consultas de Orden", path: "/client/query" },
+  { label: "Consultas de Vehículo", path: "/client/vehicles" },
   { label: "Notificaciones", path: "/client/notifications" },
   { label: "Cerrar Sesión", path: "/" },
 ];
@@ -24,25 +26,33 @@ const ClientDashboard = () => {
   const navigate = useNavigate();
   const [stats, setStats] = useState({
     inProcessOrdersCount: 0,
+    vehiclesCount: 0, // Nuevo campo para vehículos
     notificationsCount: 0,
   });
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [ordersResponse, notificationsResponse] = await Promise.all([
-          getOrders({ limit: 1000 }), // Obtener todas las órdenes
-          axios.get("/api/notifications", {
-            headers: { Authorization: `Bearer ${token}` },
-            params: { to_user_id: user.id, status: "Pendiente" },
-          }),
-        ]);
+        const [ordersResponse, vehiclesResponse, notificationsResponse] =
+          await Promise.all([
+            getOrders({ limit: 1000 }),
+            getVehicles({ limit: 1000 }), // Obtener todos los vehículos
+            axios.get("/api/notifications", {
+              headers: { Authorization: `Bearer ${token}` },
+              params: { to_user_id: user.id, status: "Pendiente" },
+            }),
+          ]);
 
         const ordersData = ordersResponse;
+        const vehiclesData = vehiclesResponse;
         const notifications = notificationsResponse.data;
 
         // Depuración
         console.log("[ClientDashboard] Respuesta de getOrders:", ordersData);
+        console.log(
+          "[ClientDashboard] Respuesta de getVehicles:",
+          vehiclesData
+        );
         console.log(
           "[ClientDashboard] Respuesta de /api/notifications:",
           notifications
@@ -69,6 +79,22 @@ const ClientDashboard = () => {
           ["En Proceso", "Pendiente", "Finalizado"].includes(order.status)
         ).length;
 
+        // Validar vehiclesData
+        let vehiclesCount = 0;
+        if (
+          vehiclesData &&
+          typeof vehiclesData === "object" &&
+          Array.isArray(vehiclesData.vehicles)
+        ) {
+          vehiclesCount = vehiclesData.total || vehiclesData.vehicles.length;
+        } else {
+          console.error(
+            "[ClientDashboard] Respuesta inválida de /api/vehicles:",
+            vehiclesData
+          );
+          toast.error("Error al cargar vehículos");
+        }
+
         // Validar notificaciones
         const notificationsCount = Array.isArray(notifications)
           ? notifications.length
@@ -83,6 +109,7 @@ const ClientDashboard = () => {
 
         setStats({
           inProcessOrdersCount: inProcessCount,
+          vehiclesCount,
           notificationsCount,
         });
       } catch (error) {
@@ -90,6 +117,7 @@ const ClientDashboard = () => {
         toast.error("Error al cargar datos");
         setStats({
           inProcessOrdersCount: 0,
+          vehiclesCount: 0,
           notificationsCount: 0,
         });
       }
@@ -147,6 +175,25 @@ const ClientDashboard = () => {
       }
     });
 
+    // Opcional: Escuchar eventos de vehículos (si el backend los emite)
+    socket.on("vehicle_created", () => {
+      console.log("[ClientDashboard] vehicle_created recibido");
+      setStats((prev) => ({
+        ...prev,
+        vehiclesCount: prev.vehiclesCount + 1,
+      }));
+      toast.info("Nuevo vehículo registrado");
+    });
+
+    socket.on("vehicle_deleted", () => {
+      console.log("[ClientDashboard] vehicle_deleted recibido");
+      setStats((prev) => ({
+        ...prev,
+        vehiclesCount: prev.vehiclesCount > 0 ? prev.vehiclesCount - 1 : 0,
+      }));
+      toast.info("Vehículo eliminado");
+    });
+
     socket.on("connect_error", (error) => {
       console.error("[ClientDashboard] Error de conexión Socket.IO:", error);
       toast.error("Error de conexión en tiempo real");
@@ -160,10 +207,16 @@ const ClientDashboard = () => {
 
   const statCards = [
     {
-      title: "Consultas de Vehículo",
+      title: "Consultas de Orden",
       content: `${stats.inProcessOrdersCount} órdenes en proceso`,
       buttonText: "Ver Consultas",
       onClick: () => navigate("/client/query"),
+    },
+    {
+      title: "Consultas de Vehículo",
+      content: `${stats.vehiclesCount} vehículos registrados`,
+      buttonText: "Ver Consultas",
+      onClick: () => navigate("/client/vehicles"),
     },
     {
       title: "Notificaciones",
@@ -176,18 +229,18 @@ const ClientDashboard = () => {
   return (
     <>
       <Sidebar menuItems={clientMenu} title="Consulta de Cliente" />
-      <div className="content" style={{ marginLeft: "270px", padding: "20px" }}>
+      <div className="content" style={{ marginLeft: "250px", padding: "20px" }}>
         <DashboardHeader
           title="Panel del Cliente"
           subtitle="Consulta el estado de tus vehículos y notificaciones"
           userName={`${user?.first_name} ${user?.last_name}`}
         />
         <Container className="mt-4">
-          <Row className="justify-content-between">
+          <StatsContainer>
             {statCards.map((stat, index) => (
               <StatCard key={index} {...stat} />
             ))}
-          </Row>
+          </StatsContainer>
         </Container>
       </div>
     </>
