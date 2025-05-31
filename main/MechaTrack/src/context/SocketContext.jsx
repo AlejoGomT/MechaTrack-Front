@@ -36,8 +36,13 @@ export const SocketProvider = ({ children }) => {
     });
 
     newSocket.on("connect_error", (error) => {
-      console.error("[SocketContext] Error de conexión:", error.message);
+      console.error("[SocketContext] Error de conexión:", {
+        message: error.message,
+        type: error.type,
+        data: error.data,
+      });
       setIsConnected(false);
+      toast.error(`Error de conexión: ${error.message}`);
     });
 
     newSocket.on("notification", (notification) => {

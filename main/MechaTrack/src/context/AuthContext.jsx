@@ -13,8 +13,9 @@ export const AuthProvider = ({ children }) => {
   const navigate = useNavigate();
 
   useEffect(() => {
+    let isMounted = true;
     const verifyToken = async () => {
-      if (token) {
+      if (token && !user && isMounted) {
         try {
           console.log(
             "[AuthContext] Enviando solicitud a /auth/verify con token:",
@@ -29,24 +30,25 @@ export const AuthProvider = ({ children }) => {
               response.status,
               await response.text()
             );
-            throw new Error("Token inválido");
+            throw new Error(`Error ${response.status}`);
           }
           const data = await response.json();
           console.log("[AuthContext] Respuesta de /auth/verify:", data);
-          setUser(data.user);
+          if (isMounted) setUser(data.user);
         } catch (error) {
           console.error(
             "[AuthContext] Error verificando token:",
             error.message
           );
-          logout();
+          if (isMounted) logout();
         }
-      } else {
-        setUser(null);
       }
-      setLoading(false);
+      if (isMounted) setLoading(false);
     };
     verifyToken();
+    return () => {
+      isMounted = false;
+    };
   }, [token]);
 
   const loginUser = async (id, password) => {
