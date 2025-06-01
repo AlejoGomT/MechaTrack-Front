@@ -78,7 +78,8 @@ const EmptyMessage = styled.div`
 
 const clientMenu = [
   { label: "Inicio", path: "/client" },
-  { label: "Consultas Vehículo", path: "/client/query" },
+  { label: "Consultas de Economico", path: "/client/query" },
+  { label: "Consultas de Vehículo", path: "/client/vehicles" },
   { label: "Notificaciones", path: "/client/notifications" },
   { label: "Cerrar Sesión", path: "/" },
 ];
@@ -290,7 +291,7 @@ const ClientQuery = () => {
   const handleCloseModal = () => setShowModal(false);
 
   const getStatusDisplay = (status) => {
-    if (["En Proceso", "Pendiente"].includes(status)) {
+    if (["En Proceso", "Pendiente", "Finalizado"].includes(status)) {
       return "En Proceso";
     }
     if (status === "Pendiente de Facturación") {
@@ -380,7 +381,7 @@ const ClientQuery = () => {
       <Sidebar menuItems={clientMenu} title="Consulta de Cliente" />
       <Content>
         <DashboardHeader
-          title="Consulta de Estado de Facturación"
+          title="Consulta de Economico"
           subtitle="Verifica el estado y el historial de tus órdenes de servicio"
         />
         {!isConnected && (
