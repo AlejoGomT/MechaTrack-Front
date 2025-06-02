@@ -346,7 +346,7 @@ const ClientQuery = () => {
 
   const calculatePartsTotals = (parts) => {
     const approvedParts =
-      parts?.filter((part) => part.status === "aprobado") || [];
+      parts?.filter((part) => part.status === "Aprobado") || [];
     const subtotal = approvedParts.reduce(
       (sum, part) => sum + part.price * part.quantity,
       0
@@ -423,11 +423,12 @@ const ClientQuery = () => {
         doc.text("Información de Factura", 20, doc.lastAutoTable.finalY + 10);
         const invoiceData = [
           ["Número de Factura", selectedOrder.invoice.invoice_number],
+          ["Número de Pedido", selectedOrder.order_number || "N/A"],
           [
             "Número de Albarán",
             selectedOrder.invoice.delivery_note_number || "N/A",
           ],
-          ["Total", `$${selectedOrder.invoice.total}`],
+          ["Total", `$${selectedOrder.invoice.total * 1.16}`],
         ];
         autoTable(doc, {
           startY: doc.lastAutoTable.finalY + 20,
@@ -451,13 +452,13 @@ const ClientQuery = () => {
       // Repuestos
       doc.text("Repuestos", 20, doc.lastAutoTable.finalY + 20);
       const approvedParts =
-        selectedOrder.parts?.filter((part) => part.status === "aprobado") || [];
+        selectedOrder.parts?.filter((part) => part.status === "Aprobado") || [];
       if (approvedParts.length > 0) {
         const partsData = approvedParts.map((part) => [
           part.name,
           part.quantity,
           part.status,
-          `$${part.price.toFixed(2)}`,
+          `$${part.price}`,
         ]);
         autoTable(doc, {
           startY: doc.lastAutoTable.finalY + 30,
@@ -920,6 +921,12 @@ const ClientQuery = () => {
                             </DetailValue>
                           </div>
                           <div>
+                            <DetailLabel>Número de Pedido</DetailLabel>
+                            <DetailValue>
+                              {selectedOrder.order_number || "N/A"}
+                            </DetailValue>
+                          </div>
+                          <div>
                             <DetailLabel>Número de Albarán</DetailLabel>
                             <DetailValue>
                               {selectedOrder.invoice.delivery_note_number ||
@@ -929,7 +936,7 @@ const ClientQuery = () => {
                           <div>
                             <DetailLabel>Total</DetailLabel>
                             <DetailValue className="price">
-                              ${selectedOrder.invoice.total}
+                              ${selectedOrder.invoice.total * 1.16}
                             </DetailValue>
                           </div>
                         </InfoGrid>
@@ -960,7 +967,7 @@ const ClientQuery = () => {
                   <FormSectionTitle>Repuestos</FormSectionTitle>
                   {selectedOrder.parts &&
                   selectedOrder.parts.filter(
-                    (part) => part.status === "aprobado"
+                    (part) => part.status === "Aprobado"
                   ).length > 0 ? (
                     <>
                       <TableWrapper>
@@ -975,13 +982,13 @@ const ClientQuery = () => {
                           </thead>
                           <tbody>
                             {selectedOrder.parts
-                              .filter((part) => part.status === "aprobado")
+                              .filter((part) => part.status === "Aprobado")
                               .map((part, index) => (
                                 <tr key={index}>
                                   <td>{part.name}</td>
                                   <td>{part.quantity}</td>
                                   <td>{part.status}</td>
-                                  <td>${part.price.toFixed(2)}</td>
+                                  <td>${part.price}</td>
                                 </tr>
                               ))}
                           </tbody>
