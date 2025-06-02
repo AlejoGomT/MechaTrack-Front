@@ -189,7 +189,6 @@ const OrderDetails = ({
     }
     try {
       if (isFinalized) {
-        // Usar editAdminPart para órdenes finalizadas
         await editAdminPart(
           order.id,
           partId,
@@ -204,7 +203,6 @@ const OrderDetails = ({
         setOrder(updatedOrder);
         toast.success("Repuesto actualizado");
       } else {
-        // Lógica existente para órdenes no finalizadas
         const response = await getPartById(partId);
         const { quantity, quantity_reserved } = response;
         const availableQuantity = quantity - quantity_reserved;
@@ -347,12 +345,17 @@ const OrderDetails = ({
     }
   };
 
-  const calculateTotal = () => {
+  const calculateSubtotal = () => {
     return editedParts
       .filter((part) => part.status === "Aprobado")
       .reduce((sum, part) => sum + part.quantity * (part.price || 0), 0)
       .toFixed(2);
   };
+
+  const IVA_RATE = 0.16;
+  const subtotal = parseFloat(calculateSubtotal());
+  const iva = (subtotal * IVA_RATE).toFixed(2);
+  const totalWithIva = (subtotal + parseFloat(iva)).toFixed(2);
 
   const validateMileage = (value) => {
     const num = parseInt(value);
@@ -808,74 +811,70 @@ const OrderDetails = ({
 
           {requestedPartsReturn.length > 0 && (
             <>
-              <div className="mt-3">
-                <h6>Devoluciones Solicitadas</h6>
-                <ListGroup className="mb-3">
-                  {requestedPartsReturn.map((part) => (
-                    <PartItem key={`${part.part_id}-${part.id}`}>
-                      <div>
-                        <strong>{part.name}</strong>
-                        <br />
-                        Cantidad: {part.quantity}
-                        <br />
-                        <strong style={{ color: "orange" }}>
-                          {part.status}
-                        </strong>
-                        <br />
-                        Precio Unitario: ${part.price != null ? part.price : 0}
-                        <br />
-                        Solicitado por: {part.requested_by}
-                        <br />
-                        <Form.Group
-                          className="mt-2"
-                          style={{ maxWidth: "300px" }}
-                        >
-                          <Form.Label>Nota de Rechazo (opcional)</Form.Label>
-                          <Form.Control
-                            type="text"
-                            value={rejectionNotes[part.part_id] || ""}
-                            onChange={(e) =>
-                              handleRejectionNoteChange(
-                                part.part_id,
-                                e.target.value
-                              )
-                            }
-                            placeholder="Motivo del rechazo (opcional)"
-                            maxLength={255}
-                          />
-                        </Form.Group>
-                      </div>
-                      <div>
-                        <ActionButton
-                          variant="primary"
-                          size="sm"
-                          onClick={() =>
-                            handlePartAction(part.part_id, "acceptReturn", "")
-                          }
-                          className="me-2"
-                          title="Aceptar Devolución"
-                        >
-                          <FontAwesomeIcon icon={faCheck} /> Aceptar
-                        </ActionButton>
-                        <ActionButton
-                          variant="danger"
-                          size="sm"
-                          onClick={() =>
-                            handlePartAction(
+              <h6 className="mt-3">Devoluciones Solicitadas</h6>
+              <ListGroup className="mb-3">
+                {requestedPartsReturn.map((part) => (
+                  <PartItem key={`${part.part_id}-${part.id}`}>
+                    <div>
+                      <strong>{part.name}</strong>
+                      <br />
+                      Cantidad: {part.quantity}
+                      <br />
+                      <strong style={{ color: "orange" }}>{part.status}</strong>
+                      <br />
+                      Precio Unitario: ${part.price != null ? part.price : 0}
+                      <br />
+                      Solicitado por: {part.requested_by}
+                      <br />
+                      <Form.Group
+                        className="mt-2"
+                        style={{ maxWidth: "300px" }}
+                      >
+                        <Form.Label>Nota de Rechazo (opcional)</Form.Label>
+                        <Form.Control
+                          type="text"
+                          value={rejectionNotes[part.part_id] || ""}
+                          onChange={(e) =>
+                            handleRejectionNoteChange(
                               part.part_id,
-                              "rejectReturn",
-                              rejectionNotes[part.part_id] || ""
+                              e.target.value
                             )
                           }
-                          title="Rechazar Devolución"
-                        >
-                          <FontAwesomeIcon icon={faTimes} /> Rechazar
-                        </ActionButton>
-                      </div>
-                    </PartItem>
-                  ))}
-                </ListGroup>
-              </div>
+                          placeholder="Motivo del rechazo (opcional)"
+                          maxLength={255}
+                        />
+                      </Form.Group>
+                    </div>
+                    <div>
+                      <ActionButton
+                        variant="primary"
+                        size="sm"
+                        onClick={() =>
+                          handlePartAction(part.part_id, "acceptReturn", "")
+                        }
+                        className="me-2"
+                        title="Aceptar Devolución"
+                      >
+                        <FontAwesomeIcon icon={faCheck} /> Aceptar
+                      </ActionButton>
+                      <ActionButton
+                        variant="danger"
+                        size="sm"
+                        onClick={() =>
+                          handlePartAction(
+                            part.part_id,
+                            "rejectReturn",
+                            rejectionNotes[part.part_id] || ""
+                          )
+                        }
+                        title="Rechazar Devolución"
+                      >
+                        <FontAwesomeIcon icon={faTimes} /> Rechazar
+                      </ActionButton>
+                    </div>
+                  </PartItem>
+                ))}
+              </ListGroup>
             </>
           )}
         </>
@@ -891,7 +890,27 @@ const OrderDetails = ({
         />
       )}
 
-      <SectionTitle>Total: ${calculateTotal()}</SectionTitle>
+      <SectionTitle>Resumen de Costos</SectionTitle>
+      <Row className="mb-3">
+        <Col md={6}>
+          <Form.Group>
+            <Form.Label>Subtotal:</Form.Label>
+            <ReadOnlyField value={`$${subtotal}`} readOnly />
+          </Form.Group>
+        </Col>
+        <Col md={6}>
+          <Form.Group>
+            <Form.Label>IVA (16%):</Form.Label>
+            <ReadOnlyField value={`$${iva}`} readOnly />
+          </Form.Group>
+        </Col>
+        <Col md={6}>
+          <Form.Group>
+            <Form.Label>Total + IVA:</Form.Label>
+            <ReadOnlyField value={`$${totalWithIva}`} readOnly />
+          </Form.Group>
+        </Col>
+      </Row>
     </>
   );
 };

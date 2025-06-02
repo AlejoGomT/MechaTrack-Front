@@ -1,5 +1,14 @@
 import { useState, useEffect } from "react";
-import { Container, Form, Pagination, Modal, ListGroup } from "react-bootstrap";
+import {
+  Container,
+  Form,
+  Pagination,
+  Modal,
+  ListGroup,
+  Spinner,
+  OverlayTrigger,
+  Tooltip,
+} from "react-bootstrap";
 import { useAuth } from "../context/AuthContext";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
@@ -27,16 +36,26 @@ import {
 } from "../services/partService";
 import { toast } from "react-toastify";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faEye, faPencil, faTrashCan } from "@fortawesome/free-solid-svg-icons";
+import {
+  faEye,
+  faPencil,
+  faTrashCan,
+  faFilePdf,
+  faFileExcel,
+} from "@fortawesome/free-solid-svg-icons";
 import { library } from "@fortawesome/fontawesome-svg-core";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import DOMPurify from "dompurify";
+import ExcelJS from "exceljs";
 
-library.add(faEye, faPencil, faTrashCan);
+library.add(faEye, faPencil, faTrashCan, faFilePdf, faFileExcel);
 
 const adminMenu = [
   { label: "Inicio", path: "../admin" },
   { label: "Órdenes de Servicio", path: "../admin/orders" },
   { label: "Inventario", path: "../admin/inventory" },
-  { label: "Vehiculos", path: "../admin/vehicles" },
+  { label: "Vehículos", path: "../admin/vehicles" },
   { label: "Gestión de Usuarios", path: "../admin/users" },
   { label: "Notificaciones", path: "../admin/notifications" },
   { label: "Informes", path: "../admin/reports" },
@@ -61,6 +80,8 @@ const AdminInventory = () => {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedPart, setSelectedPart] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -87,7 +108,7 @@ const AdminInventory = () => {
   const filteredParts = parts.filter(
     (part) =>
       (!codeFilter ||
-        part.id.toLowerCase().includes(codeFilter.toLowerCase())) &&
+        part.id.toString().toLowerCase().includes(codeFilter.toLowerCase())) &&
       (!nameFilter ||
         part.name.toLowerCase().includes(nameFilter.toLowerCase())) &&
       (!modelFilter ||
@@ -100,23 +121,23 @@ const AdminInventory = () => {
       const newPart = await createPart(partData);
       setParts([...parts, newPart]);
       setShowCreateModal(false);
+      toast.success("Repuesto creado");
     } catch (error) {
+      toast.error(error.message || "Error al crear repuesto");
       throw error;
     }
   };
 
   const handleEditPart = async (partData) => {
-    console.log(
-      "[AdminInventory] handleEditPart - selectedPart:",
-      selectedPart
-    );
     setIsSubmitting(true);
     try {
       const updatedPart = await updatePart(selectedPart.id, partData);
       setParts(parts.map((p) => (p.id === updatedPart.id ? updatedPart : p)));
       setShowEditModal(false);
       setSelectedPart(null);
+      toast.success("Repuesto actualizado");
     } catch (error) {
+      toast.error(error.message || "Error al actualizar repuesto");
       throw error;
     } finally {
       setIsSubmitting(false);
@@ -132,6 +153,121 @@ const AdminInventory = () => {
       } catch (error) {
         toast.error(error.message || "Error al eliminar repuesto");
       }
+    }
+  };
+
+  const handleExportPDF = async () => {
+    setIsExportingPDF(true);
+    try {
+      const partsData = await getParts(modelFilter, 1, 1000);
+      const partsToExport = partsData.parts.filter(
+        (part) =>
+          (!codeFilter ||
+            part.id
+              .toString()
+              .toLowerCase()
+              .includes(codeFilter.toLowerCase())) &&
+          (!nameFilter ||
+            part.name.toLowerCase().includes(nameFilter.toLowerCase()))
+      );
+
+      if (partsToExport.length === 0) {
+        toast.warn("No hay repuestos para exportar");
+        return;
+      }
+
+      const doc = new jsPDF();
+      const sanitize = (str) =>
+        DOMPurify.sanitize(str || "", { RETURN_TRUSTED_TYPE: false });
+
+      doc.setFontSize(16);
+      doc.text("Reporte de Inventario", 20, 20);
+      doc.setFontSize(12);
+
+      partsToExport.forEach((part, index) => {
+        if (index > 0) doc.addPage();
+        doc.text(`Repuesto #${sanitize(part.id)}`, 20, 30);
+
+        const partData = [
+          ["Código", sanitize(part.id.toString())],
+          ["Nombre", sanitize(part.name || "-")],
+          ["Cantidad", sanitize(part.quantity.toString() || "0")],
+          ["Precio", sanitize(`$${part.price || "0"}`)],
+          ["Imagen", "Ver en el sistema"],
+        ];
+        autoTable(doc, {
+          startY: 40,
+          head: [["Campo", "Valor"]],
+          body: partData,
+          theme: "striped",
+          styles: { fontSize: 10 },
+          columnStyles: { 0: { cellWidth: 50 }, 1: { cellWidth: 120 } },
+        });
+      });
+
+      doc.save("repuestos_filtrados.pdf");
+      toast.success("Reporte de repuestos descargado correctamente");
+    } catch (error) {
+      console.error("[AdminInventory] Error al exportar PDF:", error);
+      toast.error("Error al exportar el PDF");
+    } finally {
+      setIsExportingPDF(false);
+    }
+  };
+
+  const handleExportExcel = async () => {
+    setIsExportingExcel(true);
+    try {
+      const partsData = await getParts(modelFilter, 1, 1000);
+      const partsToExport = partsData.parts.filter(
+        (part) =>
+          (!codeFilter ||
+            part.id
+              .toString()
+              .toLowerCase()
+              .includes(codeFilter.toLowerCase())) &&
+          (!nameFilter ||
+            part.name.toLowerCase().includes(nameFilter.toLowerCase()))
+      );
+
+      if (partsToExport.length === 0) {
+        toast.warn("No hay repuestos para exportar");
+        return;
+      }
+
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Repuestos");
+
+      worksheet.columns = [
+        { header: "Código", key: "id", width: 15 },
+        { header: "Nombre", key: "name", width: 30 },
+        { header: "Cantidad", key: "quantity", width: 10 },
+        { header: "Precio", key: "price", width: 15 },
+      ];
+
+      partsToExport.forEach((part) => {
+        worksheet.addRow({
+          id: part.id || "-",
+          name: part.name || "-",
+          quantity: part.quantity || 0,
+          price: `$${part.price || "0"}`,
+        });
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "repuestos_filtrados.xlsx";
+      link.click();
+      toast.success("Archivo Excel descargado correctamente");
+    } catch (error) {
+      console.error("[AdminInventory] Error al exportar Excel:", error);
+      toast.error("Error al exportar el Excel");
+    } finally {
+      setIsExportingExcel(false);
     }
   };
 
@@ -187,6 +323,44 @@ const AdminInventory = () => {
                 ))}
               </FilterSelect>
             </FilterGroup>
+            <OverlayTrigger
+              placement="top"
+              overlay={<Tooltip>Exportar a Excel</Tooltip>}
+            >
+              <CustomButton
+                onClick={handleExportExcel}
+                aria-label="Exportar a Excel"
+                disabled={isExportingExcel}
+                style={{ marginRight: "10px" }}
+              >
+                {isExportingExcel ? (
+                  <Spinner animation="border" size="sm" />
+                ) : (
+                  <>
+                    <FontAwesomeIcon icon={faFileExcel} /> Excel
+                  </>
+                )}
+              </CustomButton>
+            </OverlayTrigger>
+            <OverlayTrigger
+              placement="top"
+              overlay={<Tooltip>Exportar a PDF</Tooltip>}
+            >
+              <CustomButton
+                onClick={handleExportPDF}
+                aria-label="Exportar a PDF"
+                disabled={isExportingPDF}
+                style={{ marginRight: "10px" }}
+              >
+                {isExportingPDF ? (
+                  <Spinner animation="border" size="sm" />
+                ) : (
+                  <>
+                    <FontAwesomeIcon icon={faFilePdf} /> PDF
+                  </>
+                )}
+              </CustomButton>
+            </OverlayTrigger>
             <CustomButton onClick={() => setShowCreateModal(true)}>
               Agregar Repuesto
             </CustomButton>
@@ -204,56 +378,64 @@ const AdminInventory = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredParts.map((part) => (
-                  <tr key={part.id}>
-                    <td className="text-center">
-                      {part.image ? (
-                        <img
-                          src={`${API_URL}${part.image}`}
-                          alt={part.name}
-                          style={{ maxWidth: "50px", maxHeight: "50px" }}
-                          onError={(e) => {
-                            e.target.src = "/placeholder.png";
-                          }}
-                        />
-                      ) : (
-                        "Sin imagen"
-                      )}
-                    </td>
-                    <td>{part.id}</td>
-                    <td>{part.name}</td>
-                    <td>{part.quantity}</td>
-                    <td>${part.price}</td>
-                    <td>
-                      <ActionsContainer>
-                        <CustomButton
-                          onClick={() => {
-                            setSelectedPart(part);
-                            setShowDetailsModal(true);
-                          }}
-                          title="Ver Detalles"
-                        >
-                          <FontAwesomeIcon icon={faEye} />
-                        </CustomButton>
-                        <CustomButton
-                          onClick={() => {
-                            setSelectedPart(part);
-                            setShowEditModal(true);
-                          }}
-                          title="Actualizar"
-                        >
-                          <FontAwesomeIcon icon={faPencil} />
-                        </CustomButton>
-                        <CustomButton
-                          onClick={() => handleDeletePart(part.id)}
-                          title="Eliminar"
-                        >
-                          <FontAwesomeIcon icon={faTrashCan} />
-                        </CustomButton>
-                      </ActionsContainer>
+                {filteredParts.length > 0 ? (
+                  filteredParts.map((part) => (
+                    <tr key={part.id}>
+                      <td className="text-center">
+                        {part.image ? (
+                          <img
+                            src={`${API_URL}${part.image}`}
+                            alt={part.name}
+                            style={{ maxWidth: "50px", maxHeight: "50px" }}
+                            onError={(e) => {
+                              e.target.src = "/placeholder.png";
+                            }}
+                          />
+                        ) : (
+                          "Sin imagen"
+                        )}
+                      </td>
+                      <td>{part.id}</td>
+                      <td>{part.name}</td>
+                      <td>{part.quantity}</td>
+                      <td>${part.price}</td>
+                      <td>
+                        <ActionsContainer>
+                          <CustomButton
+                            onClick={() => {
+                              setSelectedPart(part);
+                              setShowDetailsModal(true);
+                            }}
+                            title="Ver Detalles"
+                          >
+                            <FontAwesomeIcon icon={faEye} />
+                          </CustomButton>
+                          <CustomButton
+                            onClick={() => {
+                              setSelectedPart(part);
+                              setShowEditModal(true);
+                            }}
+                            title="Actualizar"
+                          >
+                            <FontAwesomeIcon icon={faPencil} />
+                          </CustomButton>
+                          <CustomButton
+                            onClick={() => handleDeletePart(part.id)}
+                            title="Eliminar"
+                          >
+                            <FontAwesomeIcon icon={faTrashCan} />
+                          </CustomButton>
+                        </ActionsContainer>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="6" className="text-center">
+                      No hay repuestos disponibles.
                     </td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </StyledTable>
           </TableWrapper>

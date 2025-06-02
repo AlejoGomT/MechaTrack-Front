@@ -29,7 +29,7 @@ import { API_URL } from "../services/apiConfig";
 
 const clientMenu = [
   { label: "Inicio", path: "/client" },
-  { label: "Consultas de Orden", path: "/client/query" },
+  { label: "Consultas de Economico", path: "/client/query" },
   { label: "Consultas de Vehículo", path: "/client/vehicles" },
   { label: "Notificaciones", path: "/client/notifications" },
   { label: "Cerrar Sesión", path: "/" },

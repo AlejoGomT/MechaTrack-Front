@@ -38,16 +38,17 @@ const OrderReportModal = ({ show, onHide, report }) => {
       )
     : [];
 
-  const uniqueNotifications = report?.notifications
-    ? Array.from(
-        new Map(
-          report.notifications.map((notification) => [
-            `${notification.message}-${notification.created_at}`,
-            notification,
-          ])
-        ).values()
-      )
-    : [];
+  const calculateSubtotal = () => {
+    return uniqueParts
+      .filter((part) => part.status === "Aprobado")
+      .reduce((sum, part) => sum + part.quantity * (part.price || 0), 0)
+      .toFixed(2);
+  };
+
+  const IVA_RATE = 0.16;
+  const subtotal = parseFloat(calculateSubtotal());
+  const iva = (subtotal * IVA_RATE).toFixed(2);
+  const totalWithIva = (subtotal + parseFloat(iva)).toFixed(2);
 
   return (
     <Modal show={show} onHide={onHide} size="lg" centered>
@@ -158,13 +159,13 @@ const OrderReportModal = ({ show, onHide, report }) => {
           </div>
         </div>
 
-        <h5 style={{ color: colors.backgroundDark, gridColumn: "span 2" }}>
+        <h5 style={{ color: colors.backgroundDark, marginTop: "20px" }}>
           Facturación
         </h5>
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(3, 1fr)",
+            gridTemplateColumns: "repeat(4, 1fr)",
             gap: "10px",
             marginTop: "20px",
           }}
@@ -176,12 +177,6 @@ const OrderReportModal = ({ show, onHide, report }) => {
           <div>
             <DetailLabel>Número de Albarán</DetailLabel>
             <DetailValue>{report?.delivery_note_number || "N/A"}</DetailValue>
-          </div>
-          <div>
-            <DetailLabel>Total</DetailLabel>
-            <DetailValue className="price">
-              {report?.total ? report.total : "N/A"}
-            </DetailValue>
           </div>
           <div>
             <DetailLabel>Emitido por</DetailLabel>
@@ -198,6 +193,18 @@ const OrderReportModal = ({ show, onHide, report }) => {
                 ? new Date(report.issued_at).toLocaleDateString()
                 : "N/A"}
             </DetailValue>
+          </div>
+          <div>
+            <DetailLabel>Subtotal</DetailLabel>
+            <DetailValue className="price">${subtotal}</DetailValue>
+          </div>
+          <div>
+            <DetailLabel>IVA (16%)</DetailLabel>
+            <DetailValue className="price">${iva}</DetailValue>
+          </div>
+          <div>
+            <DetailLabel>Total + IVA</DetailLabel>
+            <DetailValue className="price">${totalWithIva}</DetailValue>
           </div>
         </div>
 
@@ -233,40 +240,6 @@ const OrderReportModal = ({ show, onHide, report }) => {
           </TableWrapper>
         ) : (
           <p>No hay repuestos registrados.</p>
-        )}
-
-        <h5 style={{ color: colors.backgroundDark, marginTop: "20px" }}>
-          Notificaciones
-        </h5>
-        {uniqueNotifications.length > 0 ? (
-          <TableWrapper>
-            <StyledTable>
-              <thead>
-                <tr>
-                  <th>Mensaje</th>
-                  <th>Fecha</th>
-                  <th>De</th>
-                  <th>Para</th>
-                </tr>
-              </thead>
-              <tbody>
-                {uniqueNotifications.map((notification, index) => (
-                  <tr
-                    key={`${notification.message}-${notification.created_at}-${index}`}
-                  >
-                    <td className="text-wrap">{notification.message}</td>
-                    <td>
-                      {new Date(notification.created_at).toLocaleDateString()}
-                    </td>
-                    <td>{notification.from_user}</td>
-                    <td>{notification.to_user}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </StyledTable>
-          </TableWrapper>
-        ) : (
-          <p>No hay notificaciones registradas.</p>
         )}
 
         <h5 style={{ color: colors.backgroundDark, marginTop: "20px" }}>
