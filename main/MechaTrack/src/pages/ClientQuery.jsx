@@ -12,9 +12,15 @@ import {
   Pagination,
 } from "react-bootstrap";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faDownload, faEye } from "@fortawesome/free-solid-svg-icons";
-import * as Papa from "papaparse";
-import { debounce } from "lodash";
+import {
+  faEye,
+  faFileExcel,
+  faFilePdf,
+} from "@fortawesome/free-solid-svg-icons";
+import ExcelJS from "exceljs";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import DOMPurify from "dompurify";
 import {
   BarChart,
   Bar,
@@ -74,6 +80,28 @@ const EmptyMessage = styled.div`
   border-radius: 8px;
   color: #6c757d;
   margin-top: 20px;
+`;
+
+const CalculationsContainer = styled.div`
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+`;
+
+const CalculationsTable = styled.table`
+  width: 200px;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  th,
+  td {
+    border: 1px solid #dee2e6;
+    padding: 8px;
+    text-align: right;
+  }
+  th {
+    background-color: #f1f3f5;
+    font-weight: bold;
+  }
 `;
 
 const clientMenu = [
@@ -232,45 +260,251 @@ const ClientQuery = () => {
     };
   }, [socket, isConnected, fetchOrders]);
 
-  const handleExportCSV = () => {
+  const handleExportExcel = async () => {
     try {
-      const csvData = orders.map((order) => ({
-        "Número de Orden": order.id,
-        "Número Económico": order.vehicle_economic_number,
-        Estado: getStatusDisplay(order.status),
-        "Fecha de Ingreso": order.created_at,
-        "Fecha de Finalización": order.finalized_at || "N/A",
-        Sucursal: order.branch || "N/A",
-      }));
-      const csv = Papa.unparse(csvData);
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Órdenes");
+
+      worksheet.columns = [
+        { header: "Número de Orden", key: "id", width: 15 },
+        { header: "Número Económico", key: "economicNumber", width: 20 },
+        { header: "Estado", key: "status", width: 20 },
+        { header: "Fecha de Ingreso", key: "createdAt", width: 15 },
+        { header: "Fecha de Finalización", key: "finalizedAt", width: 15 },
+        { header: "Sucursal", key: "branch", width: 20 },
+      ];
+
+      orders.forEach((order) => {
+        worksheet.addRow({
+          id: order.id,
+          economicNumber: order.vehicle_economic_number || "-",
+          status: getStatusDisplay(order.status),
+          createdAt: formatDate(order.created_at),
+          finalizedAt: formatDate(order.finalized_at) || "N/A",
+          branch: order.branch || "N/A",
+        });
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.setAttribute("download", "ordenes_vehiculos.csv");
-      document.body.appendChild(link);
+      link.download = "ordenes_vehiculos.xlsx";
       link.click();
-      document.body.removeChild(link);
+      toast.success("Archivo Excel descargado exitosamente");
     } catch (error) {
-      console.error("[ClientQuery] Error al exportar CSV:", error);
-      const csvData = orders.map(
-        (order) =>
-          `"${order.id}","${order.vehicle_economic_number}","${getStatusDisplay(
-            order.status
-          )}","${order.created_at}","${order.finalized_at || "N/A"}","${
-            order.branch || "N/A"
-          }"`
-      );
-      const csv = [
-        "Número de Orden,Número Económico,Estado,Fecha de Ingreso,Fecha de Finalización,Sucursal",
-        ...csvData,
-      ].join("\n");
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.setAttribute("download", "ordenes_vehiculos_fallback.csv");
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      console.error("[ClientQuery] Error al exportar Excel:", error);
+      toast.error("Error al exportar a Excel");
+    }
+  };
+
+  const handleExportPDF = () => {
+    try {
+      const doc = new jsPDF();
+      doc.setFontSize(16);
+      doc.text("Reporte de Órdenes", 20, 20);
+
+      orders.forEach((order, index) => {
+        if (index > 0) doc.addPage();
+        doc.setFontSize(14);
+        doc.text(`Orden #${order.id}`, 20, 30);
+        doc.setFontSize(12);
+
+        const tableData = [
+          ["Número Económico", order.vehicle_economic_number || "-"],
+          ["Estado", getStatusDisplay(order.status)],
+          ["Fecha de Ingreso", formatDate(order.created_at)],
+          ["Fecha de Finalización", formatDate(order.finalized_at) || "N/A"],
+          ["Sucursal", order.branch || "N/A"],
+        ];
+
+        autoTable(doc, {
+          startY: 40,
+          head: [["Campo", "Valor"]],
+          body: tableData,
+          theme: "striped",
+          styles: { fontSize: 10 },
+        });
+
+        if (order.description) {
+          doc.text("Descripción:", 20, doc.lastAutoTable.finalY + 10);
+          doc.text(order.description, 20, doc.lastAutoTable.finalY + 20, {
+            maxWidth: 170,
+          });
+        }
+      });
+
+      doc.save("ordenes_vehiculos.pdf");
+      toast.success("Archivo PDF descargado exitosamente");
+    } catch (error) {
+      console.error("[ClientQuery] Error al exportar PDF:", error);
+      toast.error("Error al exportar a PDF");
+    }
+  };
+
+  const calculatePartsTotals = (parts) => {
+    const approvedParts =
+      parts?.filter((part) => part.status === "aprobado") || [];
+    const subtotal = approvedParts.reduce(
+      (sum, part) => sum + part.price * part.quantity,
+      0
+    );
+    const iva = subtotal * 0.16;
+    const totalWithIva = subtotal + iva;
+    return { subtotal, total: subtotal, iva, totalWithIva };
+  };
+
+  const handleDownloadIndividualPDF = () => {
+    if (!selectedOrder) return;
+
+    try {
+      const doc = new jsPDF();
+      doc.setFontSize(16);
+      doc.text(`Reporte de Orden #${selectedOrder.id}`, 20, 20);
+      doc.setFontSize(12);
+
+      // Información del Vehículo
+      doc.text("Información del Vehículo", 20, 30);
+      const sanitize = (str) =>
+        DOMPurify.sanitize(str || "", { RETURN_TRUSTED_TYPE: false });
+      const vehicleData = [
+        [
+          "Número Económico",
+          sanitize(selectedOrder.vehicle_economic_number || "-"),
+        ],
+        ["Marca", sanitize(selectedOrder.vehicle?.brand || "N/A")],
+        ["Modelo", sanitize(selectedOrder.vehicle?.model || "N/A")],
+        ["Año", sanitize(selectedOrder.vehicle?.year || "N/A")],
+        ["Sucursal", sanitize(selectedOrder.vehicle?.branch || "N/A")],
+        ["Placa", sanitize(selectedOrder.vehicle?.plate || "N/A")],
+        ["Kilometraje", sanitize(selectedOrder.vehicle?.mileage || "N/A")],
+      ];
+      autoTable(doc, {
+        startY: 40,
+        head: [["Campo", "Valor"]],
+        body: vehicleData,
+        theme: "striped",
+        styles: { fontSize: 10 },
+        columnStyles: { 0: { cellWidth: 50 }, 1: { cellWidth: 120 } },
+      });
+
+      // Detalles de la Orden
+      doc.text("Detalles de la Orden", 20, doc.lastAutoTable.finalY + 10);
+      const orderData = [
+        ["Número de Orden", selectedOrder.id],
+        ["Estado", getStatusDisplay(selectedOrder.status)],
+        [
+          "Fecha de Ingreso",
+          new Date(selectedOrder.created_at).toLocaleString(),
+        ],
+        [
+          "Fecha de Finalización",
+          selectedOrder.finalized_at
+            ? new Date(selectedOrder.finalized_at).toLocaleString()
+            : "N/A",
+        ],
+        ["Descripción", selectedOrder.description || "Sin descripción"],
+        ["Diagnóstico Inicial", selectedOrder.initial_diagnosis || "N/A"],
+        ["Tareas", selectedOrder.tasks || "N/A"],
+      ];
+      autoTable(doc, {
+        startY: doc.lastAutoTable.finalY + 20,
+        head: [["Campo", "Valor"]],
+        body: orderData,
+        theme: "striped",
+        styles: { fontSize: 10 },
+        columnStyles: { 0: { cellWidth: 50 }, 1: { cellWidth: 120 } },
+      });
+
+      // Información de Factura (si aplica)
+      if (selectedOrder.status === "Facturado" && selectedOrder.invoice) {
+        doc.text("Información de Factura", 20, doc.lastAutoTable.finalY + 10);
+        const invoiceData = [
+          ["Número de Factura", selectedOrder.invoice.invoice_number],
+          [
+            "Número de Albarán",
+            selectedOrder.invoice.delivery_note_number || "N/A",
+          ],
+          ["Total", `$${selectedOrder.invoice.total}`],
+        ];
+        autoTable(doc, {
+          startY: doc.lastAutoTable.finalY + 20,
+          head: [["Campo", "Valor"]],
+          body: invoiceData,
+          theme: "striped",
+          styles: { fontSize: 10 },
+          columnStyles: { 0: { cellWidth: 50 }, 1: { cellWidth: 120 } },
+        });
+      }
+
+      // Nota sobre Imágenes
+      if (selectedOrder.images && selectedOrder.images.length > 0) {
+        doc.text(
+          "Imágenes: No incluidas en el PDF. Consulte el sistema para verlas.",
+          20,
+          doc.lastAutoTable.finalY + 10
+        );
+      }
+
+      // Repuestos
+      doc.text("Repuestos", 20, doc.lastAutoTable.finalY + 20);
+      const approvedParts =
+        selectedOrder.parts?.filter((part) => part.status === "aprobado") || [];
+      if (approvedParts.length > 0) {
+        const partsData = approvedParts.map((part) => [
+          part.name,
+          part.quantity,
+          part.status,
+          `$${part.price.toFixed(2)}`,
+        ]);
+        autoTable(doc, {
+          startY: doc.lastAutoTable.finalY + 30,
+          head: [["Repuesto", "Cantidad", "Estado", "Precio Unitario"]],
+          body: partsData,
+          theme: "striped",
+          styles: { fontSize: 10 },
+          columnStyles: {
+            0: { cellWidth: 70 },
+            1: { cellWidth: 30 },
+            2: { cellWidth: 30 },
+            3: { cellWidth: 40 },
+          },
+        });
+
+        // Cálculos
+        const { subtotal, total, iva, totalWithIva } = calculatePartsTotals(
+          selectedOrder.parts
+        );
+        const calculationsData = [
+          ["Subtotal", `$${subtotal.toFixed(2)}`],
+          ["Total", `$${total.toFixed(2)}`],
+          ["IVA (16%)", `$${iva.toFixed(2)}`],
+          ["Total + IVA", `$${totalWithIva.toFixed(2)}`],
+        ];
+        autoTable(doc, {
+          startY: doc.lastAutoTable.finalY + 10,
+          startX: 110,
+          head: [["Concepto", "Monto"]],
+          body: calculationsData,
+          theme: "striped",
+          styles: { fontSize: 10, halign: "right" },
+          columnStyles: { 0: { cellWidth: 50 }, 1: { cellWidth: 50 } },
+        });
+      } else {
+        doc.text(
+          "No hay repuestos aprobados asociados a esta orden.",
+          20,
+          doc.lastAutoTable.finalY + 30
+        );
+      }
+
+      doc.save(`orden_${selectedOrder.id}.pdf`);
+      toast.success("Informe individual descargado exitosamente");
+    } catch (error) {
+      console.error("[ClientQuery] Error al descargar PDF individual:", error);
+      toast.error("Error al descargar el informe");
     }
   };
 
@@ -482,13 +716,25 @@ const ClientQuery = () => {
             </FilterGroup>
             <OverlayTrigger
               placement="top"
-              overlay={<Tooltip>Exportar resultados a CSV</Tooltip>}
+              overlay={<Tooltip>Exportar a Excel</Tooltip>}
             >
               <CustomButton
-                onClick={handleExportCSV}
-                aria-label="Exportar a CSV"
+                onClick={handleExportExcel}
+                aria-label="Exportar a Excel"
+                style={{ marginRight: "10px" }}
               >
-                <FontAwesomeIcon icon={faDownload} /> Exportar
+                <FontAwesomeIcon icon={faFileExcel} /> Excel
+              </CustomButton>
+            </OverlayTrigger>
+            <OverlayTrigger
+              placement="top"
+              overlay={<Tooltip>Exportar a PDF</Tooltip>}
+            >
+              <CustomButton
+                onClick={handleExportPDF}
+                aria-label="Exportar a PDF"
+              >
+                <FontAwesomeIcon icon={faFilePdf} /> PDF
               </CustomButton>
             </OverlayTrigger>
           </StyledFiltersContainer>
@@ -712,55 +958,72 @@ const ClientQuery = () => {
                   )}
 
                   <FormSectionTitle>Repuestos</FormSectionTitle>
-                  {selectedOrder.parts && selectedOrder.parts.length > 0 ? (
-                    <TableWrapper>
-                      <StyledTable>
-                        <thead>
-                          <tr>
-                            <th>Repuesto</th>
-                            <th>Cantidad</th>
-                            <th>Estado</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {selectedOrder.parts.map((part, index) => (
-                            <tr key={index}>
-                              <td>{part.name}</td>
-                              <td>{part.quantity}</td>
-                              <td>{part.status}</td>
+                  {selectedOrder.parts &&
+                  selectedOrder.parts.filter(
+                    (part) => part.status === "aprobado"
+                  ).length > 0 ? (
+                    <>
+                      <TableWrapper>
+                        <StyledTable>
+                          <thead>
+                            <tr>
+                              <th>Repuesto</th>
+                              <th>Cantidad</th>
+                              <th>Estado</th>
+                              <th>Precio Unitario</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </StyledTable>
-                    </TableWrapper>
-                  ) : (
-                    <p>No hay repuestos asociados a esta orden.</p>
-                  )}
-
-                  <FormSectionTitle>Historial de Órdenes</FormSectionTitle>
-                  {selectedOrder.history && selectedOrder.history.length > 0 ? (
-                    <TableWrapper>
-                      <StyledTable>
-                        <thead>
-                          <tr>
-                            <th>Descripción</th>
-                            <th>Fecha</th>
-                            <th>Estado</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {selectedOrder.history.map((item, index) => (
-                            <tr key={index}>
-                              <td>{item.description}</td>
-                              <td>{new Date(item.date).toLocaleString()}</td>
-                              <td>{item.status}</td>
+                          </thead>
+                          <tbody>
+                            {selectedOrder.parts
+                              .filter((part) => part.status === "aprobado")
+                              .map((part, index) => (
+                                <tr key={index}>
+                                  <td>{part.name}</td>
+                                  <td>{part.quantity}</td>
+                                  <td>{part.status}</td>
+                                  <td>${part.price.toFixed(2)}</td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </StyledTable>
+                      </TableWrapper>
+                      <CalculationsContainer>
+                        <CalculationsTable>
+                          <thead>
+                            <tr>
+                              <th>Concepto</th>
+                              <th>Monto</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </StyledTable>
-                    </TableWrapper>
+                          </thead>
+                          <tbody>
+                            {(() => {
+                              const { subtotal, total, iva, totalWithIva } =
+                                calculatePartsTotals(selectedOrder.parts);
+                              return [
+                                <tr key="subtotal">
+                                  <td>Subtotal</td>
+                                  <td>${subtotal.toFixed(2)}</td>
+                                </tr>,
+                                <tr key="total">
+                                  <td>Total</td>
+                                  <td>${total.toFixed(2)}</td>
+                                </tr>,
+                                <tr key="iva">
+                                  <td>IVA (16%)</td>
+                                  <td>${iva.toFixed(2)}</td>
+                                </tr>,
+                                <tr key="totalWithIva">
+                                  <td>Total + IVA</td>
+                                  <td>${totalWithIva.toFixed(2)}</td>
+                                </tr>,
+                              ];
+                            })()}
+                          </tbody>
+                        </CalculationsTable>
+                      </CalculationsContainer>
+                    </>
                   ) : (
-                    <p>No hay historial disponible.</p>
+                    <p>No hay repuestos aprobados asociados a esta orden.</p>
                   )}
                 </div>
               ) : (
@@ -770,6 +1033,9 @@ const ClientQuery = () => {
             <Modal.Footer>
               <Button variant="secondary" onClick={handleCloseModal}>
                 Cerrar
+              </Button>
+              <Button variant="primary" onClick={handleDownloadIndividualPDF}>
+                Descargar PDF
               </Button>
             </Modal.Footer>
           </StyledModal>
