@@ -300,47 +300,181 @@ const ClientQuery = () => {
     }
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
+    setFilterLoading(true);
     try {
       const doc = new jsPDF();
-      doc.setFontSize(16);
-      doc.text("Reporte de Órdenes", 20, 20);
+      const sanitize = (str) =>
+        DOMPurify.sanitize(str || "", { RETURN_TRUSTED_TYPE: false });
 
-      orders.forEach((order, index) => {
+      if (orders.length === 0) {
+        toast.warn("No hay órdenes para exportar");
+        return;
+      }
+
+      // Obtener detalles completos de cada orden
+      const detailedOrders = await Promise.all(
+        orders.map(async (order) => {
+          try {
+            const detailedOrder = await getOrderById(order.id);
+            return detailedOrder;
+          } catch (error) {
+            console.error(
+              `[ClientQuery] Error cargando orden ${order.id}:`,
+              error
+            );
+            return null;
+          }
+        })
+      );
+
+      // Filtrar órdenes válidas
+      const validOrders = detailedOrders.filter((order) => order !== null);
+
+      if (validOrders.length === 0) {
+        toast.error("No se pudieron cargar los detalles de las órdenes");
+        return;
+      }
+
+      validOrders.forEach((order, index) => {
         if (index > 0) doc.addPage();
-        doc.setFontSize(14);
-        doc.text(`Orden #${order.id}`, 20, 30);
+        doc.setFontSize(16);
+        doc.text(sanitize(`Reporte de Orden #${order.id}`), 20, 20);
         doc.setFontSize(12);
 
-        const tableData = [
-          ["Número Económico", order.vehicle_economic_number || "-"],
-          ["Estado", getStatusDisplay(order.status)],
-          ["Fecha de Ingreso", formatDate(order.created_at)],
-          ["Fecha de Finalización", formatDate(order.finalized_at) || "N/A"],
-          ["Sucursal", order.branch || "N/A"],
+        // Información del Vehículo
+        doc.text("Información del Vehículo", 20, 30);
+        const vehicleData = [
+          ["Número Económico", sanitize(order.vehicle_economic_number || "-")],
+          ["Marca", sanitize(order.vehicle?.brand || "N/A")],
+          ["Modelo", sanitize(order.vehicle?.model || "N/A")],
+          ["Año", sanitize(order.vehicle?.year || "N/A")],
+          ["Sucursal", sanitize(order.vehicle?.branch || "N/A")],
+          ["Placa", sanitize(order.vehicle?.plate || "N/A")],
+          ["Kilometraje", sanitize(order.vehicle?.mileage || "N/A")],
         ];
-
         autoTable(doc, {
           startY: 40,
           head: [["Campo", "Valor"]],
-          body: tableData,
+          body: vehicleData,
           theme: "striped",
           styles: { fontSize: 10 },
+          columnStyles: { 0: { cellWidth: 50 }, 1: { cellWidth: 120 } },
         });
 
-        if (order.description) {
-          doc.text("Descripción:", 20, doc.lastAutoTable.finalY + 10);
-          doc.text(order.description, 20, doc.lastAutoTable.finalY + 20, {
-            maxWidth: 170,
+        // Detalles de la Orden
+        doc.text("Detalles de la Orden", 20, doc.lastAutoTable.finalY + 10);
+        const orderData = [
+          ["Número de Orden", order.id],
+          ["Estado", getStatusDisplay(order.status)],
+          ["Fecha de Ingreso", new Date(order.created_at).toLocaleString()],
+          [
+            "Fecha de Finalización",
+            order.finalized_at
+              ? new Date(order.finalized_at).toLocaleString()
+              : "N/A",
+          ],
+          ["Descripción", sanitize(order.description || "Sin descripción")],
+          ["Diagnóstico Inicial", sanitize(order.initial_diagnosis || "N/A")],
+          ["Tareas", sanitize(order.tasks || "N/A")],
+        ];
+        autoTable(doc, {
+          startY: doc.lastAutoTable.finalY + 20,
+          head: [["Campo", "Valor"]],
+          body: orderData,
+          theme: "striped",
+          styles: { fontSize: 10 },
+          columnStyles: { 0: { cellWidth: 50 }, 1: { cellWidth: 120 } },
+        });
+
+        // Información de Factura
+        if (order.status === "Facturado" && order.invoice) {
+          doc.text("Información de Factura", 20, doc.lastAutoTable.finalY + 10);
+          const invoiceData = [
+            ["Número de Factura", order.invoice.invoice_number],
+            ["Número de Pedido", order.order_number || "N/A"],
+            ["Número de Albarán", order.invoice.delivery_note_number || "N/A"],
+            ["Total", `$${order.invoice.total * 1.16}`],
+          ];
+          autoTable(doc, {
+            startY: doc.lastAutoTable.finalY + 20,
+            head: [["Campo", "Valor"]],
+            body: invoiceData,
+            theme: "striped",
+            styles: { fontSize: 10 },
+            columnStyles: { 0: { cellWidth: 50 }, 1: { cellWidth: 120 } },
           });
+        }
+
+        // Nota sobre Imágenes
+        if (order.images && order.images.length > 0) {
+          doc.text(
+            "Imágenes: No incluidas en el PDF. Consulte el sistema para verlas.",
+            20,
+            doc.lastAutoTable.finalY + 10
+          );
+        }
+
+        // Repuestos
+        doc.text("Repuestos", 20, doc.lastAutoTable.finalY + 20);
+        const approvedParts =
+          order.parts?.filter((part) => part.status === "Aprobado") || [];
+        if (approvedParts.length > 0) {
+          const partsData = approvedParts.map((part) => [
+            sanitize(part.name),
+            part.quantity,
+            part.status,
+            `$${part.price}`,
+          ]);
+          autoTable(doc, {
+            startY: doc.lastAutoTable.finalY + 30,
+            head: [["Repuesto", "Cantidad", "Estado", "Precio Unitario"]],
+            body: partsData,
+            theme: "striped",
+            styles: { fontSize: 10 },
+            columnStyles: {
+              0: { cellWidth: 70 },
+              1: { cellWidth: 30 },
+              2: { cellWidth: 30 },
+              3: { cellWidth: 40 },
+            },
+          });
+
+          // Cálculos
+          const { subtotal, total, iva, totalWithIva } = calculatePartsTotals(
+            order.parts
+          );
+          const calculationsData = [
+            ["Subtotal", `$${subtotal}`],
+            ["Total", `$${total}`],
+            ["IVA (16%)", `$${iva}`],
+            ["Total + IVA", `$${totalWithIva}`],
+          ];
+          autoTable(doc, {
+            startY: doc.lastAutoTable.finalY + 10,
+            startX: 110,
+            head: [["Concepto", "Monto"]],
+            body: calculationsData,
+            theme: "striped",
+            styles: { fontSize: 10, halign: "right" },
+            columnStyles: { 0: { cellWidth: 50 }, 1: { cellWidth: 50 } },
+          });
+        } else {
+          doc.text(
+            "No hay repuestos aprobados asociados a esta orden.",
+            20,
+            doc.lastAutoTable.finalY + 30
+          );
         }
       });
 
-      doc.save("ordenes_vehiculos.pdf");
-      toast.success("Archivo PDF descargado exitosamente");
+      doc.save("ordenes_filtradas.pdf");
+      toast.success("Informe agrupado descargado exitosamente");
     } catch (error) {
-      console.error("[ClientQuery] Error al exportar PDF:", error);
-      toast.error("Error al exportar a PDF");
+      console.error("[ClientQuery] Error al exportar PDF agrupado:", error);
+      toast.error("Error al exportar el informe agrupado");
+    } finally {
+      setFilterLoading(false);
     }
   };
 
@@ -361,14 +495,14 @@ const ClientQuery = () => {
 
     try {
       const doc = new jsPDF();
+      const sanitize = (str) =>
+        DOMPurify.sanitize(str || "", { RETURN_TRUSTED_TYPE: false });
       doc.setFontSize(16);
-      doc.text(`Reporte de Orden #${selectedOrder.id}`, 20, 20);
+      doc.text(sanitize(`Reporte de Orden #${selectedOrder.id}`), 20, 20);
       doc.setFontSize(12);
 
       // Información del Vehículo
       doc.text("Información del Vehículo", 20, 30);
-      const sanitize = (str) =>
-        DOMPurify.sanitize(str || "", { RETURN_TRUSTED_TYPE: false });
       const vehicleData = [
         [
           "Número Económico",
@@ -405,9 +539,15 @@ const ClientQuery = () => {
             ? new Date(selectedOrder.finalized_at).toLocaleString()
             : "N/A",
         ],
-        ["Descripción", selectedOrder.description || "Sin descripción"],
-        ["Diagnóstico Inicial", selectedOrder.initial_diagnosis || "N/A"],
-        ["Tareas", selectedOrder.tasks || "N/A"],
+        [
+          "Descripción",
+          sanitize(selectedOrder.description || "Sin descripción"),
+        ],
+        [
+          "Diagnóstico Inicial",
+          sanitize(selectedOrder.initial_diagnosis || "N/A"),
+        ],
+        ["Tareas", sanitize(selectedOrder.tasks || "N/A")],
       ];
       autoTable(doc, {
         startY: doc.lastAutoTable.finalY + 20,
@@ -455,7 +595,7 @@ const ClientQuery = () => {
         selectedOrder.parts?.filter((part) => part.status === "Aprobado") || [];
       if (approvedParts.length > 0) {
         const partsData = approvedParts.map((part) => [
-          part.name,
+          sanitize(part.name),
           part.quantity,
           part.status,
           `$${part.price}`,
@@ -479,10 +619,10 @@ const ClientQuery = () => {
           selectedOrder.parts
         );
         const calculationsData = [
-          ["Subtotal", `$${subtotal.toFixed(2)}`],
-          ["Total", `$${total.toFixed(2)}`],
-          ["IVA (16%)", `$${iva.toFixed(2)}`],
-          ["Total + IVA", `$${totalWithIva.toFixed(2)}`],
+          ["Subtotal", `$${subtotal}`],
+          ["Total", `$${total}`],
+          ["IVA (16%)", `$${iva}`],
+          ["Total + IVA", `$${totalWithIva}`],
         ];
         autoTable(doc, {
           startY: doc.lastAutoTable.finalY + 10,
@@ -734,8 +874,15 @@ const ClientQuery = () => {
               <CustomButton
                 onClick={handleExportPDF}
                 aria-label="Exportar a PDF"
+                disabled={filterLoading}
               >
-                <FontAwesomeIcon icon={faFilePdf} /> PDF
+                {filterLoading ? (
+                  <Spinner animation="border" size="sm" />
+                ) : (
+                  <>
+                    <FontAwesomeIcon icon={faFilePdf} /> PDF
+                  </>
+                )}
               </CustomButton>
             </OverlayTrigger>
           </StyledFiltersContainer>
@@ -1009,19 +1156,19 @@ const ClientQuery = () => {
                               return [
                                 <tr key="subtotal">
                                   <td>Subtotal</td>
-                                  <td>${subtotal.toFixed(2)}</td>
+                                  <td>${subtotal}</td>
                                 </tr>,
                                 <tr key="total">
                                   <td>Total</td>
-                                  <td>${total.toFixed(2)}</td>
+                                  <td>${total}</td>
                                 </tr>,
                                 <tr key="iva">
                                   <td>IVA (16%)</td>
-                                  <td>${iva.toFixed(2)}</td>
+                                  <td>${iva}</td>
                                 </tr>,
                                 <tr key="totalWithIva">
                                   <td>Total + IVA</td>
-                                  <td>${totalWithIva.toFixed(2)}</td>
+                                  <td>${totalWithIva}</td>
                                 </tr>,
                               ];
                             })()}
@@ -1038,10 +1185,20 @@ const ClientQuery = () => {
               )}
             </ModalBody>
             <Modal.Footer>
-              <Button variant="secondary" onClick={handleCloseModal}>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  handleCloseModal;
+                }}
+              >
                 Cerrar
               </Button>
-              <Button variant="primary" onClick={handleDownloadIndividualPDF}>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  handleDownloadIndividualPDF;
+                }}
+              >
                 Descargar PDF
               </Button>
             </Modal.Footer>

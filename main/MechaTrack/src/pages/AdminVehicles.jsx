@@ -1,5 +1,14 @@
 import { useState, useEffect } from "react";
-import { Container, Form, Pagination, Modal, ListGroup } from "react-bootstrap";
+import {
+  Container,
+  Form,
+  Pagination,
+  Modal,
+  ListGroup,
+  Spinner,
+  OverlayTrigger,
+  Tooltip,
+} from "react-bootstrap";
 import { useAuth } from "../context/AuthContext";
 import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
@@ -28,10 +37,20 @@ import {
 } from "../services/vehicleService";
 import { toast } from "react-toastify";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faEye, faPencil, faTrashCan } from "@fortawesome/free-solid-svg-icons";
+import {
+  faEye,
+  faPencil,
+  faTrashCan,
+  faFilePdf,
+  faFileExcel,
+} from "@fortawesome/free-solid-svg-icons";
 import { library } from "@fortawesome/fontawesome-svg-core";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import DOMPurify from "dompurify";
+import ExcelJS from "exceljs";
 
-library.add(faEye, faPencil, faTrashCan);
+library.add(faEye, faPencil, faTrashCan, faFilePdf, faFileExcel);
 
 const adminMenu = [
   { label: "Inicio", path: "../admin" },
@@ -63,6 +82,8 @@ const AdminVehicles = () => {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -98,12 +119,11 @@ const AdminVehicles = () => {
   const handleCreateVehicle = async (vehicleData) => {
     try {
       const newVehicle = await createVehicle(vehicleData);
-      setVehicles([...vehicles, newVehicle]); // Actualización optimista
+      setVehicles([...vehicles, newVehicle]);
       setShowCreateModal(false);
       toast.success("Vehículo creado");
-      // Reiniciar paginación y recargar datos
       setPagination((prev) => ({ ...prev, page: 1 }));
-      await fetchData(); // Recargar datos del servidor
+      await fetchData();
     } catch (error) {
       toast.error(error.message || "Error al crear vehículo");
       throw error;
@@ -126,7 +146,8 @@ const AdminVehicles = () => {
       );
       setShowEditModal(false);
       setSelectedVehicle(null);
-      await fetchData(); // Recargar datos para asegurar consistencia
+      toast.success("Vehículo actualizado");
+      await fetchData();
     } catch (error) {
       toast.error(error.message || "Error al actualizar vehículo");
       throw error;
@@ -143,10 +164,130 @@ const AdminVehicles = () => {
           vehicles.filter((v) => v.economic_number !== economic_number)
         );
         toast.success("Vehículo eliminado");
-        await fetchData(); // Recargar datos
+        await fetchData();
       } catch (error) {
         toast.error(error.message || "Error al eliminar vehículo");
       }
+    }
+  };
+
+  const handleExportPDF = async () => {
+    setIsExportingPDF(true);
+    try {
+      const vehiclesData = await getVehicles({
+        branch: branchFilter,
+        economicNumber: economicNumberFilter,
+        model: modelFilter,
+        page: 1,
+        limit: 1000,
+      });
+
+      const vehiclesToExport = vehiclesData.vehicles || [];
+      if (vehiclesToExport.length === 0) {
+        toast.warn("No hay vehículos para exportar");
+        return;
+      }
+
+      const doc = new jsPDF();
+      const sanitize = (str) =>
+        DOMPurify.sanitize(str || "", { RETURN_TRUSTED_TYPE: false });
+
+      doc.setFontSize(16);
+      doc.text("Reporte de Vehículos", 20, 20);
+      doc.setFontSize(12);
+
+      vehiclesToExport.forEach((vehicle, index) => {
+        if (index > 0) doc.addPage();
+        doc.text(`Vehículo #${sanitize(vehicle.economic_number)}`, 20, 30);
+
+        const vehicleData = [
+          ["Número Económico", sanitize(vehicle.economic_number || "-")],
+          ["Sucursal", sanitize(vehicle.branch || "-")],
+          ["Marca", sanitize(vehicle.brand || "-")],
+          ["Modelo", sanitize(vehicle.model || "-")],
+          ["Año", sanitize(vehicle.year || "0")],
+          ["Kilometraje", sanitize(`${vehicle.mileage || "0"} km`)],
+          ["VIN", sanitize(vehicle.vin || "-")],
+          ["Placa", sanitize(vehicle.plate || "-")],
+        ];
+        autoTable(doc, {
+          startY: 40,
+          head: [["Campo", "Valor"]],
+          body: vehicleData,
+          theme: "striped",
+          styles: { fontSize: 10 },
+          columnStyles: { 0: { cellWidth: 50 }, 1: { cellWidth: 120 } },
+        });
+      });
+
+      doc.save("vehiculos_filtrados.pdf");
+      toast.success("Reporte de vehículos descargado correctamente");
+    } catch (error) {
+      console.error("[AdminVehicles] Error al exportar PDF:", error);
+      toast.error("Error al exportar el PDF");
+    } finally {
+      setIsExportingPDF(false);
+    }
+  };
+
+  const handleExportExcel = async () => {
+    setIsExportingExcel(true);
+    try {
+      const vehiclesData = await getVehicles({
+        branch: branchFilter,
+        economicNumber: economicNumberFilter,
+        model: modelFilter,
+        page: 1,
+        limit: 1000,
+      });
+
+      const vehiclesToExport = vehiclesData.vehicles || [];
+      if (vehiclesToExport.length === 0) {
+        toast.warn("No hay vehículos para exportar");
+        return;
+      }
+
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Vehículos");
+
+      worksheet.columns = [
+        { header: "Número Económico", key: "economicNumber", width: 20 },
+        { header: "Sucursal", key: "branch", width: 20 },
+        { header: "Marca", key: "brand", width: 15 },
+        { header: "Modelo", key: "model", width: 20 },
+        { header: "Año", key: "year", width: 10 },
+        { header: "Kilometraje", key: "mileage", width: 15 },
+        { header: "VIN", key: "vin", width: 20 },
+        { header: "Placa", key: "plate", width: 15 },
+      ];
+
+      vehiclesToExport.forEach((vehicle) => {
+        worksheet.addRow({
+          economicNumber: vehicle.economic_number || "-",
+          branch: vehicle.branch || "-",
+          brand: vehicle.brand || "-",
+          model: vehicle.model || "-",
+          year: vehicle.year || "0",
+          mileage: `${vehicle.mileage || "0"} km`,
+          vin: vehicle.vin || "-",
+          plate: vehicle.plate || "-",
+        });
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "vehiculos_filtrados.xlsx";
+      link.click();
+      toast.success("Archivo Excel descargado correctamente");
+    } catch (error) {
+      console.error("[AdminVehicles] Error al exportar Excel:", error);
+      toast.error("Error al exportar el Excel");
+    } finally {
+      setIsExportingExcel(false);
     }
   };
 
@@ -207,6 +348,44 @@ const AdminVehicles = () => {
                 ))}
               </FilterSelect>
             </FilterGroup>
+            <OverlayTrigger
+              placement="top"
+              overlay={<Tooltip>Exportar a Excel</Tooltip>}
+            >
+              <CustomButton
+                onClick={handleExportExcel}
+                aria-label="Exportar a Excel"
+                disabled={isExportingExcel}
+                style={{ marginRight: "10px" }}
+              >
+                {isExportingExcel ? (
+                  <Spinner animation="border" size="sm" />
+                ) : (
+                  <>
+                    <FontAwesomeIcon icon={faFileExcel} /> Excel
+                  </>
+                )}
+              </CustomButton>
+            </OverlayTrigger>
+            <OverlayTrigger
+              placement="top"
+              overlay={<Tooltip>Exportar a PDF</Tooltip>}
+            >
+              <CustomButton
+                onClick={handleExportPDF}
+                aria-label="Exportar a PDF"
+                disabled={isExportingPDF}
+                style={{ marginRight: "10px" }}
+              >
+                {isExportingPDF ? (
+                  <Spinner animation="border" size="sm" />
+                ) : (
+                  <>
+                    <FontAwesomeIcon icon={faFilePdf} /> PDF
+                  </>
+                )}
+              </CustomButton>
+            </OverlayTrigger>
             <CustomButton onClick={() => setShowCreateModal(true)}>
               Nuevo Vehículo
             </CustomButton>
@@ -227,48 +406,56 @@ const AdminVehicles = () => {
                 </tr>
               </thead>
               <tbody>
-                {vehicles.map((vehicle) => (
-                  <tr key={vehicle.economic_number}>
-                    <td>{vehicle.economic_number}</td>
-                    <td>{vehicle.branch}</td>
-                    <td>{vehicle.brand}</td>
-                    <td>{vehicle.model}</td>
-                    <td>{vehicle.year}</td>
-                    <td>{vehicle.mileage} km</td>
-                    <td>{vehicle.vin}</td>
-                    <td>{vehicle.plate}</td>
-                    <td className="actions">
-                      <ActionsContainer>
-                        <CustomButton
-                          onClick={() => {
-                            setSelectedVehicle(vehicle);
-                            setShowDetailsModal(true);
-                          }}
-                          title="Ver Detalles"
-                        >
-                          <FontAwesomeIcon icon={faEye} />
-                        </CustomButton>
-                        <CustomButton
-                          onClick={() => {
-                            setSelectedVehicle(vehicle);
-                            setShowEditModal(true);
-                          }}
-                          title="Editar"
-                        >
-                          <FontAwesomeIcon icon={faPencil} />
-                        </CustomButton>
-                        <CustomButton
-                          onClick={() =>
-                            handleDeleteVehicle(vehicle.economic_number)
-                          }
-                          title="Eliminar"
-                        >
-                          <FontAwesomeIcon icon={faTrashCan} />
-                        </CustomButton>
-                      </ActionsContainer>
+                {vehicles.length > 0 ? (
+                  vehicles.map((vehicle) => (
+                    <tr key={vehicle.economic_number}>
+                      <td>{vehicle.economic_number}</td>
+                      <td>{vehicle.branch}</td>
+                      <td>{vehicle.brand}</td>
+                      <td>{vehicle.model}</td>
+                      <td>{vehicle.year}</td>
+                      <td>{vehicle.mileage} km</td>
+                      <td>{vehicle.vin}</td>
+                      <td>{vehicle.plate}</td>
+                      <td className="actions">
+                        <ActionsContainer>
+                          <CustomButton
+                            onClick={() => {
+                              setSelectedVehicle(vehicle);
+                              setShowDetailsModal(true);
+                            }}
+                            title="Ver Detalles"
+                          >
+                            <FontAwesomeIcon icon={faEye} />
+                          </CustomButton>
+                          <CustomButton
+                            onClick={() => {
+                              setSelectedVehicle(vehicle);
+                              setShowEditModal(true);
+                            }}
+                            title="Editar"
+                          >
+                            <FontAwesomeIcon icon={faPencil} />
+                          </CustomButton>
+                          <CustomButton
+                            onClick={() =>
+                              handleDeleteVehicle(vehicle.economic_number)
+                            }
+                            title="Eliminar"
+                          >
+                            <FontAwesomeIcon icon={faTrashCan} />
+                          </CustomButton>
+                        </ActionsContainer>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="9" className="text-center">
+                      No hay vehículos disponibles.
                     </td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </StyledTable>
           </TableWrapper>
