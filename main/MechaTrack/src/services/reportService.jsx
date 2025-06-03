@@ -74,3 +74,32 @@ export const downloadOrderReportPdf = async (orderId) => {
     );
   }
 };
+
+export const getPartsReport = async ({
+  startDate,
+  endDate,
+  branch,
+  status,
+  orderNumber,
+  token,
+}) => {
+  try {
+    const response = await axiosInstance.get("/api/reports/parts", {
+      headers: { Authorization: `Bearer ${token}` },
+      params: {
+        startDate,
+        endDate,
+        branch,
+        status,
+        orderNumber,
+      },
+    });
+    return response.data;
+  } catch (error) {
+    throw (
+      error.response?.data || {
+        message: "Error al obtener informe de repuestos",
+      }
+    );
+  }
+};

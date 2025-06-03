@@ -101,6 +101,8 @@ const AdminOrders = () => {
   const [statusFilter, setStatusFilter] = useState("");
   const [economicNumberFilter, setEconomicNumberFilter] = useState("");
   const [orderNumberFilter, setOrderNumberFilter] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -129,6 +131,8 @@ const AdminOrders = () => {
           status: statusFilter,
           economicNumber: economicNumberFilter,
           orderNumber: orderNumberFilter,
+          startDate,
+          endDate,
           page: pagination.page,
           limit: pagination.limit,
         });
@@ -162,6 +166,8 @@ const AdminOrders = () => {
     statusFilter,
     economicNumberFilter,
     orderNumberFilter,
+    startDate,
+    endDate,
     pagination.page,
     token,
   ]);
@@ -539,9 +545,6 @@ const AdminOrders = () => {
       day: "2-digit",
       month: "2-digit",
       year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
     });
   };
 
@@ -566,54 +569,94 @@ const AdminOrders = () => {
         <DashboardHeader title="Órdenes de Servicio" {...userData} />
         <Container className="mt-4 d-flex flex-column align-items-center gap-3">
           <FiltersContainer>
-            <FilterGroup>
-              <FilterLabel>Sucursal</FilterLabel>
-              <FilterSelect
-                value={branchFilter}
-                onChange={(e) => setBranchFilter(e.target.value)}
-              >
-                <option value="">Todas</option>
-                {branches.map((branch) => (
-                  <option key={branch} value={branch}>
-                    {branch}
+            <div className="d-flex flex-column gap-3">
+              <FilterGroup>
+                <FilterLabel>Fecha Inicio</FilterLabel>
+                <FilterInput
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => {
+                    setStartDate(e.target.value);
+                    setPagination({ ...pagination, page: 1 });
+                  }}
+                />
+              </FilterGroup>
+              <FilterGroup>
+                <FilterLabel>Fecha Fin</FilterLabel>
+                <FilterInput
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => {
+                    setEndDate(e.target.value);
+                    setPagination({ ...pagination, page: 1 });
+                  }}
+                />
+              </FilterGroup>
+            </div>
+            <div className="d-flex flex-column gap-3">
+              <FilterGroup>
+                <FilterLabel>Sucursal</FilterLabel>
+                <FilterSelect
+                  value={branchFilter}
+                  onChange={(e) => {
+                    setBranchFilter(e.target.value);
+                    setPagination({ ...pagination, page: 1 });
+                  }}
+                >
+                  <option value="">Todas</option>
+                  {branches.map((branch) => (
+                    <option key={branch} value={branch}>
+                      {branch}
+                    </option>
+                  ))}
+                </FilterSelect>
+              </FilterGroup>
+              <FilterGroup>
+                <FilterLabel>Estado</FilterLabel>
+                <FilterSelect
+                  value={statusFilter}
+                  onChange={(e) => {
+                    setStatusFilter(e.target.value);
+                    setPagination({ ...pagination, page: 1 });
+                  }}
+                >
+                  <option value="">Todos</option>
+                  <option value="En Proceso">En Proceso</option>
+                  <option value="Pendiente">Pendiente</option>
+                  <option value="Finalizado">Finalizado</option>
+                  <option value="Pendiente de Facturación">
+                    Pendiente de Facturación
                   </option>
-                ))}
-              </FilterSelect>
-            </FilterGroup>
-            <FilterGroup>
-              <FilterLabel>Estado</FilterLabel>
-              <FilterSelect
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-              >
-                <option value="">Todos</option>
-                <option value="En Proceso">En Proceso</option>
-                <option value="Pendiente">Pendiente</option>
-                <option value="Finalizado">Finalizado</option>
-                <option value="Pendiente de Facturación">
-                  Pendiente de Facturación
-                </option>
-                <option value="Facturado">Facturado</option>
-              </FilterSelect>
-            </FilterGroup>
-            <FilterGroup>
-              <FilterLabel>Número Económico</FilterLabel>
-              <FilterInput
-                type="text"
-                value={economicNumberFilter}
-                onChange={(e) => setEconomicNumberFilter(e.target.value)}
-                placeholder="Filtrar por N° Económico"
-              />
-            </FilterGroup>
-            <FilterGroup>
-              <FilterLabel>Número de Orden</FilterLabel>
-              <FilterInput
-                type="text"
-                value={orderNumberFilter}
-                onChange={(e) => setOrderNumberFilter(e.target.value)}
-                placeholder="Filtrar por N° Orden"
-              />
-            </FilterGroup>
+                  <option value="Facturado">Facturado</option>
+                </FilterSelect>
+              </FilterGroup>
+            </div>
+            <div className="d-flex flex-column gap-3">
+              <FilterGroup>
+                <FilterLabel>Número Económico</FilterLabel>
+                <FilterInput
+                  type="text"
+                  value={economicNumberFilter}
+                  onChange={(e) => {
+                    setEconomicNumberFilter(e.target.value);
+                    setPagination({ ...pagination, page: 1 });
+                  }}
+                  placeholder="Filtrar por N° Económico"
+                />
+              </FilterGroup>
+              <FilterGroup>
+                <FilterLabel>Número de Orden</FilterLabel>
+                <FilterInput
+                  type="text"
+                  value={orderNumberFilter}
+                  onChange={(e) => {
+                    setOrderNumberFilter(e.target.value);
+                    setPagination({ ...pagination, page: 1 });
+                  }}
+                  placeholder="Filtrar por N° Orden"
+                />
+              </FilterGroup>
+            </div>
           </FiltersContainer>
           <TableWrapper>
             <StyledTable>
@@ -621,6 +664,7 @@ const AdminOrders = () => {
                 <tr>
                   <th>Número Económico</th>
                   <th>Número de Orden</th>
+                  <th>Fecha</th>
                   <th>Sucursal</th>
                   <th>Estado</th>
                   <th>Acciones</th>
@@ -635,6 +679,7 @@ const AdminOrders = () => {
                     <tr key={order.id}>
                       <td>{order.vehicle_economic_number}</td>
                       <td>{order.id}</td>
+                      <td>{formatDate(order.created_at)}</td>{" "}
                       <td>{order.branch || "-"}</td>
                       <td>
                         <StatusIcon status={order.status}>

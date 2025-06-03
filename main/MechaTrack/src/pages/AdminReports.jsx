@@ -5,15 +5,16 @@ import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import CustomButton from "../components/CustomButton";
 import OrderReportModal from "../components/OrderReportModal";
+import { API_URL } from "../services/apiConfig";
 import {
   getBranchReports,
   getOrderReport,
   downloadBranchReportsExcel,
+  getPartsReport,
 } from "../services/reportService";
 import { getOrders } from "../services/orderService";
 import { toast } from "react-toastify";
 import {
-  colors,
   StyledTable,
   FiltersContainer,
   FilterGroup,
@@ -46,6 +47,8 @@ const AdminReports = () => {
   const [branchFilter, setBranchFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [orderNumberFilter, setOrderNumberFilter] = useState("");
+  const [economicNumberFilter, setEconomicNumberFilter] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const [branches, setBranches] = useState([]);
   const [reports, setReports] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -58,6 +61,16 @@ const AdminReports = () => {
     totalPages: 1,
     total: 0,
   });
+
+  const formatDate = (dateStr) => {
+    if (!dateStr) return "N/A";
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("es-ES", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  };
 
   useEffect(() => {
     const fetchBranches = async () => {
@@ -79,6 +92,9 @@ const AdminReports = () => {
           const response = await getOrders({
             status: statusFilter,
             orderNumber: orderNumberFilter,
+            economicNumber: economicNumberFilter,
+            startDate,
+            endDate,
             page: pagination.page,
             limit: pagination.limit,
           });
@@ -104,22 +120,19 @@ const AdminReports = () => {
     } else if (reportType === "parts" && token) {
       const fetchParts = async () => {
         try {
-          const response = await axios.get("/api/reports/parts", {
-            headers: { Authorization: `Bearer ${token}` },
-            params: {
-              startDate,
-              endDate,
-              branch: branchFilter,
-              status: statusFilter,
-              orderNumber: orderNumberFilter,
-            },
+          const response = await getPartsReport({
+            startDate,
+            endDate,
+            branch: branchFilter,
+            status: statusFilter,
+            orderNumber: orderNumberFilter,
+            economicNumber: economicNumberFilter,
+            token,
           });
-          setParts(response.data || []);
+          setParts(response || []);
         } catch (error) {
           console.error("[AdminReports] Error al cargar repuestos:", error);
-          toast.error(
-            error.response?.data?.message || "Error al cargar repuestos"
-          );
+          toast.error(error.message || "Error al cargar repuestos");
           setParts([]);
         }
       };
@@ -129,6 +142,7 @@ const AdminReports = () => {
     reportType,
     statusFilter,
     orderNumberFilter,
+    economicNumberFilter,
     startDate,
     endDate,
     branchFilter,
@@ -167,29 +181,73 @@ const AdminReports = () => {
   };
 
   const handleExportOrdersPdf = async () => {
+    if (startDate && !endDate) {
+      toast.error("Por favor, seleccione una fecha de fin.");
+      return;
+    }
+    if (!startDate && endDate) {
+      toast.error("Por favor, seleccione una fecha de inicio.");
+      return;
+    }
+
+    setIsLoading(true);
     try {
-      const response = await axios.get("/api/reports/orders/pdf", {
+      console.log("[handleExportOrdersPdf] Enviando solicitud con filtros:", {
+        startDate,
+        endDate,
+        branch: branchFilter,
+        status: statusFilter,
+        orderNumber: orderNumberFilter,
+        economicNumber: economicNumberFilter,
+      });
+
+      const response = await axios.get(`${API_URL}/api/reports/orders/pdf`, {
         headers: { Authorization: `Bearer ${token}` },
         params: {
-          startDate,
-          endDate,
+          startDate: startDate || null,
+          endDate: endDate || null,
           branch: branchFilter,
           status: statusFilter,
           orderNumber: orderNumberFilter,
+          economicNumber: economicNumberFilter,
         },
         responseType: "blob",
       });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
+
+      if (!(response.data instanceof Blob)) {
+        const text = await response.data.text();
+        console.error("[handleExportOrdersPdf] Respuesta no es un blob:", text);
+        throw new Error(
+          "La respuesta del servidor no es un archivo PDF válido"
+        );
+      }
+
+      const url = window.URL.createObjectURL(response.data);
       const link = document.createElement("a");
       link.href = url;
       link.setAttribute("download", "informe_ordenes.pdf");
       document.body.appendChild(link);
       link.click();
       link.remove();
+      window.URL.revokeObject(url);
       toast.success("PDF descargado correctamente");
     } catch (error) {
       console.error("[AdminReports] Error al descargar PDF:", error);
-      toast.error(error.response?.data?.message || "Error al descargar PDF");
+      let errorMessage = "Error al descargar PDF";
+      if (error.response) {
+        try {
+          const errorText = await error.response.data.text();
+          const parsedError = JSON.parse(errorText);
+          errorMessage = parsedError.message || errorMessage;
+        } catch (e) {
+          errorMessage = "Error del servidor al generar el PDF";
+        }
+      } else if (error.request) {
+        errorMessage = "No se pudo conectar con el servidor";
+      }
+      toast.error(errorMessage);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -203,6 +261,7 @@ const AdminReports = () => {
           branch: branchFilter,
           status: statusFilter,
           orderNumber: orderNumberFilter,
+          economicNumber: economicNumberFilter,
         },
         responseType: "blob",
       });
@@ -262,7 +321,7 @@ const AdminReports = () => {
                   value={reportType}
                   onChange={(e) => setReportType(e.target.value)}
                 >
-                  <option value="order">Por Orden</option>
+                  <option value="order">Por Económico</option>
                   <option value="branch">Por Sucursal</option>
                   <option value="parts">Por Repuestos</option>
                 </FilterSelect>
@@ -355,15 +414,15 @@ const AdminReports = () => {
                   <tbody>
                     {reports.map((report, index) => (
                       <tr key={index}>
-                        <td>{report.branch}</td>
+                        <td>{report.order_number}</td>
                         <td>{report.total_orders}</td>
                         <td>{report.in_process}</td>
                         <td>{report.pending}</td>
                         <td>{report.finalized}</td>
                         <td>{report.pending_billing}</td>
-                        <td>{report.invoiced}</td>
+                        <td>{report.financial}</td>
                         <td>{report.total_parts_cost}</td>
-                        <td>{report.total_invoice_amount}</td>
+                        <td>{report.total}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -374,10 +433,35 @@ const AdminReports = () => {
             <>
               <FiltersContainer>
                 <FilterGroup>
+                  <FilterLabel>Fecha Inicio</FilterLabel>
+                  <FilterInput
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => {
+                      setStartDate(e.target.value);
+                      setPagination({ ...pagination, page: 1 });
+                    }}
+                  />
+                </FilterGroup>
+                <FilterGroup>
+                  <FilterLabel>Fecha Fin</FilterLabel>
+                  <FilterInput
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => {
+                      setEndDate(e.target.value);
+                      setPagination({ ...pagination, page: 1 });
+                    }}
+                  />
+                </FilterGroup>
+                <FilterGroup>
                   <FilterLabel>Sucursal</FilterLabel>
                   <FilterSelect
                     value={branchFilter}
-                    onChange={(e) => setBranchFilter(e.target.value)}
+                    onChange={(e) => {
+                      setBranchFilter(e.target.value);
+                      setPagination({ ...pagination, page: 1 });
+                    }}
                   >
                     <option value="">Todas</option>
                     {branches.map((branch) => (
@@ -391,7 +475,10 @@ const AdminReports = () => {
                   <FilterLabel>Estado</FilterLabel>
                   <FilterSelect
                     value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
+                    onChange={(e) => {
+                      setStatusFilter(e.target.value);
+                      setPagination({ ...pagination, page: 1 });
+                    }}
                   >
                     <option value="">Todos</option>
                     <option value="En Proceso">En Proceso</option>
@@ -404,19 +491,25 @@ const AdminReports = () => {
                   </FilterSelect>
                 </FilterGroup>
                 <FilterGroup>
-                  <FilterLabel>Número de Orden</FilterLabel>
+                  <FilterLabel>Número Económico</FilterLabel>
                   <FilterInput
                     type="text"
-                    value={orderNumberFilter}
-                    onChange={(e) => setOrderNumberFilter(e.target.value)}
-                    placeholder="Filtrar por N° Orden"
+                    value={economicNumberFilter}
+                    onChange={(e) => {
+                      setEconomicNumberFilter(e.target.value);
+                      setPagination({ ...pagination, page: 1 });
+                    }}
+                    placeholder="Filtrar por N° Económico"
                   />
                 </FilterGroup>
               </FiltersContainer>
               <Row className="mb-3">
                 <Col className="d-flex justify-content-end gap-3">
-                  <CustomButton onClick={handleExportOrdersPdf}>
-                    Descargar PDF
+                  <CustomButton
+                    onClick={handleExportOrdersPdf}
+                    disabled={isLoading}
+                  >
+                    {isLoading ? "Generando..." : "Descargar PDF"}
                   </CustomButton>
                 </Col>
               </Row>
@@ -426,6 +519,7 @@ const AdminReports = () => {
                     <tr>
                       <th>Número Económico</th>
                       <th>Número de Orden</th>
+                      <th>Fecha Inicio/Finalizacion</th>
                       <th>Sucursal</th>
                       <th>Estado</th>
                       <th>Acciones</th>
@@ -440,6 +534,10 @@ const AdminReports = () => {
                         <tr key={order.id}>
                           <td>{order.vehicle_economic_number}</td>
                           <td>{order.id}</td>
+                          <td>
+                            {formatDate(order.created_at)} -{" "}
+                            {formatDate(order.finalized_at)}
+                          </td>
                           <td>{order.branch || "-"}</td>
                           <td>{order.status}</td>
                           <td className="actions">
