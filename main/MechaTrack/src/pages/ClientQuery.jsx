@@ -446,7 +446,6 @@ const ClientQuery = () => {
           );
           const calculationsData = [
             ["Subtotal", `$${subtotal}`],
-            ["Total", `$${total}`],
             ["IVA (16%)", `$${iva}`],
             ["Total + IVA", `$${totalWithIva}`],
           ];
@@ -487,7 +486,7 @@ const ClientQuery = () => {
     );
     const iva = subtotal * 0.16;
     const totalWithIva = subtotal + iva;
-    return { subtotal, total: subtotal, iva, totalWithIva };
+    return { subtotal, iva, totalWithIva };
   };
 
   const handleDownloadIndividualPDF = () => {
@@ -615,12 +614,11 @@ const ClientQuery = () => {
         });
 
         // Cálculos
-        const { subtotal, total, iva, totalWithIva } = calculatePartsTotals(
+        const { subtotal, iva, totalWithIva } = calculatePartsTotals(
           selectedOrder.parts
         );
         const calculationsData = [
           ["Subtotal", `$${subtotal}`],
-          ["Total", `$${total}`],
           ["IVA (16%)", `$${iva}`],
           ["Total + IVA", `$${totalWithIva}`],
         ];
@@ -1151,16 +1149,12 @@ const ClientQuery = () => {
                           </thead>
                           <tbody>
                             {(() => {
-                              const { subtotal, total, iva, totalWithIva } =
+                              const { subtotal, iva, totalWithIva } =
                                 calculatePartsTotals(selectedOrder.parts);
                               return [
                                 <tr key="subtotal">
                                   <td>Subtotal</td>
                                   <td>${subtotal}</td>
-                                </tr>,
-                                <tr key="total">
-                                  <td>Total</td>
-                                  <td>${total}</td>
                                 </tr>,
                                 <tr key="iva">
                                   <td>IVA (16%)</td>

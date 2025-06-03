@@ -5,15 +5,16 @@ import Sidebar from "../components/Sidebar";
 import DashboardHeader from "../components/DashboardHeader";
 import CustomButton from "../components/CustomButton";
 import OrderReportModal from "../components/OrderReportModal";
+import { API_URL } from "../services/apiConfig";
 import {
   getBranchReports,
   getOrderReport,
   downloadBranchReportsExcel,
+  getPartsReport,
 } from "../services/reportService";
 import { getOrders } from "../services/orderService";
 import { toast } from "react-toastify";
 import {
-  colors,
   StyledTable,
   FiltersContainer,
   FilterGroup,
@@ -46,6 +47,8 @@ const AdminReports = () => {
   const [branchFilter, setBranchFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [orderNumberFilter, setOrderNumberFilter] = useState("");
+  const [economicNumberFilter, setEconomicNumberFilter] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const [branches, setBranches] = useState([]);
   const [reports, setReports] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -79,6 +82,7 @@ const AdminReports = () => {
           const response = await getOrders({
             status: statusFilter,
             orderNumber: orderNumberFilter,
+            economicNumber: economicNumberFilter,
             page: pagination.page,
             limit: pagination.limit,
           });
@@ -104,22 +108,19 @@ const AdminReports = () => {
     } else if (reportType === "parts" && token) {
       const fetchParts = async () => {
         try {
-          const response = await axios.get("/api/reports/parts", {
-            headers: { Authorization: `Bearer ${token}` },
-            params: {
-              startDate,
-              endDate,
-              branch: branchFilter,
-              status: statusFilter,
-              orderNumber: orderNumberFilter,
-            },
+          const response = await getPartsReport({
+            startDate,
+            endDate,
+            branch: branchFilter,
+            status: statusFilter,
+            orderNumber: orderNumberFilter,
+            economicNumber: economicNumberFilter,
+            token,
           });
-          setParts(response.data || []);
+          setParts(response || []);
         } catch (error) {
           console.error("[AdminReports] Error al cargar repuestos:", error);
-          toast.error(
-            error.response?.data?.message || "Error al cargar repuestos"
-          );
+          toast.error(error.message || "Error al cargar repuestos");
           setParts([]);
         }
       };
@@ -129,6 +130,7 @@ const AdminReports = () => {
     reportType,
     statusFilter,
     orderNumberFilter,
+    economicNumberFilter,
     startDate,
     endDate,
     branchFilter,
@@ -167,8 +169,19 @@ const AdminReports = () => {
   };
 
   const handleExportOrdersPdf = async () => {
+    setIsLoading(true);
     try {
-      const response = await axios.get("/api/reports/orders/pdf", {
+      console.log("[handleExportOrdersPdf] Enviando solicitud con filtros:", {
+        startDate,
+        endDate,
+        branch: branchFilter,
+        status: statusFilter,
+        orderNumber: orderNumberFilter,
+        economicNumber: economicNumberFilter,
+        url: `${API_URL}/api/reports/orders/pdf`,
+      });
+
+      const response = await axios.get(`${API_URL}/api/reports/orders/pdf`, {
         headers: { Authorization: `Bearer ${token}` },
         params: {
           startDate,
@@ -176,20 +189,45 @@ const AdminReports = () => {
           branch: branchFilter,
           status: statusFilter,
           orderNumber: orderNumberFilter,
+          economicNumber: economicNumberFilter,
         },
         responseType: "blob",
       });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
+
+      if (!(response.data instanceof Blob)) {
+        const text = await response.data.text();
+        console.error("[handleExportOrdersPdf] Respuesta no es un blob:", text);
+        throw new Error(
+          "La respuesta del servidor no es un archivo PDF válido"
+        );
+      }
+
+      const url = window.URL.createObjectURL(response.data);
       const link = document.createElement("a");
       link.href = url;
       link.setAttribute("download", "informe_ordenes.pdf");
       document.body.appendChild(link);
       link.click();
       link.remove();
+      window.URL.revokeObjectURL(url);
       toast.success("PDF descargado correctamente");
     } catch (error) {
       console.error("[AdminReports] Error al descargar PDF:", error);
-      toast.error(error.response?.data?.message || "Error al descargar PDF");
+      let errorMessage = "Error al descargar PDF";
+      if (error.response) {
+        try {
+          const errorText = await error.response.data.text();
+          const parsedError = JSON.parse(errorText);
+          errorMessage = parsedError.message || errorMessage;
+        } catch (e) {
+          errorMessage = "Error del servidor al generar el PDF";
+        }
+      } else if (error.request) {
+        errorMessage = "No se pudo conectar con el servidor";
+      }
+      toast.error(errorMessage);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -203,6 +241,7 @@ const AdminReports = () => {
           branch: branchFilter,
           status: statusFilter,
           orderNumber: orderNumberFilter,
+          economicNumber: economicNumberFilter,
         },
         responseType: "blob",
       });
@@ -262,7 +301,7 @@ const AdminReports = () => {
                   value={reportType}
                   onChange={(e) => setReportType(e.target.value)}
                 >
-                  <option value="order">Por Orden</option>
+                  <option value="order">Por Economico</option>
                   <option value="branch">Por Sucursal</option>
                   <option value="parts">Por Repuestos</option>
                 </FilterSelect>
@@ -355,15 +394,15 @@ const AdminReports = () => {
                   <tbody>
                     {reports.map((report, index) => (
                       <tr key={index}>
-                        <td>{report.branch}</td>
+                        <td>{report.order_number}</td>
                         <td>{report.total_orders}</td>
                         <td>{report.in_process}</td>
                         <td>{report.pending}</td>
                         <td>{report.finalized}</td>
                         <td>{report.pending_billing}</td>
-                        <td>{report.invoiced}</td>
+                        <td>{report.financial}</td>
                         <td>{report.total_parts_cost}</td>
-                        <td>{report.total_invoice_amount}</td>
+                        <td>{report.total}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -404,19 +443,25 @@ const AdminReports = () => {
                   </FilterSelect>
                 </FilterGroup>
                 <FilterGroup>
-                  <FilterLabel>Número de Orden</FilterLabel>
+                  <FilterLabel>Número Económico</FilterLabel>
                   <FilterInput
                     type="text"
-                    value={orderNumberFilter}
-                    onChange={(e) => setOrderNumberFilter(e.target.value)}
-                    placeholder="Filtrar por N° Orden"
+                    value={economicNumberFilter}
+                    onChange={(e) => {
+                      setEconomicNumberFilter(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    placeholder="Filtrar por N° Económico"
                   />
                 </FilterGroup>
               </FiltersContainer>
               <Row className="mb-3">
                 <Col className="d-flex justify-content-end gap-3">
-                  <CustomButton onClick={handleExportOrdersPdf}>
-                    Descargar PDF
+                  <CustomButton
+                    onClick={handleExportOrdersPdf}
+                    disabled={isLoading}
+                  >
+                    {isLoading ? "Generando..." : "Descargar PDF"}
                   </CustomButton>
                 </Col>
               </Row>
