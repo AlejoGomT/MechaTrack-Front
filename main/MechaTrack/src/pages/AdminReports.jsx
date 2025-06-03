@@ -62,6 +62,16 @@ const AdminReports = () => {
     total: 0,
   });
 
+  const formatDate = (dateStr) => {
+    if (!dateStr) return "N/A";
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("es-ES", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  };
+
   useEffect(() => {
     const fetchBranches = async () => {
       try {
@@ -83,6 +93,8 @@ const AdminReports = () => {
             status: statusFilter,
             orderNumber: orderNumberFilter,
             economicNumber: economicNumberFilter,
+            startDate,
+            endDate,
             page: pagination.page,
             limit: pagination.limit,
           });
@@ -169,6 +181,15 @@ const AdminReports = () => {
   };
 
   const handleExportOrdersPdf = async () => {
+    if (startDate && !endDate) {
+      toast.error("Por favor, seleccione una fecha de fin.");
+      return;
+    }
+    if (!startDate && endDate) {
+      toast.error("Por favor, seleccione una fecha de inicio.");
+      return;
+    }
+
     setIsLoading(true);
     try {
       console.log("[handleExportOrdersPdf] Enviando solicitud con filtros:", {
@@ -178,14 +199,13 @@ const AdminReports = () => {
         status: statusFilter,
         orderNumber: orderNumberFilter,
         economicNumber: economicNumberFilter,
-        url: `${API_URL}/api/reports/orders/pdf`,
       });
 
       const response = await axios.get(`${API_URL}/api/reports/orders/pdf`, {
         headers: { Authorization: `Bearer ${token}` },
         params: {
-          startDate,
-          endDate,
+          startDate: startDate || null,
+          endDate: endDate || null,
           branch: branchFilter,
           status: statusFilter,
           orderNumber: orderNumberFilter,
@@ -209,7 +229,7 @@ const AdminReports = () => {
       document.body.appendChild(link);
       link.click();
       link.remove();
-      window.URL.revokeObjectURL(url);
+      window.URL.revokeObject(url);
       toast.success("PDF descargado correctamente");
     } catch (error) {
       console.error("[AdminReports] Error al descargar PDF:", error);
@@ -301,7 +321,7 @@ const AdminReports = () => {
                   value={reportType}
                   onChange={(e) => setReportType(e.target.value)}
                 >
-                  <option value="order">Por Economico</option>
+                  <option value="order">Por Económico</option>
                   <option value="branch">Por Sucursal</option>
                   <option value="parts">Por Repuestos</option>
                 </FilterSelect>
@@ -413,10 +433,35 @@ const AdminReports = () => {
             <>
               <FiltersContainer>
                 <FilterGroup>
+                  <FilterLabel>Fecha Inicio</FilterLabel>
+                  <FilterInput
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => {
+                      setStartDate(e.target.value);
+                      setPagination({ ...pagination, page: 1 });
+                    }}
+                  />
+                </FilterGroup>
+                <FilterGroup>
+                  <FilterLabel>Fecha Fin</FilterLabel>
+                  <FilterInput
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => {
+                      setEndDate(e.target.value);
+                      setPagination({ ...pagination, page: 1 });
+                    }}
+                  />
+                </FilterGroup>
+                <FilterGroup>
                   <FilterLabel>Sucursal</FilterLabel>
                   <FilterSelect
                     value={branchFilter}
-                    onChange={(e) => setBranchFilter(e.target.value)}
+                    onChange={(e) => {
+                      setBranchFilter(e.target.value);
+                      setPagination({ ...pagination, page: 1 });
+                    }}
                   >
                     <option value="">Todas</option>
                     {branches.map((branch) => (
@@ -430,7 +475,10 @@ const AdminReports = () => {
                   <FilterLabel>Estado</FilterLabel>
                   <FilterSelect
                     value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
+                    onChange={(e) => {
+                      setStatusFilter(e.target.value);
+                      setPagination({ ...pagination, page: 1 });
+                    }}
                   >
                     <option value="">Todos</option>
                     <option value="En Proceso">En Proceso</option>
@@ -449,7 +497,7 @@ const AdminReports = () => {
                     value={economicNumberFilter}
                     onChange={(e) => {
                       setEconomicNumberFilter(e.target.value);
-                      setCurrentPage(1);
+                      setPagination({ ...pagination, page: 1 });
                     }}
                     placeholder="Filtrar por N° Económico"
                   />
@@ -471,6 +519,7 @@ const AdminReports = () => {
                     <tr>
                       <th>Número Económico</th>
                       <th>Número de Orden</th>
+                      <th>Fecha Inicio/Finalizacion</th>
                       <th>Sucursal</th>
                       <th>Estado</th>
                       <th>Acciones</th>
@@ -485,6 +534,10 @@ const AdminReports = () => {
                         <tr key={order.id}>
                           <td>{order.vehicle_economic_number}</td>
                           <td>{order.id}</td>
+                          <td>
+                            {formatDate(order.created_at)} -{" "}
+                            {formatDate(order.finalized_at)}
+                          </td>
                           <td>{order.branch || "-"}</td>
                           <td>{order.status}</td>
                           <td className="actions">
