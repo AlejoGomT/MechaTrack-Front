@@ -75,13 +75,21 @@ export const downloadOrderReportPdf = async (orderId) => {
   }
 };
 
-export const getPartsReport = async ({ branch, partName, token }) => {
+export const getPartsReport = async ({
+  branch,
+  partName,
+  startDate,
+  endDate,
+  token,
+}) => {
   try {
     const response = await axiosInstance.get("/api/reports/parts", {
       headers: { Authorization: `Bearer ${token}` },
       params: {
         branch: branch || undefined,
         partName: partName || undefined,
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
       },
     });
     return response.data;
@@ -107,13 +115,21 @@ export const getBranches = async () => {
   }
 };
 
-export const downloadPartsReportPdf = async ({ branch, partName, token }) => {
+export const downloadPartsReportPdf = async ({
+  branch,
+  partName,
+  startDate,
+  endDate,
+  token,
+}) => {
   try {
     const response = await axiosInstance.get("/api/reports/parts/pdf", {
       headers: { Authorization: `Bearer ${token}` },
       params: {
         branch: branch || undefined,
         partName: partName || undefined,
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
       },
       responseType: "blob",
     });
@@ -141,13 +157,21 @@ export const downloadPartsReportPdf = async ({ branch, partName, token }) => {
   }
 };
 
-export const downloadPartsReportXml = async ({ branch, partName, token }) => {
+export const downloadPartsReportXml = async ({
+  branch,
+  partName,
+  startDate,
+  endDate,
+  token,
+}) => {
   try {
     const response = await axiosInstance.get("/api/reports/parts/xml", {
       headers: { Authorization: `Bearer ${token}` },
       params: {
         branch: branch || undefined,
         partName: partName || undefined,
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
       },
       responseType: "blob",
     });
@@ -158,7 +182,9 @@ export const downloadPartsReportXml = async ({ branch, partName, token }) => {
     document.body.appendChild(link);
     link.click();
     link.remove();
+    window.URL.revokeObjectURL(url); // Liberar el objeto URL
   } catch (error) {
+    console.error("[Axios] Error en downloadPartsReportXml:", error);
     throw (
       error.response?.data || {
         message: "Error al descargar el informe de repuestos en XML",

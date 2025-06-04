@@ -20,6 +20,7 @@ import SecretaryNotifications from "./pages/SecretaryNotifications";
 import ClientNotification from "./pages/ClientNotification";
 import ClientQuery from "./pages/ClientQuery";
 import ClientVehicles from "./pages/ClientVehicles";
+import ClientPartsReport from "./pages/ClientPartsReport";
 
 // Componente para proteger rutas
 const PrivateRoute = ({ children, allowedRoles }) => {
@@ -174,6 +175,14 @@ const AppRoutes = () => (
       element={
         <PrivateRoute allowedRoles={["client"]}>
           <ClientVehicles />
+        </PrivateRoute>
+      }
+    />
+    <Route
+      path="/client/parts"
+      element={
+        <PrivateRoute allowedRoles={["client"]}>
+          <ClientPartsReport />
         </PrivateRoute>
       }
     />
