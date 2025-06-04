@@ -70,7 +70,7 @@ const AdminReports = () => {
   const [statusFilter, setStatusFilter] = useState("");
   const [orderNumberFilter, setOrderNumberFilter] = useState("");
   const [economicNumberFilter, setEconomicNumberFilter] = useState("");
-  const [partNameFilter, setPartNameFilter] = useState(""); // Nuevo filtro para nombre del repuesto
+  const [partNameFilter, setPartNameFilter] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [branches, setBranches] = useState([]);
   const [reports, setReports] = useState([]);
@@ -95,12 +95,25 @@ const AdminReports = () => {
     });
   };
 
-  // Cargar sucursales usando el nuevo endpoint
+  const validateDate = (dateStr) => {
+    if (!dateStr) return "";
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) {
+      toast.error("Fecha inválida");
+      return "";
+    }
+    if (date > new Date()) {
+      toast.error("No se pueden seleccionar fechas futuras");
+      return "";
+    }
+    return dateStr;
+  };
+
+  // Cargar sucursales
   useEffect(() => {
     const fetchBranches = async () => {
       try {
         const response = await getBranches();
-        // Adaptar según la respuesta del endpoint (array de strings o [{value, label}])
         const uniqueBranches = response.map((b) => b.value || b);
         setBranches(uniqueBranches);
       } catch (error) {
@@ -119,8 +132,8 @@ const AdminReports = () => {
             status: statusFilter,
             orderNumber: orderNumberFilter,
             economicNumber: economicNumberFilter,
-            startDate,
-            endDate,
+            startDate: validateDate(startDate),
+            endDate: validateDate(endDate),
             page: pagination.page,
             limit: pagination.limit,
           });
@@ -147,11 +160,23 @@ const AdminReports = () => {
       const fetchParts = async () => {
         setIsLoading(true);
         try {
-          const response = await getPartsReport({
-            branch: branchFilter,
-            partName: partNameFilter,
+          if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
+            toast.error(
+              "La fecha de inicio no puede ser posterior a la fecha de fin"
+            );
+            setEndDate("");
+            return;
+          }
+          const filters = {
+            branch: branchFilter || "",
+            partName: partNameFilter || "",
+            startDate: validateDate(startDate),
+            endDate: validateDate(endDate),
             token,
-          });
+          };
+          console.log("[AdminReports] Filtros enviados:", filters);
+          const response = await getPartsReport(filters);
+          console.log("[AdminReports] Respuesta de getPartsReport:", response);
           setParts(response || []);
         } catch (error) {
           console.error("[AdminReports] Error al cargar repuestos:", error);
@@ -179,8 +204,8 @@ const AdminReports = () => {
   const fetchBranchReports = async () => {
     try {
       const filters = {
-        startDate,
-        endDate,
+        startDate: validateDate(startDate),
+        endDate: validateDate(endDate),
         branch: branchFilter,
         status: statusFilter,
       };
@@ -215,12 +240,18 @@ const AdminReports = () => {
       toast.error("Por favor, seleccione una fecha de inicio.");
       return;
     }
+    if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
+      toast.error(
+        "La fecha de inicio no puede ser posterior a la fecha de fin"
+      );
+      return;
+    }
 
     setIsLoading(true);
     try {
       console.log("[handleExportOrdersPdf] Enviando solicitud con filtros:", {
-        startDate,
-        endDate,
+        startDate: validateDate(startDate),
+        endDate: validateDate(endDate),
         branch: branchFilter,
         status: statusFilter,
         orderNumber: orderNumberFilter,
@@ -230,8 +261,8 @@ const AdminReports = () => {
       const response = await axios.get(`${API_URL}/api/reports/orders/pdf`, {
         headers: { Authorization: `Bearer ${token}` },
         params: {
-          startDate: startDate || null,
-          endDate: endDate || null,
+          startDate: validateDate(startDate) || null,
+          endDate: validateDate(endDate) || null,
           branch: branchFilter,
           status: statusFilter,
           orderNumber: orderNumberFilter,
@@ -255,7 +286,7 @@ const AdminReports = () => {
       document.body.appendChild(link);
       link.click();
       link.remove();
-      window.URL.revokeObject(url);
+      window.URL.revokeObjectURL(url);
       toast.success("PDF descargado correctamente");
     } catch (error) {
       console.error("[AdminReports] Error al descargar PDF:", error);
@@ -280,9 +311,17 @@ const AdminReports = () => {
   const handleExportPartsPdf = async () => {
     setIsLoading(true);
     try {
+      if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
+        toast.error(
+          "La fecha de inicio no puede ser posterior a la fecha de fin"
+        );
+        return;
+      }
       await downloadPartsReportPdf({
-        branch: branchFilter,
-        partName: partNameFilter,
+        branch: branchFilter || "",
+        partName: partNameFilter || "",
+        startDate: validateDate(startDate),
+        endDate: validateDate(endDate),
         token,
       });
       toast.success("PDF descargado correctamente");
@@ -297,9 +336,17 @@ const AdminReports = () => {
   const handleExportPartsXml = async () => {
     setIsLoading(true);
     try {
+      if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
+        toast.error(
+          "La fecha de inicio no puede ser posterior a la fecha de fin"
+        );
+        return;
+      }
       await downloadPartsReportXml({
-        branch: branchFilter,
-        partName: partNameFilter,
+        branch: branchFilter || "",
+        partName: partNameFilter || "",
+        startDate: validateDate(startDate),
+        endDate: validateDate(endDate),
         token,
       });
       toast.success("XML descargado correctamente");
@@ -314,8 +361,8 @@ const AdminReports = () => {
   const handleExportExcel = async () => {
     try {
       const filters = {
-        startDate,
-        endDate,
+        startDate: validateDate(startDate),
+        endDate: validateDate(endDate),
         branch: branchFilter,
         status: statusFilter,
       };
@@ -335,6 +382,8 @@ const AdminReports = () => {
   const handleClearFilters = () => {
     setBranchFilter("");
     setPartNameFilter("");
+    setStartDate("");
+    setEndDate("");
     setParts([]);
   };
 
@@ -642,32 +691,61 @@ const AdminReports = () => {
           ) : (
             <>
               <FiltersContainer>
-                <FilterGroup>
-                  <FilterLabel>Sucursal</FilterLabel>
-                  <FilterSelect
-                    value={branchFilter}
-                    onChange={(e) => setBranchFilter(e.target.value)}
-                  >
-                    <option value="">Todas</option>
-                    {branches.map((branch) => (
-                      <option key={branch} value={branch}>
-                        {branch}
-                      </option>
-                    ))}
-                  </FilterSelect>
-                </FilterGroup>
-                <FilterGroup>
-                  <FilterLabel>Nombre del Repuesto</FilterLabel>
-                  <FilterInput
-                    type="text"
-                    value={partNameFilter}
-                    onChange={(e) => setPartNameFilter(e.target.value)}
-                    placeholder="Buscar repuesto"
-                  />
-                </FilterGroup>
+                <Row>
+                  <Col md={3}>
+                    <FilterGroup>
+                      <FilterLabel>Sucursal</FilterLabel>
+                      <FilterSelect
+                        value={branchFilter}
+                        onChange={(e) => setBranchFilter(e.target.value)}
+                      >
+                        <option value="">Todas</option>
+                        {branches.map((branch) => (
+                          <option key={branch} value={branch}>
+                            {branch}
+                          </option>
+                        ))}
+                      </FilterSelect>
+                    </FilterGroup>
+                  </Col>
+                  <Col md={3}>
+                    <FilterGroup>
+                      <FilterLabel>Nombre del Repuesto</FilterLabel>
+                      <FilterInput
+                        type="text"
+                        value={partNameFilter}
+                        onChange={(e) => setPartNameFilter(e.target.value)}
+                        placeholder="Buscar repuesto"
+                      />
+                    </FilterGroup>
+                  </Col>
+                  <Col md={3}>
+                    <FilterGroup>
+                      <FilterLabel>Fecha Inicio</FilterLabel>
+                      <FilterInput
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                      />
+                    </FilterGroup>
+                  </Col>
+                  <Col md={3}>
+                    <FilterGroup>
+                      <FilterLabel>Fecha Fin</FilterLabel>
+                      <FilterInput
+                        type="date"
+                        value={endDate}
+                        onChange={(e) => setEndDate(e.target.value)}
+                      />
+                    </FilterGroup>
+                  </Col>
+                </Row>
               </FiltersContainer>
               <Row className="mb-3">
                 <Col className="d-flex justify-content-end gap-3">
+                  <CustomButton onClick={handleClearFilters}>
+                    Limpiar Filtros
+                  </CustomButton>
                   <CustomButton
                     onClick={handleExportPartsPdf}
                     disabled={isLoading || !parts.length}

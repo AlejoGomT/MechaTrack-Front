@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Button,
   Modal,
@@ -62,6 +62,7 @@ import {
 } from "../styles/GlobalStyles";
 import { colors } from "../styles/GlobalStyles";
 import { getOrders, getOrderById } from "../services/orderService";
+import { getBranches } from "../services/reportService"; // Importar getBranches
 import { API_URL } from "../services/apiConfig";
 import styled from "@emotion/styled";
 import { toast } from "react-toastify";
@@ -107,8 +108,9 @@ const CalculationsTable = styled.table`
 
 const clientMenu = [
   { label: "Inicio", path: "/client" },
-  { label: "Consultas de Economico", path: "/client/query" },
+  { label: "Consultas de Económico", path: "/client/query" },
   { label: "Consultas de Vehículo", path: "/client/vehicles" },
+  { label: "Consultas de Repuestos", path: "/client/parts" },
   { label: "Notificaciones", path: "/client/notifications" },
   { label: "Cerrar Sesión", path: "/" },
 ];
@@ -133,6 +135,7 @@ const ClientQuery = () => {
     completed: 0,
   });
   const [notifications, setNotifications] = useState([]);
+  const [branches, setBranches] = useState([]);
   const pageSize = 10;
   const allowedStatuses = [
     "En Proceso",
@@ -142,22 +145,37 @@ const ClientQuery = () => {
     "Facturado",
   ];
 
+  useEffect(() => {
+    const fetchBranches = async () => {
+      try {
+        const response = await getBranches();
+        console.log("[ClientQuery] Respuesta de getBranches:", response);
+        const uniqueBranches = response.map((b) => b.value || b);
+        setBranches(uniqueBranches);
+      } catch (error) {
+        console.error("[ClientQuery] Error al cargar sucursales:", error);
+        toast.error("Error al cargar sucursales");
+      }
+    };
+    fetchBranches();
+  }, []);
+
   const fetchOrders = useCallback(async () => {
     setFilterLoading(true);
     try {
       console.log("[ClientQuery] Filtros enviados:", {
         economicNumber: economicNumberFilter || undefined,
         branch: branchFilter || undefined,
-        startDate: startDateFilter || undefined, // Incluir filtro de fecha inicial
-        endDate: endDateFilter || undefined, // Incluir filtro de fecha final
+        startDate: startDateFilter || undefined,
+        endDate: endDateFilter || undefined,
         page: currentPage,
         limit: pageSize,
       });
       const ordersData = await getOrders({
         economicNumber: economicNumberFilter || undefined,
         branch: branchFilter || undefined,
-        startDate: startDateFilter || undefined, // Enviar startDate
-        endDate: endDateFilter || undefined, // Enviar endDate
+        startDate: startDateFilter || undefined,
+        endDate: endDateFilter || undefined,
         page: currentPage,
         limit: pageSize,
         statuses: allowedStatuses,
@@ -229,14 +247,6 @@ const ClientQuery = () => {
   useEffect(() => {
     fetchOrders();
   }, [fetchOrders]);
-
-  const branches = useMemo(() => {
-    return [
-      ...new Set(
-        orders.map((order) => order.branch).filter((branch) => branch)
-      ),
-    ];
-  }, [orders]);
 
   useEffect(() => {
     if (!socket || !isConnected) {
@@ -570,17 +580,15 @@ const ClientQuery = () => {
         columnStyles: { 0: { cellWidth: 50 }, 1: { cellWidth: 120 } },
       });
 
-      // Información de Factura (si aplica)
+      // Información de Factura
       if (selectedOrder.status === "Facturado" && selectedOrder.invoice) {
         doc.text("Información de Factura", 20, doc.lastAutoTable.finalY + 10);
         const invoiceData = [
           ["Número de Factura", selectedOrder.invoice.invoice_number],
-          ["Número de Pedido", selectedOrder.order_number || "N/A"],
-          [
-            "Número de Albarán",
-            selectedOrder.invoice.delivery_note_number || "N/A",
-          ],
-          ["Total", `$${selectedOrder.invoice.total * 1.16}`],
+          ["Order Date", order.order_number || "-"],
+          ["Número de Pedido", order.order_number || "N/A"],
+          ["Número de Albarán", order.invoice.order_note_number || "N/A"],
+          ["Total", `$${order.invoice.total * 1.16}`],
         ];
         autoTable(doc, {
           startY: doc.lastAutoTable.finalY + 20,
@@ -595,7 +603,7 @@ const ClientQuery = () => {
       // Nota sobre Imágenes
       if (selectedOrder.images && selectedOrder.images.length > 0) {
         doc.text(
-          "Imágenes: No incluidas en el PDF. Consulte el sistema para verlas.",
+          "Imágenes: No se incluyen en el PDF. Consulte el sistema para verlas.",
           20,
           doc.lastAutoTable.finalY + 10
         );
@@ -1218,20 +1226,10 @@ const ClientQuery = () => {
               )}
             </ModalBody>
             <Modal.Footer>
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  handleCloseModal;
-                }}
-              >
+              <Button variant="secondary" onClick={handleCloseModal}>
                 Cerrar
               </Button>
-              <Button
-                variant="primary"
-                onClick={() => {
-                  handleDownloadIndividualPDF;
-                }}
-              >
+              <Button variant="primary" onClick={handleDownloadIndividualPDF}>
                 Descargar PDF
               </Button>
             </Modal.Footer>
