@@ -11,6 +11,9 @@ import {
   getOrderReport,
   downloadBranchReportsExcel,
   getPartsReport,
+  getBranches,
+  downloadPartsReportPdf,
+  downloadPartsReportXml,
 } from "../services/reportService";
 import { getOrders } from "../services/orderService";
 import { toast } from "react-toastify";
@@ -27,6 +30,25 @@ import {
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faEye } from "@fortawesome/free-solid-svg-icons";
 import axios from "axios";
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+} from "chart.js";
+import { Bar } from "react-chartjs-2";
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend
+);
 
 const adminMenu = [
   { label: "Inicio", path: "../admin" },
@@ -48,6 +70,7 @@ const AdminReports = () => {
   const [statusFilter, setStatusFilter] = useState("");
   const [orderNumberFilter, setOrderNumberFilter] = useState("");
   const [economicNumberFilter, setEconomicNumberFilter] = useState("");
+  const [partNameFilter, setPartNameFilter] = useState(""); // Nuevo filtro para nombre del repuesto
   const [isLoading, setIsLoading] = useState(false);
   const [branches, setBranches] = useState([]);
   const [reports, setReports] = useState([]);
@@ -72,11 +95,13 @@ const AdminReports = () => {
     });
   };
 
+  // Cargar sucursales usando el nuevo endpoint
   useEffect(() => {
     const fetchBranches = async () => {
       try {
-        const response = await getBranchReports({});
-        const uniqueBranches = [...new Set(response.map((r) => r.branch))];
+        const response = await getBranches();
+        // Adaptar según la respuesta del endpoint (array de strings o [{value, label}])
+        const uniqueBranches = response.map((b) => b.value || b);
         setBranches(uniqueBranches);
       } catch (error) {
         toast.error("Error al cargar sucursales");
@@ -85,6 +110,7 @@ const AdminReports = () => {
     fetchBranches();
   }, []);
 
+  // Cargar datos según el tipo de informe
   useEffect(() => {
     if (reportType === "order" && token) {
       const fetchOrders = async () => {
@@ -119,14 +145,11 @@ const AdminReports = () => {
       fetchOrders();
     } else if (reportType === "parts" && token) {
       const fetchParts = async () => {
+        setIsLoading(true);
         try {
           const response = await getPartsReport({
-            startDate,
-            endDate,
             branch: branchFilter,
-            status: statusFilter,
-            orderNumber: orderNumberFilter,
-            economicNumber: economicNumberFilter,
+            partName: partNameFilter,
             token,
           });
           setParts(response || []);
@@ -134,6 +157,8 @@ const AdminReports = () => {
           console.error("[AdminReports] Error al cargar repuestos:", error);
           toast.error(error.message || "Error al cargar repuestos");
           setParts([]);
+        } finally {
+          setIsLoading(false);
         }
       };
       fetchParts();
@@ -146,6 +171,7 @@ const AdminReports = () => {
     startDate,
     endDate,
     branchFilter,
+    partNameFilter,
     pagination.page,
     token,
   ]);
@@ -252,30 +278,36 @@ const AdminReports = () => {
   };
 
   const handleExportPartsPdf = async () => {
+    setIsLoading(true);
     try {
-      const response = await axios.get("/api/reports/parts/pdf", {
-        headers: { Authorization: `Bearer ${token}` },
-        params: {
-          startDate,
-          endDate,
-          branch: branchFilter,
-          status: statusFilter,
-          orderNumber: orderNumberFilter,
-          economicNumber: economicNumberFilter,
-        },
-        responseType: "blob",
+      await downloadPartsReportPdf({
+        branch: branchFilter,
+        partName: partNameFilter,
+        token,
       });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute("download", "informe_repuestos.pdf");
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
       toast.success("PDF descargado correctamente");
     } catch (error) {
       console.error("[AdminReports] Error al descargar PDF:", error);
-      toast.error(error.response?.data?.message || "Error al descargar PDF");
+      toast.error(error.message || "Error al descargar PDF");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleExportPartsXml = async () => {
+    setIsLoading(true);
+    try {
+      await downloadPartsReportXml({
+        branch: branchFilter,
+        partName: partNameFilter,
+        token,
+      });
+      toast.success("XML descargado correctamente");
+    } catch (error) {
+      console.error("[AdminReports] Error al descargar XML:", error);
+      toast.error(error.message || "Error al descargar XML");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -300,11 +332,42 @@ const AdminReports = () => {
     }
   };
 
+  const handleClearFilters = () => {
+    setBranchFilter("");
+    setPartNameFilter("");
+    setParts([]);
+  };
+
   const userData = {
     userId: user?.id,
     userName: user?.name,
     activeOrdersCount: reports.reduce((acc, r) => acc + r.in_process, 0),
     notificationsCount: 0,
+  };
+
+  const chartData = {
+    labels: parts.map((p) => `${p.branch} - ${p.part_name}`),
+    datasets: [
+      {
+        label: "Cantidad de Repuestos",
+        data: parts.map((p) => p.total_quantity),
+        backgroundColor: "#d74a49",
+        borderColor: "#1b4552",
+        borderWidth: 1,
+      },
+    ],
+  };
+
+  const chartOptions = {
+    responsive: true,
+    plugins: {
+      legend: { position: "top" },
+      title: { display: true, text: "Distribución de Repuestos por Sucursal" },
+    },
+    scales: {
+      y: { beginAtZero: true, title: { display: true, text: "Cantidad" } },
+      x: { title: { display: true, text: "Sucursal - Repuesto" } },
+    },
   };
 
   return (
@@ -407,22 +470,21 @@ const AdminReports = () => {
                       <th>Finalizado</th>
                       <th>Pendiente de Facturación</th>
                       <th>Facturado</th>
-                      <th>Costo Repuestos</th>
                       <th>Total Facturado</th>
                     </tr>
                   </thead>
                   <tbody>
                     {reports.map((report, index) => (
                       <tr key={index}>
-                        <td>{report.order_number}</td>
+                        <td>{report.branch}</td>
                         <td>{report.total_orders}</td>
                         <td>{report.in_process}</td>
                         <td>{report.pending}</td>
                         <td>{report.finalized}</td>
                         <td>{report.pending_billing}</td>
-                        <td>{report.financial}</td>
-                        <td>{report.total_parts_cost}</td>
-                        <td>{report.total}</td>
+                        <td>{report.invoiced}</td>
+                        <td>{report.total * 1.16 || "N/A"}</td>
+                        {console.log("[AdminReports] Report data:", report)}
                       </tr>
                     ))}
                   </tbody>
@@ -519,7 +581,7 @@ const AdminReports = () => {
                     <tr>
                       <th>Número Económico</th>
                       <th>Número de Orden</th>
-                      <th>Fecha Inicio/Finalizacion</th>
+                      <th>Fecha Inicio/Finalización</th>
                       <th>Sucursal</th>
                       <th>Estado</th>
                       <th>Acciones</th>
@@ -579,98 +641,94 @@ const AdminReports = () => {
             </>
           ) : (
             <>
-              <Row className="mb-3">
-                <Col md={3}>
-                  <FilterGroup>
-                    <FilterLabel>Fecha Inicio</FilterLabel>
-                    <FilterInput
-                      type="date"
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                    />
-                  </FilterGroup>
-                </Col>
-                <Col md={3}>
-                  <FilterGroup>
-                    <FilterLabel>Fecha Fin</FilterLabel>
-                    <FilterInput
-                      type="date"
-                      value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
-                    />
-                  </FilterGroup>
-                </Col>
-                <Col md={3}>
-                  <FilterGroup>
-                    <FilterLabel>Sucursal</FilterLabel>
-                    <FilterSelect
-                      value={branchFilter}
-                      onChange={(e) => setBranchFilter(e.target.value)}
-                    >
-                      <option value="">Todas</option>
-                      {branches.map((branch) => (
-                        <option key={branch} value={branch}>
-                          {branch}
-                        </option>
-                      ))}
-                    </FilterSelect>
-                  </FilterGroup>
-                </Col>
-                <Col md={3}>
-                  <FilterGroup>
-                    <FilterLabel>Estado</FilterLabel>
-                    <FilterSelect
-                      value={statusFilter}
-                      onChange={(e) => setStatusFilter(e.target.value)}
-                    >
-                      <option value="">Todos</option>
-                      <option value="En Proceso">En Proceso</option>
-                      <option value="Pendiente">Pendiente</option>
-                      <option value="Finalizado">Finalizado</option>
-                      <option value="Pendiente de Facturación">
-                        Pendiente de Facturación
+              <FiltersContainer>
+                <FilterGroup>
+                  <FilterLabel>Sucursal</FilterLabel>
+                  <FilterSelect
+                    value={branchFilter}
+                    onChange={(e) => setBranchFilter(e.target.value)}
+                  >
+                    <option value="">Todas</option>
+                    {branches.map((branch) => (
+                      <option key={branch} value={branch}>
+                        {branch}
                       </option>
-                      <option value="Facturado">Facturado</option>
-                    </FilterSelect>
-                  </FilterGroup>
-                </Col>
-              </Row>
+                    ))}
+                  </FilterSelect>
+                </FilterGroup>
+                <FilterGroup>
+                  <FilterLabel>Nombre del Repuesto</FilterLabel>
+                  <FilterInput
+                    type="text"
+                    value={partNameFilter}
+                    onChange={(e) => setPartNameFilter(e.target.value)}
+                    placeholder="Buscar repuesto"
+                  />
+                </FilterGroup>
+              </FiltersContainer>
               <Row className="mb-3">
                 <Col className="d-flex justify-content-end gap-3">
-                  <CustomButton onClick={() => fetchPartsReport()}>
-                    Generar Informe
-                  </CustomButton>
-                  <CustomButton onClick={handleExportPartsPdf}>
+                  <CustomButton
+                    onClick={handleExportPartsPdf}
+                    disabled={isLoading || !parts.length}
+                  >
                     Descargar PDF
+                  </CustomButton>
+                  <CustomButton
+                    onClick={handleExportPartsXml}
+                    disabled={isLoading || !parts.length}
+                  >
+                    Descargar XML
                   </CustomButton>
                 </Col>
               </Row>
-              <TableWrapper>
-                <StyledTable>
-                  <thead>
-                    <tr>
-                      <th>Nombre</th>
-                      <th>Cantidad</th>
-                      <th>Precio</th>
-                      <th>Estado</th>
-                      <th>Número de Orden</th>
-                      <th>Sucursal</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {parts.map((part, index) => (
-                      <tr key={index}>
-                        <td>{part.name}</td>
-                        <td>{part.quantity}</td>
-                        <td>${part.price || "N/A"}</td>
-                        <td>{part.status}</td>
-                        <td>{part.order_id}</td>
-                        <td>{part.branch || "-"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </StyledTable>
-              </TableWrapper>
+              {isLoading ? (
+                <p>Cargando...</p>
+              ) : parts.length > 0 ? (
+                <>
+                  <TableWrapper>
+                    <StyledTable>
+                      <thead>
+                        <tr>
+                          <th>Sucursal</th>
+                          <th>Repuesto</th>
+                          <th>Cantidad</th>
+                          <th>Vehículos</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {parts.map((part, index) => (
+                          <tr key={`${part.branch}-${part.part_id}-${index}`}>
+                            <td>{part.branch}</td>
+                            <td>{part.part_name}</td>
+                            <td>{part.total_quantity}</td>
+                            <td>
+                              {part.vehicles.length > 0
+                                ? part.vehicles.map((v) => (
+                                    <div key={v.economic_number}>
+                                      {`${v.economic_number} (${v.brand} ${v.model})`}
+                                    </div>
+                                  ))
+                                : "N/A"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </StyledTable>
+                  </TableWrapper>
+                  <Row className="mt-4">
+                    <Col>
+                      <div style={{ maxWidth: "100%", overflowX: "auto" }}>
+                        <Bar data={chartData} options={chartOptions} />
+                      </div>
+                    </Col>
+                  </Row>
+                </>
+              ) : (
+                <p>
+                  No hay datos disponibles. Aplica filtros y genera el informe.
+                </p>
+              )}
             </>
           )}
           {orderReport && (
