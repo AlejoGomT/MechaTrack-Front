@@ -10,6 +10,7 @@ import {
   Row,
   Container,
   Pagination,
+  Col,
 } from "react-bootstrap";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
@@ -122,6 +123,8 @@ const ClientQuery = () => {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [economicNumberFilter, setEconomicNumberFilter] = useState("");
   const [branchFilter, setBranchFilter] = useState("");
+  const [startDateFilter, setStartDateFilter] = useState("");
+  const [endDateFilter, setEndDateFilter] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [stats, setStats] = useState({
     total: 0,
@@ -145,12 +148,16 @@ const ClientQuery = () => {
       console.log("[ClientQuery] Filtros enviados:", {
         economicNumber: economicNumberFilter || undefined,
         branch: branchFilter || undefined,
+        startDate: startDateFilter || undefined, // Incluir filtro de fecha inicial
+        endDate: endDateFilter || undefined, // Incluir filtro de fecha final
         page: currentPage,
         limit: pageSize,
       });
       const ordersData = await getOrders({
         economicNumber: economicNumberFilter || undefined,
         branch: branchFilter || undefined,
+        startDate: startDateFilter || undefined, // Enviar startDate
+        endDate: endDateFilter || undefined, // Enviar endDate
         page: currentPage,
         limit: pageSize,
         statuses: allowedStatuses,
@@ -211,7 +218,13 @@ const ClientQuery = () => {
       setFilterLoading(false);
       setInitialLoading(false);
     }
-  }, [economicNumberFilter, branchFilter, currentPage]);
+  }, [
+    economicNumberFilter,
+    branchFilter,
+    startDateFilter,
+    endDateFilter,
+    currentPage,
+  ]);
 
   useEffect(() => {
     fetchOrders();
@@ -853,6 +866,32 @@ const ClientQuery = () => {
                 ))}
               </FilterSelect>
             </FilterGroup>
+            <Col>
+              <FilterGroup>
+                <FilterLabel>Fecha Inicial</FilterLabel>
+                <FilterInput
+                  type="date"
+                  value={startDateFilter}
+                  onChange={(e) => {
+                    setStartDateFilter(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  placeholder="Fecha inicial"
+                />
+              </FilterGroup>
+              <FilterGroup>
+                <FilterLabel>Fecha Final</FilterLabel>
+                <FilterInput
+                  type="date"
+                  value={endDateFilter}
+                  onChange={(e) => {
+                    setEndDateFilter(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  placeholder="Fecha final"
+                />
+              </FilterGroup>
+            </Col>
             <OverlayTrigger
               placement="top"
               overlay={<Tooltip>Exportar a Excel</Tooltip>}
