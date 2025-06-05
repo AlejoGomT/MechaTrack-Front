@@ -1,5 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
-import { Button, Modal, Table, InputGroup, Form } from "react-bootstrap";
+import {
+  Button,
+  Modal,
+  Table,
+  InputGroup,
+  Form,
+  Pagination,
+} from "react-bootstrap";
 import { toast } from "react-toastify";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faTrash, faUndo } from "@fortawesome/free-solid-svg-icons";
@@ -32,11 +39,16 @@ const PartsModal = ({
   isReadOnly,
   userId,
   isFinalized,
+  fetchParts, // Nueva prop para recargar repuestos
+  totalParts, // Nueva prop para el total de repuestos
+  partsLimit = 10, // Límite por página, por defecto 10
 }) => {
   const [localPartsList, setLocalPartsList] = useState(partsList);
   const [selectedPartQuantities, setSelectedPartQuantities] = useState({});
   const [inputQuantities, setInputQuantities] = useState({});
   const [isLoading, setIsLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1); // Estado para la página actual
+  const totalPages = Math.ceil(totalParts / partsLimit); // Calcular total de páginas
 
   useEffect(() => {
     setLocalPartsList(partsList);
@@ -46,6 +58,12 @@ const PartsModal = ({
     });
     setInputQuantities(initialQuantities);
   }, [partsList, userId]);
+
+  useEffect(() => {
+    if (showPartsModal && fetchParts) {
+      fetchParts(currentPage); // Cargar repuestos para la página actual
+    }
+  }, [currentPage, showPartsModal, fetchParts]);
 
   const fetchOrderParts = useCallback(async () => {
     if (!orderId || (!showPartsModal && !showPartsManagementModal)) {
@@ -116,7 +134,6 @@ const PartsModal = ({
       const existingPart = localPartsList.find((p) => p.part_id === part.id);
 
       if (isFinalized) {
-        // Administrador en orden finalizada: usar addAdminPart
         const partData = {
           part_id: part.id,
           quantity,
@@ -127,7 +144,6 @@ const PartsModal = ({
         const newPart = response.part;
 
         if (existingPart) {
-          // Actualizar cantidad si el repuesto ya existe
           updatedList = localPartsList.map((p) =>
             p.part_id === part.id
               ? { ...p, quantity: p.quantity + quantity }
@@ -137,7 +153,6 @@ const PartsModal = ({
           updatedList = [...localPartsList, newPart];
         }
       } else {
-        // Técnico en orden no finalizada: usar requestPart
         if (existingPart) {
           const newQuantity = existingPart.quantity + quantity;
           updatedList = localPartsList.map((p) =>
@@ -268,6 +283,13 @@ const PartsModal = ({
     (part) => !localPartsList.some((lp) => lp.part_id === part.id)
   );
 
+  // Función para cambiar de página
+  const handlePageChange = (page) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
+  };
+
   return (
     <>
       <StyledModal
@@ -284,56 +306,79 @@ const PartsModal = ({
           ) : filteredAvailableParts.length === 0 ? (
             <p>No hay repuestos disponibles para este vehículo.</p>
           ) : (
-            <TableWrapper>
-              <StyledTableModal striped bordered hover>
-                <thead>
-                  <tr>
-                    <th>Código</th>
-                    <th>Nombre</th>
-                    <th>Modelo Compatible</th>
-                    <th>Inventario</th>
-                    <th>Cantidad</th>
-                    <th>Acción</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredAvailableParts.map((part, index) => (
-                    <tr key={`${part.id}-${index}`}>
-                      <td>{part.id}</td>
-                      <td>{part.name}</td>
-                      <td>{part.compatible_models?.join(", ") || "N/A"}</td>
-                      <td>{part.quantity}</td>
-                      <td>
-                        <InputGroup style={{ maxWidth: "120px" }}>
-                          <Form.Control
-                            type="number"
-                            min="1"
-                            max={part.quantity}
-                            value={selectedPartQuantities[part.id] || 1}
-                            onChange={(e) =>
-                              handleQuantityChange(part.id, e.target.value)
-                            }
-                            disabled={part.quantity === 0 || isReadOnly}
-                          />
-                        </InputGroup>
-                      </td>
-                      <td>
-                        <ActionsContainer>
-                          <ActionButton
-                            variant="primary"
-                            size="sm"
-                            onClick={() => handleRequestPart(part)}
-                            disabled={part.quantity === 0 || isReadOnly}
-                          >
-                            {isFinalized ? "Añadir" : "Solicitar"}
-                          </ActionButton>
-                        </ActionsContainer>
-                      </td>
+            <>
+              <TableWrapper>
+                <StyledTableModal striped bordered hover>
+                  <thead>
+                    <tr>
+                      <th>Código</th>
+                      <th>Nombre</th>
+                      <th>Modelo Compatible</th>
+                      <th>Inventario</th>
+                      <th>Cantidad</th>
+                      <th>Acción</th>
                     </tr>
+                  </thead>
+                  <tbody>
+                    {filteredAvailableParts.map((part, index) => (
+                      <tr key={`${part.id}-${index}`}>
+                        <td>{part.id}</td>
+                        <td>{part.name}</td>
+                        <td>{part.compatible_models?.join(", ") || "N/A"}</td>
+                        <td>{part.quantity}</td>
+                        <td>
+                          <InputGroup style={{ maxWidth: "120px" }}>
+                            <Form.Control
+                              type="number"
+                              min="1"
+                              max={part.quantity}
+                              value={selectedPartQuantities[part.id] || 1}
+                              onChange={(e) =>
+                                handleQuantityChange(part.id, e.target.value)
+                              }
+                              disabled={part.quantity === 0 || isReadOnly}
+                            />
+                          </InputGroup>
+                        </td>
+                        <td>
+                          <ActionsContainer>
+                            <ActionButton
+                              variant="primary"
+                              size="sm"
+                              onClick={() => handleRequestPart(part)}
+                              disabled={part.quantity === 0 || isReadOnly}
+                            >
+                              {isFinalized ? "Añadir" : "Solicitar"}
+                            </ActionButton>
+                          </ActionsContainer>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </StyledTableModal>
+              </TableWrapper>
+              {totalPages > 1 && (
+                <Pagination className="justify-content-center mt-3">
+                  <Pagination.Prev
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage === 1}
+                  />
+                  {[...Array(totalPages).keys()].map((i) => (
+                    <Pagination.Item
+                      key={i + 1}
+                      active={i + 1 === currentPage}
+                      onClick={() => handlePageChange(i + 1)}
+                    >
+                      {i + 1}
+                    </Pagination.Item>
                   ))}
-                </tbody>
-              </StyledTableModal>
-            </TableWrapper>
+                  <Pagination.Next
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                  />
+                </Pagination>
+              )}
+            </>
           )}
         </ModalBody>
         <Modal.Footer>

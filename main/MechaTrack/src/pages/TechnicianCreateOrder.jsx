@@ -141,6 +141,8 @@ const OrderForm = memo(
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState("");
     const branches = [...new Set(vehicles.map((v) => v.branch))];
+    const [totalParts, setTotalParts] = useState(0);
+    const [fetchParts, setFetchParts] = useState(null);
 
     useEffect(() => {
       const fetchOrderData = async () => {
@@ -310,23 +312,31 @@ const OrderForm = memo(
               setHistory([]);
             }
             try {
-              const partsData = await getParts(vehicle.model, 1, 1000);
-              const partsArray = Array.isArray(partsData.parts)
-                ? partsData.parts
-                : [];
-              setParts(partsArray);
+              const fetchParts = async (page = 1, limit = 10) => {
+                const partsData = await getParts(vehicle.model, page, limit);
+                const partsArray = Array.isArray(partsData.parts)
+                  ? partsData.parts
+                  : [];
+                setParts(partsArray);
+                setTotalParts(partsData.total || 0);
+              };
+              fetchParts(1);
+              setFetchParts(() => fetchParts);
             } catch (err) {
               toast.error(err.message || "Error al cargar repuestos");
               setParts([]);
+              setTotalParts(0);
             }
           } else {
             setHistory([]);
             setParts([]);
+            setTotalParts(0);
           }
         } else {
           setVehicleData(null);
           setHistory([]);
           setParts([]);
+          setTotalParts(0);
         }
       };
       if (formData.economicNumber && formData.branch && vehicles.length > 0) {
@@ -943,6 +953,9 @@ const OrderForm = memo(
           orderId={initialData?.id}
           isReadOnly={isReadOnly}
           userId={user.id}
+          fetchParts={fetchParts}
+          totalParts={totalParts}
+          partsLimit={10}
         />
       </FormContainer>
     );
